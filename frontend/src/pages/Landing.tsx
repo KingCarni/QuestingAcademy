@@ -42,7 +42,7 @@ const Landing: React.FC = () => {
         <div className="grid md:grid-cols-5 gap-10 items-center">
           <div className="md:col-span-3">
             <div className="chip mb-5 bg-white/90 border-primary/30 text-primary">
-              <Sparkles size={14} strokeWidth={3} /> Made for Grades K–2
+              <Sparkles size={14} strokeWidth={3} /> Made for Grades K–7
             </div>
             <h1 className="h-display text-5xl md:text-7xl leading-[0.95]">
               Make math feel like a

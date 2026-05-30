@@ -6,9 +6,14 @@ import { useGame } from "../lib/gameStore";
 import type { Grade } from "../lib/types";
 
 const GRADES: { id: Grade; label: string; emoji: string; desc: string }[] = [
-  { id: "K",  label: "Kindergarten", emoji: "🌟", desc: "Counting, shapes, tiny sums." },
-  { id: "1",  label: "Grade 1",      emoji: "🌿", desc: "Add and subtract within 20." },
-  { id: "2",  label: "Grade 2",      emoji: "🌸", desc: "Two-digit math and place value." },
+  { id: "K", label: "Kindergarten", emoji: "🌟", desc: "Counting, shapes, tiny sums." },
+  { id: "1", label: "Grade 1",      emoji: "🌿", desc: "Add and subtract within 20." },
+  { id: "2", label: "Grade 2",      emoji: "🌸", desc: "Two-digit math and place value." },
+  { id: "3", label: "Grade 3",      emoji: "🍀", desc: "Times tables and big sums." },
+  { id: "4", label: "Grade 4",      emoji: "🌻", desc: "Multi-digit + first fractions." },
+  { id: "5", label: "Grade 5",      emoji: "🌷", desc: "Decimals and fraction work." },
+  { id: "6", label: "Grade 6",      emoji: "🍁", desc: "Ratios, percents, negatives." },
+  { id: "7", label: "Grade 7",      emoji: "🪴", desc: "Pre-algebra and equations." },
 ];
 
 const Onboarding: React.FC = () => {
@@ -32,7 +37,7 @@ const Onboarding: React.FC = () => {
           <p className="text-ink-muted mt-2">We’ll match math just right for you.</p>
         </div>
 
-        <div className="grid md:grid-cols-3 gap-5">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {GRADES.map((g) => {
             const active = selected === g.id;
             return (

@@ -4,8 +4,10 @@ import { TopBar } from "../components/TopBar";
 import { Card } from "../components/Card";
 import { ProgressBar } from "../components/ProgressBar";
 import { CompanionAvatar } from "../components/CompanionAvatar";
+import { ConfettiBurst } from "../components/ConfettiBurst";
 import { useGame } from "../lib/gameStore";
 import { COMPANIONS } from "../lib/mockData";
+import { sfx } from "../lib/sfx";
 
 const HATCHERY_BG = "https://static.prod-images.emergentagent.com/jobs/2eddbcc9-3d07-49c8-985b-00a190300e36/images/7f39166ca6a00cef0337bdedb962bd6400342f077934204050cdb81a9d54a9b9.png";
 
@@ -14,14 +16,20 @@ const EggHatch: React.FC = () => {
   const eggs = useGame((s) => s.eggs);
   const hatchIfReady = useGame((s) => s.hatchIfReady);
   const [newlyHatched, setNewlyHatched] = useState<string[]>([]);
+  const [confetti, setConfetti] = useState(false);
 
   useEffect(() => {
     const hatched = hatchIfReady();
-    if (hatched.length) setNewlyHatched(hatched);
+    if (hatched.length) {
+      setNewlyHatched(hatched);
+      setConfetti(true);
+      sfx.hatch();
+    }
   }, [hatchIfReady]);
 
   return (
     <div className="min-h-screen pb-12">
+      <ConfettiBurst active={confetti} onDone={() => setConfetti(false)} />
       <TopBar back="/hub" title="The Hatchery" />
       <main className="max-w-5xl mx-auto px-4 md:px-8 py-6 space-y-6">
         <Card className="!p-0 overflow-hidden relative">
@@ -78,8 +86,13 @@ const EggHatch: React.FC = () => {
                       </svg>
                     )}
                     {e.hatched && (
-                      <div className="relative z-10 animate-popIn">
-                        <CompanionAvatar companion={into} size={120} />
+                      <div className="relative z-10">
+                        <CompanionAvatar
+                          companion={into}
+                          size={130}
+                          reveal={newlyHatched.includes(into.id)}
+                          animate
+                        />
                       </div>
                     )}
                   </div>

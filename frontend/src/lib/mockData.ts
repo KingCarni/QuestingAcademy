@@ -183,11 +183,48 @@ export const QUESTIONS: Question[] = [
   { id: "g2_4", grade: "2", topic: "comparison", prompt: "Which is the largest?", choices: ["27", "72", "47", "67"], answerIndex: 1 },
   { id: "g2_5", grade: "2", topic: "subtraction", prompt: "30 − 15 = ?", choices: ["10", "12", "15", "20"], answerIndex: 2 },
   { id: "g2_6", grade: "2", topic: "shapes", prompt: "Sides on a hexagon?", choices: ["4", "5", "6", "8"], answerIndex: 2 },
+
+  // Grade 3 — multiplication intro
+  { id: "g3_1", grade: "3", topic: "multiplication", prompt: "3 × 4 = ?", choices: ["7", "10", "12", "14"], answerIndex: 2 },
+  { id: "g3_2", grade: "3", topic: "multiplication", prompt: "6 × 5 = ?", choices: ["25", "28", "30", "36"], answerIndex: 2 },
+  { id: "g3_3", grade: "3", topic: "addition", prompt: "125 + 47 = ?", choices: ["162", "172", "182", "192"], answerIndex: 1 },
+  { id: "g3_4", grade: "3", topic: "subtraction", prompt: "200 − 78 = ?", choices: ["112", "122", "128", "132"], answerIndex: 1 },
+  { id: "g3_5", grade: "3", topic: "division", prompt: "20 ÷ 4 = ?", choices: ["4", "5", "6", "8"], answerIndex: 1 },
+
+  // Grade 4 — fractions & multi-digit
+  { id: "g4_1", grade: "4", topic: "multiplication", prompt: "12 × 8 = ?", choices: ["86", "92", "96", "104"], answerIndex: 2 },
+  { id: "g4_2", grade: "4", topic: "division", prompt: "72 ÷ 9 = ?", choices: ["6", "7", "8", "9"], answerIndex: 2 },
+  { id: "g4_3", grade: "4", topic: "fractions", prompt: "Which is bigger, 1/2 or 1/3?", choices: ["1/2", "1/3", "Same", "0"], answerIndex: 0 },
+  { id: "g4_4", grade: "4", topic: "fractions", prompt: "1/4 + 1/4 = ?", choices: ["1/8", "2/8", "1/2", "1/3"], answerIndex: 2 },
+  { id: "g4_5", grade: "4", topic: "addition", prompt: "486 + 215 = ?", choices: ["691", "701", "711", "721"], answerIndex: 1 },
+
+  // Grade 5 — decimals & fractions
+  { id: "g5_1", grade: "5", topic: "decimals", prompt: "0.4 + 0.5 = ?", choices: ["0.09", "0.9", "1.0", "9.0"], answerIndex: 1 },
+  { id: "g5_2", grade: "5", topic: "decimals", prompt: "1.25 × 4 = ?", choices: ["4.25", "4.5", "5.0", "5.25"], answerIndex: 2 },
+  { id: "g5_3", grade: "5", topic: "fractions", prompt: "2/3 of 9 = ?", choices: ["3", "5", "6", "9"], answerIndex: 2 },
+  { id: "g5_4", grade: "5", topic: "division", prompt: "144 ÷ 12 = ?", choices: ["10", "11", "12", "14"], answerIndex: 2 },
+  { id: "g5_5", grade: "5", topic: "multiplication", prompt: "25 × 16 = ?", choices: ["350", "375", "400", "425"], answerIndex: 2 },
+
+  // Grade 6 — ratios, percents, negatives
+  { id: "g6_1", grade: "6", topic: "fractions", prompt: "Ratio 6:9 simplified = ?", choices: ["1:2", "2:3", "3:4", "1:3"], answerIndex: 1 },
+  { id: "g6_2", grade: "6", topic: "decimals", prompt: "What is 20% of 80?", choices: ["8", "12", "16", "20"], answerIndex: 2 },
+  { id: "g6_3", grade: "6", topic: "subtraction", prompt: "−5 + 12 = ?", choices: ["−7", "7", "17", "−17"], answerIndex: 1 },
+  { id: "g6_4", grade: "6", topic: "multiplication", prompt: "(−3) × 4 = ?", choices: ["12", "−12", "−7", "1"], answerIndex: 1 },
+  { id: "g6_5", grade: "6", topic: "fractions", prompt: "3/4 as a decimal = ?", choices: ["0.25", "0.5", "0.75", "1.25"], answerIndex: 2 },
+
+  // Grade 7 — pre-algebra
+  { id: "g7_1", grade: "7", topic: "algebra", prompt: "Solve: x + 7 = 15. x = ?", choices: ["6", "7", "8", "9"], answerIndex: 2 },
+  { id: "g7_2", grade: "7", topic: "algebra", prompt: "Solve: 3x = 27. x = ?", choices: ["6", "7", "9", "10"], answerIndex: 2 },
+  { id: "g7_3", grade: "7", topic: "decimals", prompt: "15% of 200 = ?", choices: ["15", "25", "30", "45"], answerIndex: 2 },
+  { id: "g7_4", grade: "7", topic: "fractions", prompt: "(2/3) ÷ (1/3) = ?", choices: ["1/2", "1", "2", "3"], answerIndex: 2 },
+  { id: "g7_5", grade: "7", topic: "algebra", prompt: "If 2x − 4 = 10, x = ?", choices: ["5", "6", "7", "8"], answerIndex: 2 },
 ];
 
 export const ACADEMY_SUBJECTS: AcademySubject[] = [
   { id: "addition", name: "Addition Hall", emoji: "➕", description: "Stack and sum with sparkle.", color: "bg-[#FFF3D6]" },
   { id: "subtraction", name: "Subtraction Sanctum", emoji: "➖", description: "Take away with care.", color: "bg-[#FFE6D6]" },
+  { id: "multiplication", name: "Multiplication Hall", emoji: "✖️", description: "Stack groups, grow fast.", color: "bg-[#E8E1FA]" },
+  { id: "fractions", name: "Fraction Forest", emoji: "🍰", description: "Slice and share fairly.", color: "bg-[#FCE2F0]" },
   { id: "shapes", name: "Shape Atelier", emoji: "🔷", description: "Find sides and corners.", color: "bg-[#E8F4E1]" },
   { id: "counting", name: "Counting Cloister", emoji: "🔢", description: "Step by tiny step.", color: "bg-[#EEF2FB]" },
 ];

@@ -58,7 +58,7 @@ const Hub: React.FC = () => {
               <MapTile
                 to="/academy"
                 icon={<GraduationCap strokeWidth={3} />}
-                label="Math Academy"
+                label="Learning Academy"
                 hint="Train pals"
                 color="bg-sage"
                 shadow="shadow-btn-sage"

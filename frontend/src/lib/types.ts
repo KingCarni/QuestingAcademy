@@ -1,7 +1,7 @@
 // Core domain types for Questing Academy frontend MVP.
 // TODO(backend): Replace local-only types with shared API contracts when backend is available.
 
-export type Grade = "K" | "1" | "2";
+export type Grade = "K" | "1" | "2" | "3" | "4" | "5" | "6" | "7";
 
 export type Affinity = "nature" | "fire" | "earth";
 export type Personality = "friendly-support" | "bold-attacker" | "calm-defensive";
@@ -47,13 +47,26 @@ export interface Companion {
     accent: string;   // tailwind text color class
     glow: string;     // hex glow color
   };
+  // TODO(art-pipeline): when AI Companion Art Pipeline ships, populate this with a CDN URL
+  // to a polished chibi illustration. CompanionAvatar will use it and fall back to CSS shapes.
+  illustrationUrl?: string;
   starter?: boolean;
 }
 
 export interface Question {
   id: string;
   grade: Grade;
-  topic: "addition" | "subtraction" | "counting" | "comparison" | "shapes";
+  topic:
+    | "addition"
+    | "subtraction"
+    | "counting"
+    | "comparison"
+    | "shapes"
+    | "multiplication"
+    | "division"
+    | "fractions"
+    | "decimals"
+    | "algebra";
   prompt: string;
   choices: string[];
   answerIndex: number;

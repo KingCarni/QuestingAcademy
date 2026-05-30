@@ -14,7 +14,7 @@ const Academy: React.FC = () => {
 
   return (
     <div className="min-h-screen pb-12">
-      <TopBar back="/hub" title="Math Academy" />
+      <TopBar back="/hub" title="Learning Academy" />
       <main className="max-w-6xl mx-auto px-4 md:px-8 py-6 space-y-5">
         <Card>
           <h1 className="h-display text-3xl md:text-4xl">Train your companions ✨</h1>

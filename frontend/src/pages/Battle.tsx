@@ -4,9 +4,12 @@ import { TopBar } from "../components/TopBar";
 import { Card } from "../components/Card";
 import { CompanionAvatar } from "../components/CompanionAvatar";
 import { ProgressBar } from "../components/ProgressBar";
+import { SpeechButton } from "../components/SpeechButton";
+import { ConfettiBurst } from "../components/ConfettiBurst";
 import { useGame } from "../lib/gameStore";
 import { COMPANIONS, ENEMIES, QUESTIONS } from "../lib/mockData";
 import type { Enemy, Question } from "../lib/types";
+import { sfx } from "../lib/sfx";
 import { Swords, Shield, Sparkles, Coins, Heart } from "lucide-react";
 
 type Phase = "intro" | "question" | "feedback" | "victory" | "defeat";
@@ -34,6 +37,8 @@ const Battle: React.FC = () => {
   const [lastFeedback, setLastFeedback] = useState<string>("");
   const [lastCorrect, setLastCorrect] = useState<boolean | null>(null);
   const [shake, setShake] = useState<"player" | "enemy" | null>(null);
+  const [confettiActive, setConfettiActive] = useState(false);
+  const [levelUp, setLevelUp] = useState<number | null>(null);
 
   const questionPool = useMemo(() => QUESTIONS.filter((q) => q.grade === player.grade), [player.grade]);
 
@@ -68,15 +73,24 @@ const Battle: React.FC = () => {
     );
     setPhase("feedback");
 
+    // Sound feedback (user-triggered click, so autoplay-policy safe)
+    if (correct) sfx.sparkle();
+    else sfx.ding();
+
     setTimeout(() => setShake(null), 450);
 
     // Check defeat
     if (newEnemyHp <= 0) {
       setTimeout(() => {
-        awardBattle(enemy.reward.xp, enemy.reward.coins, enemy.reward.eggProgress);
+        const { leveledUp, newLevel } = awardBattle(enemy.reward.xp, enemy.reward.coins, enemy.reward.eggProgress);
         const hatched = hatchIfReady();
-        if (hatched.length) {
-          // small delay so confetti shows on egg page
+        if (leveledUp) {
+          setLevelUp(newLevel);
+          setConfettiActive(true);
+          sfx.levelUp();
+        } else if (hatched.length) {
+          setConfettiActive(true);
+          sfx.hatch();
         }
         setPhase("victory");
       }, 700);
@@ -107,6 +121,7 @@ const Battle: React.FC = () => {
 
   return (
     <div className="min-h-screen pb-12">
+      <ConfettiBurst active={confettiActive} onDone={() => setConfettiActive(false)} />
       <TopBar back="/hub" title="Adventure: Meadowfall Path" />
       <main className="max-w-5xl mx-auto px-4 md:px-8 py-6 space-y-5">
         <Card className="!p-0 overflow-hidden">
@@ -176,7 +191,10 @@ const Battle: React.FC = () => {
 
         {phase === "question" && question && (
           <Card>
-            <p className="text-sm font-extrabold uppercase tracking-wider text-primary mb-1">{question.topic}</p>
+            <div className="flex items-center justify-between gap-3 mb-1">
+              <p className="text-sm font-extrabold uppercase tracking-wider text-primary">{question.topic}</p>
+              <SpeechButton text={question.prompt} testid="battle-speech-btn" />
+            </div>
             <p data-testid="battle-question-prompt" className="h-display text-3xl md:text-4xl mb-5">{question.prompt}</p>
             <div className="grid grid-cols-2 gap-3">
               {question.choices.map((c, i) => (
@@ -216,12 +234,17 @@ const Battle: React.FC = () => {
             <div className="text-6xl mb-2" aria-hidden>🎉</div>
             <p className="h-display text-3xl">You won the round!</p>
             <p className="text-ink-muted mt-1">{enemy.name} runs back into the meadow.</p>
+            {levelUp !== null && (
+              <p data-testid="battle-levelup-banner" className="mt-3 inline-block chip bg-gold/20 border-gold/40 text-ink h-display text-lg">
+                🌟 Level Up! You are now Level {levelUp}
+              </p>
+            )}
             <div className="grid grid-cols-3 gap-3 max-w-md mx-auto mt-5">
               <Reward icon={<Sparkles strokeWidth={3} className="text-primary" />} label="XP" value={`+${enemy.reward.xp}`} />
               <Reward icon={<Coins strokeWidth={3} className="text-gold" />} label="Coins" value={`+${enemy.reward.coins}`} />
               <Reward icon={<span className="text-xl">🥚</span>} label="Egg" value={`+${enemy.reward.eggProgress}%`} />
             </div>
-            <div className="mt-6 flex justify-center gap-3">
+            <div className="mt-6 flex justify-center gap-3 flex-wrap">
               <button
                 data-testid="battle-next-btn"
                 onClick={() => {
@@ -229,6 +252,7 @@ const Battle: React.FC = () => {
                   setEnemy(e);
                   setEnemyHp(e.hp);
                   setCompanionHp(companionMaxHp);
+                  setLevelUp(null);
                   setPhase("intro");
                 }}
                 className="btn-primary"

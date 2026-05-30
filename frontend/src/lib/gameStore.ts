@@ -27,7 +27,11 @@ interface GameState {
   resetAll: () => void;
 
   // Gameplay actions
-  awardBattle: (xp: number, coins: number, eggProgress: number) => void;
+  awardBattle: (
+    xp: number,
+    coins: number,
+    eggProgress: number
+  ) => { leveledUp: boolean; newLevel: number };
   trackQuestion: (correct: boolean, topic: string, timeSec: number) => void;
   setActiveCompanion: (companionId: string) => void;
   assignCompanionToSubject: (subjectId: string, companionId: string | null) => void;
@@ -115,26 +119,29 @@ export const useGame = create<GameState>()(
           battleStats: { totalBattles: 0, totalQuestions: 0, totalCorrect: 0 },
         }),
 
-      awardBattle: (xp, coins, eggProgress) =>
-        set((s) => {
-          if (!s.player) return s;
-          let nxp = s.player.xp + xp;
-          let level = s.player.level;
-          let xpToNext = s.player.xpToNext;
-          while (nxp >= xpToNext) {
-            nxp -= xpToNext;
-            level += 1;
-            xpToNext = Math.floor(xpToNext * 1.25);
-          }
-          const eggs = s.eggs.map((e) =>
-            e.hatched ? e : { ...e, progress: Math.min(100, e.progress + eggProgress) }
-          );
-          return {
-            player: { ...s.player, xp: nxp, level, xpToNext, coins: s.player.coins + coins },
-            eggs,
-            battleStats: { ...s.battleStats, totalBattles: s.battleStats.totalBattles + 1 },
-          };
-        }),
+      awardBattle: (xp, coins, eggProgress) => {
+        const before = get();
+        if (!before.player) return { leveledUp: false, newLevel: 1 };
+        let nxp = before.player.xp + xp;
+        let level = before.player.level;
+        let xpToNext = before.player.xpToNext;
+        let leveledUp = false;
+        while (nxp >= xpToNext) {
+          nxp -= xpToNext;
+          level += 1;
+          xpToNext = Math.floor(xpToNext * 1.25);
+          leveledUp = true;
+        }
+        const eggs = before.eggs.map((e) =>
+          e.hatched ? e : { ...e, progress: Math.min(100, e.progress + eggProgress) }
+        );
+        set({
+          player: { ...before.player, xp: nxp, level, xpToNext, coins: before.player.coins + coins },
+          eggs,
+          battleStats: { ...before.battleStats, totalBattles: before.battleStats.totalBattles + 1 },
+        });
+        return { leveledUp, newLevel: level };
+      },
 
       trackQuestion: (correct, topic, timeSec) =>
         set((s) => {
