@@ -75,10 +75,37 @@ const AdminDashboard: React.FC = () => {
     return (
       <div className="min-h-screen">
         <TopBar back="/" title="Admin Dashboard" />
-        <main className="max-w-3xl mx-auto px-4 md:px-8 py-10">
+        <main className="max-w-3xl mx-auto px-4 md:px-8 py-10 space-y-5">
+          <Card>
+            <div className="flex items-center gap-3 flex-wrap">
+              <div className="w-12 h-12 rounded-2xl bg-primary text-white grid place-items-center shadow-btn-primary">
+                <ShieldCheck strokeWidth={3} />
+              </div>
+              <div>
+                <h1 className="h-display text-2xl">Staff tools</h1>
+                <p className="text-ink-muted text-sm">Studio access works without a child player.</p>
+              </div>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Link
+                to="/admin/studio"
+                data-testid="admin-open-studio"
+                className="btn-primary !text-sm !py-2 !px-4"
+              >
+                <ShieldCheck size={14} strokeWidth={3} /> Open Content Studio →
+              </Link>
+              <Link
+                to="/admin/approvals"
+                data-testid="admin-open-approvals"
+                className="btn-outline !text-sm !py-2 !px-4"
+              >
+                Review Content (approvals)
+              </Link>
+            </div>
+          </Card>
           <Card className="text-center">
             <p className="h-display text-2xl">No player yet.</p>
-            <p className="text-ink-muted mt-1">Send a child through onboarding to start managing.</p>
+            <p className="text-ink-muted mt-1">Send a child through onboarding to start managing player-specific data.</p>
             <Link to="/" data-testid="admin-go-home" className="btn-primary mt-4 inline-flex">Go to landing</Link>
           </Card>
         </main>

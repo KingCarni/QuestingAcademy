@@ -1,63 +1,64 @@
 # Questing Academy — Frontend MVP PRD
 
-## Original Problem Statement
-Cute chibi-style educational RPG for Grades K-7 (expanded from K-2). Players create a chibi avatar, collect cute companions, battle enemies by answering math + reading questions, hatch eggs by completing learning activities, and train companions in a Learning Academy. Parents view simple progress; staff can manage the prototype via an admin dashboard.
+## Concept
+Cute chibi-style educational RPG for Grades K-7. Avatar creation, companion collection, math + reading battles, egg hatching, Learning Academy training, parent progress dashboard, and a full internal **TeachMe Content Studio** for staff-approval workflows.
 
-## User Choices (locked-in)
-- Stack: React + TypeScript SPA (CRA)
-- Theme: Magical academy — lavender / sage / gold / cream
-- Art: CSS + SVG + emoji, with optional `illustrationUrl` hook for future AI Companion Art Pipeline
-- Persistence: localStorage (zustand persist middleware)
-- Parent gate: PIN `1234`; Admin gate: PIN `2580`
-- Scope: K-7, math + reading subjects
+## Stack & Constraints
+- React + TypeScript SPA (CRA), Tailwind, zustand+persist (localStorage)
+- Theme: lavender / sage / gold / cream "magical academy"
+- No real auth, backend, payments, or child-data handling (prototype only)
+- Parent PIN `1234`, Admin/Studio PIN `2580`
 
 ## Architecture
-- `/app/frontend/src/lib/types.ts` — Player, Companion, Question (+ source/templateId), Enemy, Egg, AcademyAssignment, ParentReport, BattleStats, TrickyEntry, GameSettings
-- `/app/frontend/src/lib/mockData.ts` — companions, enemies, 8 academy subjects, eggs, avatar options
-- `/app/frontend/src/lib/questionEngine.ts` — 16 procedural templates (math + reading), `generateQuestion(grade, mode, disabled, accuracy)`, `templatesForGrade`, `templateById`
-- `/app/frontend/src/lib/gameStore.ts` — zustand+persist. Includes `nextQuestion` (tricky-pool aware), `recordWrong/Correct` with spaced-repetition stages [2, 5, 10, 20], settings (subjectMode/disabledTemplateIds/soundOn), and admin helpers
-- `/app/frontend/src/lib/sfx.ts` — Web Audio API SFX
-- `/app/frontend/src/lib/speech.ts` — SpeechSynthesis wrapper
-- Components: TopBar (sound toggle), Card, ProgressBar, ChibiAvatar, CompanionAvatar (illustration url + reveal), SpeechButton, ConfettiBurst, RequirePlayer
-- Pages: Landing, Onboarding (K-7), CharacterCreator, StarterPicker, Hub, Battle, EggHatch, Collection, Academy, Parent, **AdminDashboard**
-- TODO markers: `TODO(backend)`, `TODO(art-pipeline)`
+- `/app/frontend/src/lib/types.ts` — Player, Companion, Question, TrickyEntry, GameSettings
+- `/app/frontend/src/lib/mockData.ts` — companions, enemies, academy subjects, eggs, avatar options
+- `/app/frontend/src/lib/questionEngine.ts` — 16 procedural templates (math + reading, K-7) + difficulty scaling + **approval gate**
+- `/app/frontend/src/lib/gameStore.ts` — gameplay state with spaced-repetition (tricky pool) + admin helpers
+- `/app/frontend/src/lib/studioTypes.ts` — Status enum + 13 collection types
+- `/app/frontend/src/lib/studioStore.ts` — Studio state with seed data + CRUD + publish queue
+- `/app/frontend/src/lib/mockGen.ts` — generators including `mockNanoBananaGenerateImage` (TODO marker for real backend)
+- `/app/frontend/src/lib/speech.ts` — strict en-US narrator voice selection
+- `/app/frontend/src/lib/sfx.ts` — Web Audio SFX
+- Components: TopBar (sound toggle), Card, ProgressBar, ChibiAvatar, CompanionAvatar (illustration url + reveal), SpeechButton, ConfettiBurst, RequirePlayer, **studio/StatusChip, studio/StudioPanel, studio/GeneratorPanel**
+- Pages: Landing, Onboarding, CharacterCreator, StarterPicker, Hub, Battle, EggHatch, Collection, Academy, Parent, AdminDashboard, **ContentStudio**
+
+## Routes
+- `/` Landing
+- `/onboarding`, `/character`, `/starter`, `/hub`, `/battle`, `/egg`, `/collection`, `/academy` (gated)
+- `/parent` (PIN 1234)
+- `/admin` (PIN 2580) — operational tools
+- `/admin/studio` and `/admin/approvals` — TeachMe Content Studio (PIN 2580)
 
 ## Versions
-
-### v0.1 — May 30 2026 (MVP)
-10-screen clickable shell, full math happy-path loop.
-
-### v0.2 — May 30 2026 (Senses Pack + K-7)
-- 🔊 Read-aloud questions (SpeechSynthesis)
-- 🎉 Confetti on hatch/level-up
-- 🔔 Web Audio SFX
-- ✨ Hatch reveal animation
-- 🎓 Grades K-2 → K-7
-- 🧮 Added Multiplication Hall + Fraction Forest
-
-### v0.3 — May 30 2026 (Pack C + Admin)
-- 🧠 **Procedural question engine** (16 templates, math + reading, K-7, difficulty-scaled)
-- 🔁 **Spaced repetition** "tricky pool" — wrong answers resurface at 2/5/10/20-question intervals; battle shows 🔁 chip
-- 📖 **Reading Hall + Rhyme Garden** subjects with rhyming, letter-sounds, synonyms, antonyms
-- 🛠️ **Admin Dashboard** at `/admin` (PIN 2580): player editor (name/grade/level/XP/coins), companion grant/revoke/set-active, egg slider + force-hatch, subject mode selector (math/reading/mixed), template library with per-template on/off + sample preview, tricky-pool viewer, danger-zone reset all
-- 🔉 **Sound on/off toggle** in TopBar (persisted)
-- 🔗 Discreet `parent-admin-link` from parent dashboard
+### v0.1 — MVP (10 screens, math K-2)
+### v0.2 — Senses Pack + K-7 (speech, confetti, hatch reveal, expanded grades + subjects)
+### v0.3 — Pack C + Admin (procedural engine, spaced repetition, reading, Admin Dashboard)
+### v0.4 — TeachMe Content Studio (current)
+- 🛠️ **Content Studio** at `/admin/studio` (alias `/admin/approvals`) with 13 tabs
+- 📝 **Statuses**: draft / generated / pending / approved / published / rejected / archived
+- 🚀 **Approval gate** — battles now consume `studioStore.isTemplatePlayerReady`; only approved/published templates appear. If everything is rejected, engine falls back to a safe `1 + 1 = ?` question (no crash).
+- 🎨 **Mock Nano Banana** — `mockNanoBananaGenerateImage(prompt)` returns a styled inline SVG data URL. `TODO(api):` marker for real Gemini/Nano Banana backend call.
+- 🤖 **Generators** (all output → Pending Review, never live): companions, realms, quests, battle backgrounds, companion art
+- 📤 **Publish Queue** — global queue of approved items; bulk Publish / Archive
+- 🔊 **Narrator voice fix** — strict en-US voice selection, blocks UK/AU/IN/Irish/Scottish voices, sets `utterance.lang="en-US"`, rate 0.92, pitch 1.05
 
 ## Testing
-- iteration_1: 100% (MVP)
-- iteration_2: 100% (Senses Pack + K-7)
-- iteration_3: ~95% (Pack C + Admin) — only finding was UX visibility of tricky-chip; fixed by raising resurface probability from 0.55 → 0.75+
+- iteration_1: MVP — 100%
+- iteration_2: Senses Pack + K-7 — 100%
+- iteration_3: Pack C + Admin — 95% (tricky-chip visibility fix applied)
+- iteration_4: Content Studio — 93% (1 HIGH fixed: Studio links now visible on /admin even with no player)
 
 ## Backlog (P0 / P1 / P2)
+- P1: Persistent Studio session token (single re-login per browser session)
+- P1: Real backend + Emergent Google Auth + multi-device sync
+- P1: Real Gemini/Nano Banana wired to mock generator
+- P1: AI Companion Art Pipeline → populate Companion.illustrationUrl
 - P1: Daily Quest streak card on Hub
-- P1: Wire AI Companion Art Pipeline → populate `illustrationUrl`
-- P1: Optional warmer OpenAI TTS via backend (current SpeechSynthesis is fallback)
-- P2: Second realm (Frostpine Hollow) + more enemies
+- P2: Studio tab extraction (one file per collection) when more features land
+- P2: Realm map for published realms beyond Meadowfall Grove
 - P2: Multiple child profiles per device
+- P2: Per-template difficulty curve config in Studio
 - P2: Weekly parent email digest mock + Resend integration
-- P2: Real backend + Emergent Google Auth + multi-device sync
-- P2: More reading templates (verb tense, plurals, antonyms hard)
-- P3: Per-template difficulty curve config in admin
 
 ## Out of Scope
 Real auth, real backend, payments, real child data, PvP, guilds, teacher platform, marketplace.
