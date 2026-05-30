@@ -94,7 +94,7 @@ const Landing: React.FC = () => {
             { e: "🧙", t: "1. Create your chibi", s: "Pick skin, hair, outfit and a magical hat." },
             { e: "🌱", t: "2. Choose a companion", s: "Spriggle, Embercub or Pebblin." },
             { e: "⚔️", t: "3. Battle with math", s: "Right answers do extra sparkle damage." },
-            { e: "🥚", t: "4. Hatch & grow", s: "Train pals at the Math Academy." },
+            { e: "🥚", t: "4. Hatch & grow", s: "Train pals at the Learning Academy." },
           ].map((s) => (
             <div key={s.t} className="text-center">
               <div className="text-5xl mb-2" aria-hidden>{s.e}</div>
