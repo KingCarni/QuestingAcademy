@@ -1,0 +1,149 @@
+{
+  "project_name": "Questing Academy",
+  "theme": {
+    "archetype": "Archetype 6 (Vibrant Play) + Archetype 3 (Pastel & Soft)",
+    "mode": "Light",
+    "vibe": "Whimsical, Scholarly, Cozy, Magical Academy, Child-friendly, RPG",
+    "description": "A cute, colorful chibi-style educational RPG for Grades K-2. The design must be bright, readable, friendly, and soft. No sharp edges, no dark/scary elements."
+  },
+  "colors": {
+    "background": {
+      "main": "#FDFBF7",
+      "description": "Soft ivory/cream. Never use pure white for the main app background."
+    },
+    "surface": {
+      "card": "#FFFFFF",
+      "glass": "rgba(255, 255, 255, 0.8)",
+      "overlay": "rgba(157, 141, 241, 0.15)"
+    },
+    "primary": {
+      "main": "#9D8DF1",
+      "hover": "#8A79E8",
+      "light": "#D8D2FA",
+      "description": "Magical Soft Lavender. Used for primary actions, magic elements, and brand identity."
+    },
+    "secondary": {
+      "main": "#86A789",
+      "hover": "#749677",
+      "light": "#CDE0CF",
+      "description": "Sage Green. Represents nature, Meadowfall Grove, and safe progression."
+    },
+    "accent": {
+      "gold": "#F4C753",
+      "fire": "#FF9F68",
+      "earth": "#D4A373",
+      "description": "Soft Gold for stars/coins/academy accents. Fire/Earth used specifically for elemental companions."
+    },
+    "text": {
+      "main": "#4A4A4A",
+      "muted": "#888888",
+      "inverse": "#FFFFFF",
+      "description": "Soft Charcoal. Do not use pure #000000 as it's too harsh for kids."
+    },
+    "feedback": {
+      "success": "#86A789",
+      "error": "#FF7B7B",
+      "warning": "#F4C753"
+    }
+  },
+  "typography": {
+    "strategy": "Soft Utility + Youth Brand (Highly legible, bouncy, rounded)",
+    "fonts": {
+      "heading": "Fredoka, sans-serif",
+      "body": "Nunito, sans-serif"
+    },
+    "scales": {
+      "h1": "text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight text-main",
+      "h2": "text-3xl md:text-4xl font-bold tracking-tight text-main",
+      "h3": "text-xl md:text-2xl font-bold text-main",
+      "body": "text-lg md:text-xl font-medium leading-relaxed",
+      "small": "text-sm md:text-base font-bold tracking-wide uppercase"
+    }
+  },
+  "layout_spacing": {
+    "strategy": "Generous, Over-sized touch targets. Kids lack motor precision.",
+    "container": "max-w-5xl mx-auto px-4 md:px-8",
+    "card_padding": "p-6 md:p-8",
+    "gap": {
+      "small": "gap-4",
+      "medium": "gap-6",
+      "large": "gap-8",
+      "hero": "gap-12"
+    },
+    "border_radius": {
+      "button": "rounded-full",
+      "card": "rounded-[32px]",
+      "pill": "rounded-full"
+    }
+  },
+  "components": {
+    "button": {
+      "primary": "bg-[#9D8DF1] text-white font-heading text-xl py-4 px-8 rounded-full shadow-[0_6px_0_#7A6AC6] hover:brightness-110 active:translate-y-[6px] active:shadow-none transition-all",
+      "secondary": "bg-[#86A789] text-white font-heading text-xl py-4 px-8 rounded-full shadow-[0_6px_0_#6A8A6D] hover:brightness-110 active:translate-y-[6px] active:shadow-none transition-all",
+      "gold": "bg-[#F4C753] text-[#4A4A4A] font-heading text-xl py-4 px-8 rounded-full shadow-[0_6px_0_#DDAE3B] hover:brightness-110 active:translate-y-[6px] active:shadow-none transition-all",
+      "outline": "bg-white text-[#9D8DF1] border-4 border-[#9D8DF1] font-heading text-xl py-3 px-7 rounded-full shadow-[0_6px_0_#9D8DF1] active:translate-y-[6px] active:shadow-none transition-all"
+    },
+    "card": {
+      "base": "bg-white/90 backdrop-blur-md rounded-[32px] border-4 border-white/60 shadow-xl shadow-indigo-900/5",
+      "interactive": "hover:-translate-y-2 hover:shadow-2xl hover:shadow-indigo-900/10 transition-all duration-300 cursor-pointer"
+    },
+    "companion_avatar": {
+      "strategy": "CSS Shapes + Emojis inside stacked div circles. Outer ring: Elemental color. Inner circle: Lighter tint. Center: Emoji + SVG Face.",
+      "spriggle": "bg-green-100 border-4 border-green-400 text-green-600",
+      "embercub": "bg-orange-100 border-4 border-orange-400 text-orange-600",
+      "pebblin": "bg-amber-100 border-4 border-amber-600 text-amber-700"
+    },
+    "progress_bar": {
+      "container": "h-6 bg-gray-100 rounded-full overflow-hidden border-2 border-gray-200 inset-shadow-sm",
+      "fill": "h-full rounded-full bg-gradient-to-r from-[#9D8DF1] to-[#F4C753] transition-all duration-500 ease-out"
+    }
+  },
+  "motion": {
+    "hover": "Spring-based scale-up (scale-105) for cards and buttons",
+    "feedback": "Wiggle animation on correct answers, subtle shake on incorrect",
+    "page_transition": "Fade in and slide up from 10px below",
+    "eggs": "Pulse and gentle wobble on the Hatchery page"
+  },
+  "media": {
+    "instruction": "Use these generated images as the backgrounds for the respective screens. They provide the highly-detailed but soft, child-friendly 2D vector style required for the RPG.",
+    "images": [
+      {
+        "category": "hero_bg",
+        "url": "https://static.prod-images.emergentagent.com/jobs/2eddbcc9-3d07-49c8-985b-00a190300e36/images/b8d8a10f02b8c9ad5d5472ae0c6b5354061fe57c832a06562939fbdcc2b60b6d.png",
+        "description": "Magical academy hero background, use on Landing Page with a white/transparent gradient overlay to ensure text legibility."
+      },
+      {
+        "category": "map_meadowfall",
+        "url": "https://static.prod-images.emergentagent.com/jobs/2eddbcc9-3d07-49c8-985b-00a190300e36/images/2ddd9941ab063781678a9c083121e56dd7cec531512b14fdf37b8d70c7da25e5.png",
+        "description": "Top-down Meadowfall Grove map background. Place clickable Action Tiles (Battle, Hatch, Academy, Collection) floating over this map in the Main Game Hub."
+      },
+      {
+        "category": "battle_bg",
+        "url": "https://static.prod-images.emergentagent.com/jobs/2eddbcc9-3d07-49c8-985b-00a190300e36/images/3c0bb9d1132f7acc1e24202db1dd9fe4f6d6bf544566fa6b2336a6a5ad7aba12.png",
+        "description": "Sunny forest clearing background for the Battle Screen. Characters and Math Questions will overlay this."
+      },
+      {
+        "category": "egg_hatchery_bg",
+        "url": "https://static.prod-images.emergentagent.com/jobs/2eddbcc9-3d07-49c8-985b-00a190300e36/images/7f39166ca6a00cef0337bdedb962bd6400342f077934204050cdb81a9d54a9b9.png",
+        "description": "Cozy nursery background for the Egg Hatching Progress Screen."
+      }
+    ],
+    "icons": {
+      "library": "lucide-react",
+      "style": "Always use thick stroke widths (strokeWidth={3}) and vibrant colors."
+    }
+  },
+  "pages_and_layout": {
+    "landing": "Hero layout with the generated `hero_bg`. Massive title, floating magical elements, 'Play Now' CTA.",
+    "onboarding": "Card-based sequence. 1. Select Grade (K, 1, 2). 2. Character Creator (using SVG/CSS shapes). 3. Companion Picker (Bento grid of 3 cards for Spriggle, Embercub, Pebblin).",
+    "main_hub": "Full-screen map using `map_meadowfall` background. Floating icons with bounce animations leading to sub-areas. Navbar at top with Player Avatar, Level, and Coins.",
+    "battle_screen": "Split layout over `battle_bg`. Top: Enemy and Player Sprite + HP Bars. Middle: Math Question in a large bold white card. Bottom: 4 large Answer buttons.",
+    "egg_hatching": "Centered large egg on `egg_hatchery_bg`. Progress bar below showing learning activities completed. Egg cracks based on progress.",
+    "collection": "Bento grid of owned companions and silhouetted locked companions.",
+    "math_academy": "List of subjects where companions can be 'assigned' to train. Drag-and-drop feel or simple assignment buttons.",
+    "parent_dashboard": "Gated by PIN modal. Clean, data-dense but friendly dashboard. Stats cards for Accuracy, Time Played, and Subjects."
+  },
+  "testing": {
+    "rules": "All interactive elements (buttons, links, form inputs, character selectors, math answers, map locations) MUST have a `data-testid` attribute using kebab-case role-based naming (e.g., `data-testid=\"answer-btn-1\"`, `data-testid=\"map-battle-tile\"`)."
+  }
+}
