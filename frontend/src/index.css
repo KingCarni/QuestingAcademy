@@ -1,0 +1,58 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #FDFBF7;
+  --ink: #4A4A4A;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "Nunito", system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  font-weight: 600;
+}
+
+::selection { background: #D8D2FA; color: #4A4A4A; }
+
+/* Custom scrollbar */
+::-webkit-scrollbar { width: 12px; height: 12px; }
+::-webkit-scrollbar-track { background: #F4EFE6; }
+::-webkit-scrollbar-thumb { background: #D8D2FA; border-radius: 999px; border: 3px solid #F4EFE6; }
+::-webkit-scrollbar-thumb:hover { background: #9D8DF1; }
+
+/* Utility classes */
+@layer components {
+  .h-display { font-family: "Fredoka", sans-serif; font-weight: 700; letter-spacing: -0.02em; }
+  .h-bouncy  { font-family: "Fredoka", sans-serif; font-weight: 600; }
+
+  .btn-base {
+    @apply inline-flex items-center justify-center gap-2 font-heading text-lg md:text-xl py-3 px-7 rounded-full transition-all duration-150 active:translate-y-[6px] active:shadow-none disabled:opacity-50 disabled:cursor-not-allowed select-none;
+  }
+  .btn-primary { @apply btn-base bg-primary text-white shadow-btn-primary hover:bg-primary-hover; }
+  .btn-sage    { @apply btn-base bg-sage    text-white shadow-btn-sage    hover:bg-sage-hover; }
+  .btn-gold    { @apply btn-base bg-gold    text-ink   shadow-btn-gold    hover:brightness-105; }
+  .btn-outline { @apply btn-base bg-white   text-primary border-4 border-primary shadow-btn-primary; }
+  .btn-ghost   { @apply btn-base bg-white/70 text-ink hover:bg-white; }
+
+  .card-base   { @apply bg-white/90 backdrop-blur-md rounded-card border-4 border-white/70 shadow-xl shadow-indigo-900/5; }
+  .card-hover  { @apply hover:-translate-y-2 hover:shadow-2xl hover:shadow-indigo-900/10 transition-all duration-300 cursor-pointer; }
+
+  .chip {
+    @apply inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/80 border-2 border-white text-sm font-bold text-ink;
+  }
+
+  .grain::before {
+    content: "";
+    position: absolute; inset: 0; pointer-events: none; opacity: 0.05;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence baseFrequency='0.9' /></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+    mix-blend-mode: multiply;
+  }
+}

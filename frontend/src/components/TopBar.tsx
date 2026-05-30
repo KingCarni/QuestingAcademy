@@ -1,0 +1,75 @@
+import React from "react";
+import { Link, useLocation } from "react-router-dom";
+import { useGame } from "../lib/gameStore";
+import { ChibiAvatar } from "./ChibiAvatar";
+import { Coins, Sparkles, ArrowLeft, Home } from "lucide-react";
+
+interface Props {
+  back?: string;
+  title?: string;
+  rightSlot?: React.ReactNode;
+}
+
+export const TopBar: React.FC<Props> = ({ back, title, rightSlot }) => {
+  const player = useGame((s) => s.player);
+  const loc = useLocation();
+  const isHub = loc.pathname === "/hub";
+
+  return (
+    <header className="sticky top-0 z-30 px-4 md:px-8 pt-4">
+      <div className="card-base flex items-center gap-4 px-4 py-3 md:px-6">
+        {back ? (
+          <Link
+            data-testid="topbar-back-btn"
+            to={back}
+            className="btn-ghost !py-2 !px-4 !text-base"
+            aria-label="Back"
+          >
+            <ArrowLeft size={20} strokeWidth={3} /> Back
+          </Link>
+        ) : !isHub ? (
+          <Link
+            data-testid="topbar-home-btn"
+            to="/hub"
+            className="btn-ghost !py-2 !px-4 !text-base"
+            aria-label="Home"
+          >
+            <Home size={20} strokeWidth={3} /> Hub
+          </Link>
+        ) : null}
+
+        <div className="flex items-center gap-3 min-w-0">
+          {player && (
+            <div className="hidden md:block">
+              <ChibiAvatar config={player.avatar} size={52} />
+            </div>
+          )}
+          <div className="min-w-0">
+            <p className="h-display text-xl md:text-2xl truncate">
+              {title ?? (player?.name ? `Hi, ${player.name}!` : "Questing Academy")}
+            </p>
+            {player && (
+              <p className="text-xs md:text-sm font-bold text-ink-muted">
+                Grade {player.grade} · Level {player.level}
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="ml-auto flex items-center gap-2 md:gap-3">
+          {player && (
+            <>
+              <div data-testid="topbar-xp" className="chip">
+                <Sparkles size={16} strokeWidth={3} className="text-primary" /> {player.xp}/{player.xpToNext} XP
+              </div>
+              <div data-testid="topbar-coins" className="chip">
+                <Coins size={16} strokeWidth={3} className="text-gold" /> {player.coins}
+              </div>
+            </>
+          )}
+          {rightSlot}
+        </div>
+      </div>
+    </header>
+  );
+};
