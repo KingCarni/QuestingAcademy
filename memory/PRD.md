@@ -1,64 +1,58 @@
-# Questing Academy — Frontend MVP PRD
+# Questing Academy — Frontend MVP PRD (v0.5)
 
 ## Concept
-Cute chibi-style educational RPG for Grades K-7. Avatar creation, companion collection, math + reading battles, egg hatching, Learning Academy training, parent progress dashboard, and a full internal **TeachMe Content Studio** for staff-approval workflows.
+Cute chibi-style educational RPG for Grades K-7. Avatar creation, companion collection, math + reading battles, egg hatching, Learning Academy training, parent progress dashboard, and a full internal **TeachMe Content Studio** with structured generator/review forms.
 
 ## Stack & Constraints
 - React + TypeScript SPA (CRA), Tailwind, zustand+persist (localStorage)
-- Theme: lavender / sage / gold / cream "magical academy"
-- No real auth, backend, payments, or child-data handling (prototype only)
+- No real auth/backend/payments/child-data/API keys
 - Parent PIN `1234`, Admin/Studio PIN `2580`
 
-## Architecture
-- `/app/frontend/src/lib/types.ts` — Player, Companion, Question, TrickyEntry, GameSettings
-- `/app/frontend/src/lib/mockData.ts` — companions, enemies, academy subjects, eggs, avatar options
-- `/app/frontend/src/lib/questionEngine.ts` — 16 procedural templates (math + reading, K-7) + difficulty scaling + **approval gate**
-- `/app/frontend/src/lib/gameStore.ts` — gameplay state with spaced-repetition (tricky pool) + admin helpers
-- `/app/frontend/src/lib/studioTypes.ts` — Status enum + 13 collection types
-- `/app/frontend/src/lib/studioStore.ts` — Studio state with seed data + CRUD + publish queue
-- `/app/frontend/src/lib/mockGen.ts` — generators including `mockNanoBananaGenerateImage` (TODO marker for real backend)
-- `/app/frontend/src/lib/speech.ts` — strict en-US narrator voice selection
-- `/app/frontend/src/lib/sfx.ts` — Web Audio SFX
-- Components: TopBar (sound toggle), Card, ProgressBar, ChibiAvatar, CompanionAvatar (illustration url + reveal), SpeechButton, ConfettiBurst, RequirePlayer, **studio/StatusChip, studio/StudioPanel, studio/GeneratorPanel**
-- Pages: Landing, Onboarding, CharacterCreator, StarterPicker, Hub, Battle, EggHatch, Collection, Academy, Parent, AdminDashboard, **ContentStudio**
-
 ## Routes
-- `/` Landing
-- `/onboarding`, `/character`, `/starter`, `/hub`, `/battle`, `/egg`, `/collection`, `/academy` (gated)
-- `/parent` (PIN 1234)
-- `/admin` (PIN 2580) — operational tools
-- `/admin/studio` and `/admin/approvals` — TeachMe Content Studio (PIN 2580)
+- Player: `/`, `/onboarding`, `/character`, `/starter`, `/hub`, `/battle`, `/egg`, `/collection`, `/academy`
+- Parent: `/parent`
+- Staff: `/admin`, `/admin/studio`, `/admin/approvals`
 
 ## Versions
-### v0.1 — MVP (10 screens, math K-2)
-### v0.2 — Senses Pack + K-7 (speech, confetti, hatch reveal, expanded grades + subjects)
-### v0.3 — Pack C + Admin (procedural engine, spaced repetition, reading, Admin Dashboard)
-### v0.4 — TeachMe Content Studio (current)
-- 🛠️ **Content Studio** at `/admin/studio` (alias `/admin/approvals`) with 13 tabs
-- 📝 **Statuses**: draft / generated / pending / approved / published / rejected / archived
-- 🚀 **Approval gate** — battles now consume `studioStore.isTemplatePlayerReady`; only approved/published templates appear. If everything is rejected, engine falls back to a safe `1 + 1 = ?` question (no crash).
-- 🎨 **Mock Nano Banana** — `mockNanoBananaGenerateImage(prompt)` returns a styled inline SVG data URL. `TODO(api):` marker for real Gemini/Nano Banana backend call.
-- 🤖 **Generators** (all output → Pending Review, never live): companions, realms, quests, battle backgrounds, companion art
-- 📤 **Publish Queue** — global queue of approved items; bulk Publish / Archive
-- 🔊 **Narrator voice fix** — strict en-US voice selection, blocks UK/AU/IN/Irish/Scottish voices, sets `utterance.lang="en-US"`, rate 0.92, pitch 1.05
+- v0.1 MVP · v0.2 Senses Pack + K-7 · v0.3 Pack C + Admin · v0.4 Content Studio · **v0.5 TEA-74 Studio Refinement**
 
-## Testing
-- iteration_1: MVP — 100%
-- iteration_2: Senses Pack + K-7 — 100%
-- iteration_3: Pack C + Admin — 95% (tricky-chip visibility fix applied)
-- iteration_4: Content Studio — 93% (1 HIGH fixed: Studio links now visible on /admin even with no player)
+### v0.5 — TEA-74 (current)
+- 📝 **Questions** now grouped: Subject → Topic → Template → Generated Examples. Approval is per-template/concept; "Generate 4 samples" collapsible underneath each card.
+- 🧑 **Avatars**: dropdowns for category & rarity, color picker with saved palettes, category-specific fields (hair/outfit/accessory), ageRange removed.
+- 🐾 **Pets**: full editable stats (HP/ATK/DEF/SPD), affinity/rarity/role dropdowns, shiny recolor variant (stat-safe), live preview, Randomize.
+- 🌱 **Evolutions**: companion **searchable dropdown**, stage selector, evolution name, unlock condition, academy influence, visual notes, stat growth notes, Randomize.
+- 🎨 **Companion Art**: companion search-select, style preset dropdown + "Save new", randomize prompt/title/style. Mock Nano Banana retained with `TODO(api)`.
+- 🎒 **Assets**: kind dropdown, color picker + saved palettes, egg/badge category-specific fields.
+- 🗺️ **Realms**: buildings/hubs multi-select, tone dropdown, style preset, map notes, Randomize.
+- ⚔️ **Battle BGs**: realm dropdown (relationship), time-of-day + mood dropdowns, style preset, randomize prompt.
+- 🏠 **Scenes**: purpose dropdown, realm dropdown, NPC multi-select (relationship), style preset, randomize.
+- 💬 **NPCs**: realm dropdown, role + custom-role field, 7 persona dropdowns (tone, temperament, teaching style, humor, formality, encouragement), randomize name/line.
+- 📜 **Quests**: lightweight + `TODO(roadmap)` — full chain design after RPG systems mature. NPC giver dropdown.
+- 🚀 **Publish Queue**: unchanged behavior, supports new data shape.
+- 🎨 **Reusable presets**: ColorPalette[] + StylePreset[] stored in studio, surfaced in Color/Style pickers across tabs.
 
-## Backlog (P0 / P1 / P2)
-- P1: Persistent Studio session token (single re-login per browser session)
-- P1: Real backend + Emergent Google Auth + multi-device sync
-- P1: Real Gemini/Nano Banana wired to mock generator
-- P1: AI Companion Art Pipeline → populate Companion.illustrationUrl
-- P1: Daily Quest streak card on Hub
-- P2: Studio tab extraction (one file per collection) when more features land
-- P2: Realm map for published realms beyond Meadowfall Grove
-- P2: Multiple child profiles per device
-- P2: Per-template difficulty curve config in Studio
-- P2: Weekly parent email digest mock + Resend integration
+## Architecture additions
+- `lib/randomizer.ts` — name/prompt/stats pools
+- `components/studio/FormFields.tsx` — Field, TextField, TextArea, SelectField, NumberField, ColorField (with palette save), SearchSelect, MultiSelectChips, StylePresetPicker
+- `lib/studioTypes.ts` — extensive enum exports, new shape fields, palettes/stylePresets
+- `lib/studioStore.ts` — bumped persistence key to `v2`, added palette + preset CRUD
 
-## Out of Scope
-Real auth, real backend, payments, real child data, PvP, guilds, teacher platform, marketplace.
+## Testing (manual visual verification)
+- Questions grouped (Math + Reading visible) ✓
+- Pets stats/shiny/role ✓
+- Avatars category-specific reveal + color picker ✓
+- Realms buildings multi-select ✓
+- Battle BGs realm relationship + time/mood ✓
+- NPCs 7 persona dropdowns ✓
+- Publish Queue intact ✓
+- Game loop (landing/battle) unaffected ✓
+- `webpack compiled successfully · No issues found.`
+
+## Backlog
+- P1 Real backend + Emergent Google Auth + multi-device sync
+- P1 Real Gemini/Nano Banana wired
+- P1 AI Companion Art Pipeline → `Companion.illustrationUrl`
+- P1 Quest chain v2 (branching, multi-step gating)
+- P2 Per-collection tab file extraction (ContentStudio.tsx ~1300 lines)
+- P2 Persistent Studio PIN session
+- P2 Live diff preview before publishing

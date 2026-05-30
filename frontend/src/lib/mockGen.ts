@@ -88,12 +88,14 @@ export function mockCompanionConcept(prompt?: string): StudioCompanion {
   const theme = COMPANION_THEMES[idx];
   const personality = PERSONALITIES[Math.floor(Math.random() * PERSONALITIES.length)];
   const rarity = (["common", "rare", "epic"] as const)[Math.floor(Math.random() * 3)];
+  const roles = ["offense", "defense", "support", "balanced"] as const;
   return {
     ...baseMeta("generator"),
     id: uid("companion"),
     name: `${theme.name}-${Math.floor(Math.random() * 90 + 10)}`,
     affinity: theme.affinity as StudioCompanion["affinity"],
     rarity,
+    role: roles[Math.floor(Math.random() * roles.length)],
     personality,
     lore: prompt
       ? `Prompted: "${prompt.slice(0, 80)}". A ${rarity} ${theme.affinity} companion who is a ${personality}.`
@@ -101,6 +103,7 @@ export function mockCompanionConcept(prompt?: string): StudioCompanion {
     academyAffinity: theme.affinity === "fire" ? "multiplication" : theme.affinity === "water" ? "fractions" : "addition",
     moves: MOVES[idx],
     emoji: theme.emoji,
+    stats: { hp: 90, attack: 20, defense: 14, speed: 15 },
     palette: { from: theme.from, to: theme.to },
   };
 }
