@@ -227,6 +227,8 @@ export const ACADEMY_SUBJECTS: AcademySubject[] = [
   { id: "fractions", name: "Fraction Forest", emoji: "🍰", description: "Slice and share fairly.", color: "bg-[#FCE2F0]" },
   { id: "shapes", name: "Shape Atelier", emoji: "🔷", description: "Find sides and corners.", color: "bg-[#E8F4E1]" },
   { id: "counting", name: "Counting Cloister", emoji: "🔢", description: "Step by tiny step.", color: "bg-[#EEF2FB]" },
+  { id: "reading-vocab", name: "Reading Hall", emoji: "📖", description: "Words, meanings, letters.", color: "bg-[#FFF5E6]" },
+  { id: "rhyming", name: "Rhyme Garden", emoji: "🎵", description: "Catch the sounds that match.", color: "bg-[#E6F2FF]" },
 ];
 
 export const STARTER_EGGS: Egg[] = [

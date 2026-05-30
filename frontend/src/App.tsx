@@ -10,6 +10,7 @@ import EggHatch from "./pages/EggHatch";
 import Collection from "./pages/Collection";
 import Academy from "./pages/Academy";
 import Parent from "./pages/Parent";
+import AdminDashboard from "./pages/AdminDashboard";
 import { RequirePlayer } from "./components/RequirePlayer";
 
 const App: React.FC = () => {
@@ -25,6 +26,7 @@ const App: React.FC = () => {
       <Route path="/collection" element={<RequirePlayer requireStarter><Collection /></RequirePlayer>} />
       <Route path="/academy" element={<RequirePlayer requireStarter><Academy /></RequirePlayer>} />
       <Route path="/parent" element={<Parent />} />
+      <Route path="/admin" element={<AdminDashboard />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

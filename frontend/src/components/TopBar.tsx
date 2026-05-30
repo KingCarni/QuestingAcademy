@@ -2,7 +2,7 @@ import React from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useGame } from "../lib/gameStore";
 import { ChibiAvatar } from "./ChibiAvatar";
-import { Coins, Sparkles, ArrowLeft, Home } from "lucide-react";
+import { Coins, Sparkles, ArrowLeft, Home, Volume2, VolumeX } from "lucide-react";
 
 interface Props {
   back?: string;
@@ -12,6 +12,8 @@ interface Props {
 
 export const TopBar: React.FC<Props> = ({ back, title, rightSlot }) => {
   const player = useGame((s) => s.player);
+  const soundOn = useGame((s) => s.settings.soundOn);
+  const setSoundOn = useGame((s) => s.setSoundOn);
   const loc = useLocation();
   const isHub = loc.pathname === "/hub";
 
@@ -67,6 +69,15 @@ export const TopBar: React.FC<Props> = ({ back, title, rightSlot }) => {
               </div>
             </>
           )}
+          <button
+            data-testid="topbar-sound-toggle"
+            onClick={() => setSoundOn(!soundOn)}
+            aria-label={soundOn ? "Turn sound off" : "Turn sound on"}
+            title={soundOn ? "Sound on" : "Sound off"}
+            className="w-9 h-9 rounded-full grid place-items-center bg-white/80 border-2 border-white hover:bg-white"
+          >
+            {soundOn ? <Volume2 size={16} strokeWidth={3} /> : <VolumeX size={16} strokeWidth={3} className="text-ink-muted" />}
+          </button>
           {rightSlot}
         </div>
       </div>

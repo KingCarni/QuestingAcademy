@@ -8,8 +8,12 @@ import type {
   AcademyAssignment,
   ParentReport,
   BattleStats,
+  TrickyEntry,
+  GameSettings,
+  Question,
 } from "./types";
 import { STARTER_EGGS } from "./mockData";
+import { generateQuestion } from "./questionEngine";
 
 // TODO(backend): swap zustand+localStorage for API + auth-bound state when backend exists.
 
@@ -19,6 +23,8 @@ interface GameState {
   academy: AcademyAssignment[];
   parent: ParentReport;
   battleStats: BattleStats;
+  tricky: TrickyEntry[];
+  settings: GameSettings;
 
   // Setup actions
   setGrade: (g: Grade) => void;
@@ -26,16 +32,30 @@ interface GameState {
   pickStarter: (companionId: string) => void;
   resetAll: () => void;
 
-  // Gameplay actions
-  awardBattle: (
-    xp: number,
-    coins: number,
-    eggProgress: number
-  ) => { leveledUp: boolean; newLevel: number };
+  // Gameplay
+  awardBattle: (xp: number, coins: number, eggProgress: number) => { leveledUp: boolean; newLevel: number };
   trackQuestion: (correct: boolean, topic: string, timeSec: number) => void;
   setActiveCompanion: (companionId: string) => void;
   assignCompanionToSubject: (subjectId: string, companionId: string | null) => void;
-  hatchIfReady: () => string[]; // returns newly hatched companion ids
+  hatchIfReady: () => string[];
+
+  // Question pipeline (procedural + spaced repetition)
+  nextQuestion: () => Question;
+  recordWrong: (q: Question) => void;
+  recordCorrect: (q: Question) => void;
+
+  // Settings
+  setSubjectMode: (m: GameSettings["subjectMode"]) => void;
+  toggleTemplate: (id: string, enabled: boolean) => void;
+  setSoundOn: (on: boolean) => void;
+
+  // Admin / debug helpers
+  adminUpdatePlayer: (patch: Partial<Player>) => void;
+  adminGrantCompanion: (id: string) => void;
+  adminRevokeCompanion: (id: string) => void;
+  adminSetEggProgress: (eggId: string, progress: number, hatched?: boolean) => void;
+  adminResetEggs: () => void;
+  adminClearTricky: () => void;
 }
 
 const baseParent: ParentReport = {
@@ -50,9 +70,19 @@ const baseParent: ParentReport = {
 const baseAcademy: AcademyAssignment[] = [
   { subjectId: "addition", companionId: null, progress: 0 },
   { subjectId: "subtraction", companionId: null, progress: 0 },
+  { subjectId: "multiplication", companionId: null, progress: 0 },
+  { subjectId: "fractions", companionId: null, progress: 0 },
   { subjectId: "shapes", companionId: null, progress: 0 },
   { subjectId: "counting", companionId: null, progress: 0 },
+  { subjectId: "reading-vocab", companionId: null, progress: 0 },
+  { subjectId: "rhyming", companionId: null, progress: 0 },
 ];
+
+const baseSettings: GameSettings = {
+  subjectMode: "mixed",
+  disabledTemplateIds: [],
+  soundOn: true,
+};
 
 const newPlayer = (): Player => ({
   id: "local-" + Date.now(),
@@ -76,6 +106,9 @@ const newPlayer = (): Player => ({
   createdAt: new Date().toISOString(),
 });
 
+// Spaced repetition cadence (in questions answered) per stage.
+const STAGE_INTERVAL = [2, 5, 10, 20]; // graduate after stage >= 4
+
 export const useGame = create<GameState>()(
   persist(
     (set, get) => ({
@@ -84,6 +117,8 @@ export const useGame = create<GameState>()(
       academy: baseAcademy,
       parent: baseParent,
       battleStats: { totalBattles: 0, totalQuestions: 0, totalCorrect: 0 },
+      tricky: [],
+      settings: baseSettings,
 
       setGrade: (g) =>
         set((s) => {
@@ -117,6 +152,8 @@ export const useGame = create<GameState>()(
           academy: baseAcademy,
           parent: baseParent,
           battleStats: { totalBattles: 0, totalQuestions: 0, totalCorrect: 0 },
+          tricky: [],
+          settings: baseSettings,
         }),
 
       awardBattle: (xp, coins, eggProgress) => {
@@ -162,13 +199,15 @@ export const useGame = create<GameState>()(
           } else {
             sessions.push({ date: today, minutes: minutesAdded, accuracy: acc });
           }
-          // Bump academy progress on correct answers
-          const academy = s.academy.map((a) =>
-            a.subjectId === topic
-              ? { ...a, progress: Math.min(100, a.progress + (correct ? 8 : 2)) }
-              : a
-          );
-          // bonus highlight
+          // Academy: map question topic → subject id used in academy assignments
+          const subjectId = mapTopicToSubject(topic);
+          const academy = subjectId
+            ? s.academy.map((a) =>
+                a.subjectId === subjectId
+                  ? { ...a, progress: Math.min(100, a.progress + (correct ? 8 : 2)) }
+                  : a
+              )
+            : s.academy;
           const highlights = [...s.parent.highlights];
           if (newC === 5 && !highlights.includes("First 5 correct! 🌟")) {
             highlights.push("First 5 correct! 🌟");
@@ -196,9 +235,7 @@ export const useGame = create<GameState>()(
         }),
 
       setActiveCompanion: (companionId) =>
-        set((s) =>
-          s.player ? { player: { ...s.player, activeCompanionId: companionId } } : s
-        ),
+        set((s) => (s.player ? { player: { ...s.player, activeCompanionId: companionId } } : s)),
 
       assignCompanionToSubject: (subjectId, companionId) =>
         set((s) => ({
@@ -230,6 +267,116 @@ export const useGame = create<GameState>()(
         }
         return hatched;
       },
+
+      // -- Question pipeline ----------------------------------------------------
+      nextQuestion: () => {
+        const s = get();
+        const grade = s.player?.grade ?? "K";
+        const idx = s.battleStats.totalQuestions;
+        // 1) Pull from tricky pool if any entry is due (~50% probability so generator still surprises)
+        const due = s.tricky.filter((t) => t.resurfaceAtIndex <= idx);
+        if (due.length && Math.random() < 0.55) {
+          const entry = due[Math.floor(Math.random() * due.length)];
+          return { ...entry.question, source: "tricky" };
+        }
+        const acc = s.battleStats.totalQuestions
+          ? s.battleStats.totalCorrect / s.battleStats.totalQuestions
+          : 0.6;
+        return generateQuestion(grade, s.settings.subjectMode, s.settings.disabledTemplateIds, acc);
+      },
+
+      recordWrong: (q) =>
+        set((s) => {
+          // Only track template-generated or tricky questions
+          if (q.source !== "template" && q.source !== "tricky") return {};
+          const idx = s.battleStats.totalQuestions;
+          // If already in tricky pool, demote stage to 0 and schedule sooner.
+          const existing = s.tricky.find((t) => t.question.templateId === q.templateId && t.question.prompt === q.prompt);
+          if (existing) {
+            const next = s.tricky.map((t) =>
+              t === existing ? { ...t, stage: 0, addedAtIndex: idx, resurfaceAtIndex: idx + STAGE_INTERVAL[0] } : t
+            );
+            return { tricky: next };
+          }
+          const entry: TrickyEntry = {
+            question: { ...q },
+            stage: 0,
+            addedAtIndex: idx,
+            resurfaceAtIndex: idx + STAGE_INTERVAL[0],
+          };
+          // Cap size to avoid runaway storage
+          const trimmed = [...s.tricky, entry].slice(-50);
+          return { tricky: trimmed };
+        }),
+
+      recordCorrect: (q) =>
+        set((s) => {
+          const idx = s.battleStats.totalQuestions;
+          const existing = s.tricky.find(
+            (t) => t.question.templateId === q.templateId && t.question.prompt === q.prompt
+          );
+          if (!existing) return {};
+          const nextStage = existing.stage + 1;
+          if (nextStage >= STAGE_INTERVAL.length) {
+            // Graduate — remove
+            return { tricky: s.tricky.filter((t) => t !== existing) };
+          }
+          return {
+            tricky: s.tricky.map((t) =>
+              t === existing
+                ? { ...t, stage: nextStage, resurfaceAtIndex: idx + STAGE_INTERVAL[nextStage] }
+                : t
+            ),
+          };
+        }),
+
+      // -- Settings -----------------------------------------------------------
+      setSubjectMode: (m) => set((s) => ({ settings: { ...s.settings, subjectMode: m } })),
+      toggleTemplate: (id, enabled) =>
+        set((s) => {
+          const cur = new Set(s.settings.disabledTemplateIds);
+          if (enabled) cur.delete(id);
+          else cur.add(id);
+          return { settings: { ...s.settings, disabledTemplateIds: Array.from(cur) } };
+        }),
+      setSoundOn: (on) => set((s) => ({ settings: { ...s.settings, soundOn: on } })),
+
+      // -- Admin --------------------------------------------------------------
+      adminUpdatePlayer: (patch) =>
+        set((s) => (s.player ? { player: { ...s.player, ...patch } } : s)),
+      adminGrantCompanion: (id) =>
+        set((s) =>
+          s.player
+            ? {
+                player: {
+                  ...s.player,
+                  ownedCompanionIds: Array.from(new Set([...s.player.ownedCompanionIds, id])),
+                },
+              }
+            : s
+        ),
+      adminRevokeCompanion: (id) =>
+        set((s) =>
+          s.player
+            ? {
+                player: {
+                  ...s.player,
+                  ownedCompanionIds: s.player.ownedCompanionIds.filter((c) => c !== id),
+                  activeCompanionId: s.player.activeCompanionId === id ? null : s.player.activeCompanionId,
+                },
+              }
+            : s
+        ),
+      adminSetEggProgress: (eggId, progress, hatched) =>
+        set((s) => ({
+          eggs: s.eggs.map((e) =>
+            e.id === eggId
+              ? { ...e, progress: Math.max(0, Math.min(100, progress)), hatched: hatched ?? e.hatched }
+              : e
+          ),
+        })),
+      adminResetEggs: () => set({ eggs: STARTER_EGGS }),
+      adminClearTricky: () => set({ tricky: [] }),
     }),
     {
       name: "questing-academy-state-v1",
@@ -237,3 +384,23 @@ export const useGame = create<GameState>()(
     }
   )
 );
+
+// Map free-form topic strings → academy subject ids so progress increments correctly.
+function mapTopicToSubject(topic: string): string | null {
+  switch (topic) {
+    case "addition": return "addition";
+    case "subtraction": return "subtraction";
+    case "multiplication": return "multiplication";
+    case "division": return "multiplication"; // share with multiplication hall
+    case "fractions": return "fractions";
+    case "percents": return "fractions";
+    case "shapes": return "shapes";
+    case "counting": return "counting";
+    case "comparison": return "counting";
+    case "algebra": return "fractions";
+    case "rhyming": return "rhyming";
+    case "letter-sounds": return "reading-vocab";
+    case "vocabulary": return "reading-vocab";
+    default: return null;
+  }
+}

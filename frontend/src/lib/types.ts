@@ -56,20 +56,14 @@ export interface Companion {
 export interface Question {
   id: string;
   grade: Grade;
-  topic:
-    | "addition"
-    | "subtraction"
-    | "counting"
-    | "comparison"
-    | "shapes"
-    | "multiplication"
-    | "division"
-    | "fractions"
-    | "decimals"
-    | "algebra";
+  subject?: "math" | "reading";
+  topic: string;
   prompt: string;
   choices: string[];
   answerIndex: number;
+  // Where this question came from. Useful for admin/debug.
+  source?: "template" | "static" | "tricky";
+  templateId?: string;
 }
 
 export interface Enemy {
@@ -119,4 +113,19 @@ export interface BattleStats {
   totalBattles: number;
   totalQuestions: number;
   totalCorrect: number;
+}
+
+export interface TrickyEntry {
+  question: Question;
+  stage: number;          // 0 = new wrong, 1 = seen once correctly, etc.
+  addedAtIndex: number;   // totalQuestions index when added
+  resurfaceAtIndex: number;
+}
+
+export type SubjectMode = "math" | "reading" | "mixed";
+
+export interface GameSettings {
+  subjectMode: SubjectMode;
+  disabledTemplateIds: string[];
+  soundOn: boolean;
 }

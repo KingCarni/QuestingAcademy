@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { TopBar } from "../components/TopBar";
 import { Card } from "../components/Card";
@@ -7,10 +7,10 @@ import { ProgressBar } from "../components/ProgressBar";
 import { SpeechButton } from "../components/SpeechButton";
 import { ConfettiBurst } from "../components/ConfettiBurst";
 import { useGame } from "../lib/gameStore";
-import { COMPANIONS, ENEMIES, QUESTIONS } from "../lib/mockData";
+import { COMPANIONS, ENEMIES } from "../lib/mockData";
 import type { Enemy, Question } from "../lib/types";
 import { sfx } from "../lib/sfx";
-import { Swords, Shield, Sparkles, Coins, Heart } from "lucide-react";
+import { Swords, Shield, Sparkles, Coins, Heart, BookOpen } from "lucide-react";
 
 type Phase = "intro" | "question" | "feedback" | "victory" | "defeat";
 
@@ -22,6 +22,10 @@ const Battle: React.FC = () => {
   const awardBattle = useGame((s) => s.awardBattle);
   const trackQuestion = useGame((s) => s.trackQuestion);
   const hatchIfReady = useGame((s) => s.hatchIfReady);
+  const nextQuestion = useGame((s) => s.nextQuestion);
+  const recordWrong = useGame((s) => s.recordWrong);
+  const recordCorrect = useGame((s) => s.recordCorrect);
+  const soundOn = useGame((s) => s.settings.soundOn);
   const companion = COMPANIONS.find((c) => c.id === player.activeCompanionId)!;
 
   const startTimeRef = useRef<number>(Date.now());
@@ -40,9 +44,8 @@ const Battle: React.FC = () => {
   const [confettiActive, setConfettiActive] = useState(false);
   const [levelUp, setLevelUp] = useState<number | null>(null);
 
-  const questionPool = useMemo(() => QUESTIONS.filter((q) => q.grade === player.grade), [player.grade]);
-
-  const newQuestion = () => setQuestion(pickRandom(questionPool));
+  // Question source: procedural engine + spaced repetition (see gameStore.nextQuestion)
+  const newQuestion = () => setQuestion(nextQuestion());
 
   const startTurn = (m: "attack" | "defend" | "special") => {
     setMove(m);
@@ -58,6 +61,9 @@ const Battle: React.FC = () => {
     const tSec = (Date.now() - startTimeRef.current) / 1000;
     startTimeRef.current = Date.now();
     trackQuestion(correct, question.topic, tSec);
+    // Spaced repetition bookkeeping
+    if (correct) recordCorrect(question);
+    else recordWrong(question);
 
     // Damage logic
     const baseDmg = move === "attack" ? 22 : move === "special" ? 30 : 10;
@@ -66,16 +72,19 @@ const Battle: React.FC = () => {
     setEnemyHp(newEnemyHp);
     setShake("enemy");
     setLastCorrect(correct);
+    const fromTricky = question.source === "tricky";
     setLastFeedback(
       correct
-        ? `✨ Sparkle strike! ${dmg} damage to ${enemy.name}.`
-        : `Almost! Just ${dmg} damage. Right answer was ${question.choices[question.answerIndex]}.`
+        ? `✨ Sparkle strike! ${dmg} damage to ${enemy.name}.${fromTricky ? " (Tricky question — nice recovery!)" : ""}`
+        : `Almost! Just ${dmg} damage. Right answer was ${question.choices[question.answerIndex]}.${fromTricky ? " We'll bring this one back later." : ""}`
     );
     setPhase("feedback");
 
     // Sound feedback (user-triggered click, so autoplay-policy safe)
-    if (correct) sfx.sparkle();
-    else sfx.ding();
+    if (soundOn) {
+      if (correct) sfx.sparkle();
+      else sfx.ding();
+    }
 
     setTimeout(() => setShake(null), 450);
 
@@ -87,10 +96,10 @@ const Battle: React.FC = () => {
         if (leveledUp) {
           setLevelUp(newLevel);
           setConfettiActive(true);
-          sfx.levelUp();
+          if (soundOn) sfx.levelUp();
         } else if (hatched.length) {
           setConfettiActive(true);
-          sfx.hatch();
+          if (soundOn) sfx.hatch();
         }
         setPhase("victory");
       }, 700);
@@ -112,12 +121,6 @@ const Battle: React.FC = () => {
       }
     }, 1800);
   };
-
-  useEffect(() => {
-    // soft intro pause
-    const t = setTimeout(() => {}, 100);
-    return () => clearTimeout(t);
-  }, []);
 
   return (
     <div className="min-h-screen pb-12">
@@ -192,7 +195,19 @@ const Battle: React.FC = () => {
         {phase === "question" && question && (
           <Card>
             <div className="flex items-center justify-between gap-3 mb-1">
-              <p className="text-sm font-extrabold uppercase tracking-wider text-primary">{question.topic}</p>
+              <div className="flex items-center gap-2 flex-wrap">
+                <p className="text-sm font-extrabold uppercase tracking-wider text-primary">{question.topic}</p>
+                {question.subject === "reading" && (
+                  <span className="chip bg-[#FFF5E6] border-[#F4C753]/40 text-[#8A6620]">
+                    <BookOpen size={12} strokeWidth={3} /> Reading
+                  </span>
+                )}
+                {question.source === "tricky" && (
+                  <span data-testid="battle-tricky-chip" className="chip bg-[#FCE2F0] border-[#D77DA5]/40 text-[#8A2462]">
+                    🔁 Tricky review
+                  </span>
+                )}
+              </div>
               <SpeechButton text={question.prompt} testid="battle-speech-btn" />
             </div>
             <p data-testid="battle-question-prompt" className="h-display text-3xl md:text-4xl mb-5">{question.prompt}</p>

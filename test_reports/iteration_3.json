@@ -1,0 +1,33 @@
+{
+  "summary": "Frontend-only regression + Pack C (Smarter Learning + Admin Dashboard) testing. Ran full happy path Landing -> Onboarding -> Character -> Starter -> Hub -> Battle -> Egg -> Collection -> Academy -> Parent via Playwright with zero console errors. Verified procedural question engine (3+ unique prompts in 4 plays), reading-only mode, mixed mode, Admin PIN gate (wrong PIN error + 2580 unlock), template library (16 toggles + previews), companion grant/revoke/active, egg slider + force-hatch, sound toggle on TopBar, Parent->Admin link, admin-reset-all clears player, 8 academy cards including reading-vocab + rhyming, and localStorage persistence. Wrong answers correctly enter the tricky pool (battle feedback says \"We'll bring this one back later.\").",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Spaced-repetition tricky chip resurface (battle-tricky-chip)",
+        "issue": "Could not visually confirm the 🔁 'Tricky review' chip resurfacing within 10 follow-up questions during the automated run. The wrong-answer feedback (\"We'll bring this one back later\") fired and gameStore.recordWrong logic is correct, but the 55% probabilistic resurfacing + the fact that battles only have 6 questions (Battle.tsx defaults) means a fresh battle starts before the resurface index is reached. Recommend either (a) raising resurface probability when only 1 tricky entry exists, or (b) prioritising tricky pool the moment resurfaceAtIndex<=idx within the same battle session. Engine logic itself appears correct; this is a UX/observability concern.",
+        "affected_selectors": ["battle-tricky-chip"]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/test_reports/iteration_3.json"],
+  "action_items": [
+    "Optional: surface tricky-pool entries more aggressively (e.g., 100% probability when only 1 entry due) so battle-tricky-chip is observable in QA without 10+ questions."
+  ],
+  "critical_code_review_comments": [
+    "AdminDashboard NumberStat exposes the container via data-testid (admin-stat-level/xp/coins) but the +/- buttons inside have NO individual testids. Spec wording is satisfied (container testids exist and the buttons mutate values), but adding admin-stat-level-inc/dec etc. would make automated testing more deterministic.",
+    "gameStore.nextQuestion: tricky-resurface probability is hardcoded to 0.55 — consider exposing as a setting or scaling with tricky-pool size.",
+    "AdminDashboard.tsx is 456 lines; close to the 700-line threshold but still acceptable. Future sections (e.g., template editor) should be extracted into sub-files.",
+    "questionEngine ALGEBRA_LINEAR uses Math.random for operator+sign but the resulting equation x - a = right can produce right < 0; numericDistractors guards against negative distractors, which can occasionally collapse to <4 unique choices before fallback. Fallback works but the fallback values (multiples of 7) look out-of-place. Minor."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (frontend-only request)", "frontend": "~95%"},
+  "seed_data_creation": "None. Tested via natural flow (clear localStorage -> onboarding).",
+  "test_credentials": "Parent PIN 1234, Admin PIN 2580 — both verified working.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Verified test ids: landing-play-btn, grade-card-{K..7}, onboarding-next-btn, avatar-name-input, character-continue-btn, starter-card-{id}, starter-confirm-btn, hub-tile-battle, battle-move-attack, battle-question-prompt, battle-answer-{0..3}, battle-next-btn, battle-feedback-text, topbar-sound-toggle, topbar-xp, topbar-coins, admin-pin-input/submit/error, admin-mode-math/reading/mixed, admin-grade-{K..7}, admin-stat-level/xp/coins (container only; +/- inside), admin-grant/revoke/active-{id}, admin-egg-slider/hatch-{id}, admin-template-{id}/toggle-{id}/preview-{id} (16 each), admin-clear-tricky, admin-reset-all, admin-go-hub, parent-admin-link, academy-card-reading-vocab, academy-card-rhyming. Procedural id prefix 'gen-' is correctly applied. Mixed/reading subject modes confirmed to gate generator correctly. Wrong-answer feedback text: \"...Right answer was X. We'll bring this one back later.\"",
+  "rca_of_the_issue": "No real bugs found. During testing, a self-inflicted page error (\"Cannot read properties of undefined (reading 'from')\") appeared when I injected a partial state into localStorage that omitted some persisted fields — this is a test artifact from incomplete seeding, NOT a production bug. The natural-flow run produced ZERO console errors across all routes."
+}

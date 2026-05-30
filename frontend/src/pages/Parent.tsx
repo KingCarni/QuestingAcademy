@@ -74,6 +74,11 @@ const Parent: React.FC = () => {
             </div>
             <Link to="/hub" data-testid="parent-go-hub" className="btn-outline !text-base">Open the game</Link>
           </div>
+          <div className="mt-3">
+            <Link to="/admin" data-testid="parent-admin-link" className="text-xs font-extrabold text-primary hover:underline">
+              Staff / admin tools →
+            </Link>
+          </div>
         </Card>
 
         <section className="grid sm:grid-cols-2 md:grid-cols-4 gap-4">
