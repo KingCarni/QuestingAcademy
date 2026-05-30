@@ -273,11 +273,15 @@ export const useGame = create<GameState>()(
         const s = get();
         const grade = s.player?.grade ?? "K";
         const idx = s.battleStats.totalQuestions;
-        // 1) Pull from tricky pool if any entry is due (~50% probability so generator still surprises)
+        // Pull from tricky pool if any entry is due. Probability scales with pool size
+        // so QA + kids visibly see the spaced-repetition chip after a wrong answer.
         const due = s.tricky.filter((t) => t.resurfaceAtIndex <= idx);
-        if (due.length && Math.random() < 0.55) {
-          const entry = due[Math.floor(Math.random() * due.length)];
-          return { ...entry.question, source: "tricky" };
+        if (due.length) {
+          const prob = Math.min(0.95, 0.75 + due.length * 0.05);
+          if (Math.random() < prob) {
+            const entry = due[Math.floor(Math.random() * due.length)];
+            return { ...entry.question, source: "tricky" };
+          }
         }
         const acc = s.battleStats.totalQuestions
           ? s.battleStats.totalCorrect / s.battleStats.totalQuestions
