@@ -102,6 +102,22 @@ const AdminDashboard: React.FC = () => {
             </div>
             <Link to="/hub" data-testid="admin-go-hub" className="btn-outline ml-auto !text-base">Open game</Link>
           </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Link
+              to="/admin/studio"
+              data-testid="admin-open-studio"
+              className="btn-primary !text-sm !py-2 !px-4"
+            >
+              <ShieldCheck size={14} strokeWidth={3} /> Open Content Studio →
+            </Link>
+            <Link
+              to="/admin/approvals"
+              data-testid="admin-open-approvals"
+              className="btn-outline !text-sm !py-2 !px-4"
+            >
+              Review Content (approvals)
+            </Link>
+          </div>
         </Card>
 
         {/* PLAYER */}

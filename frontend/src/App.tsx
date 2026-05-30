@@ -11,6 +11,7 @@ import Collection from "./pages/Collection";
 import Academy from "./pages/Academy";
 import Parent from "./pages/Parent";
 import AdminDashboard from "./pages/AdminDashboard";
+import ContentStudio from "./pages/ContentStudio";
 import { RequirePlayer } from "./components/RequirePlayer";
 
 const App: React.FC = () => {
@@ -27,6 +28,8 @@ const App: React.FC = () => {
       <Route path="/academy" element={<RequirePlayer requireStarter><Academy /></RequirePlayer>} />
       <Route path="/parent" element={<Parent />} />
       <Route path="/admin" element={<AdminDashboard />} />
+      <Route path="/admin/studio" element={<ContentStudio />} />
+      <Route path="/admin/approvals" element={<ContentStudio />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

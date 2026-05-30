@@ -405,12 +405,19 @@ export const ALL_TEMPLATES: Template[] = [
   LETTER_START, RHYMING, VOCAB_SYN, VOCAB_ANT,
 ];
 
-export function templatesForGrade(grade: Grade, subjectMode: "math" | "reading" | "mixed", disabled: string[] = []): Template[] {
+export function templatesForGrade(
+  grade: Grade,
+  subjectMode: "math" | "reading" | "mixed",
+  disabled: string[] = [],
+  isApproved?: (templateId: string) => boolean,
+): Template[] {
   return ALL_TEMPLATES.filter((t) => {
     if (disabled.includes(t.id)) return false;
     if (!t.grades.includes(grade)) return false;
     if (subjectMode === "math" && t.subject !== "math") return false;
     if (subjectMode === "reading" && t.subject !== "reading") return false;
+    // Studio approval gate — if a checker is supplied, only let approved/published through.
+    if (isApproved && !isApproved(t.id)) return false;
     return true;
   });
 }
@@ -420,8 +427,9 @@ export function generateQuestion(
   subjectMode: "math" | "reading" | "mixed",
   disabled: string[],
   accuracy: number,
+  isApproved?: (templateId: string) => boolean,
 ): Question {
-  const pool = templatesForGrade(grade, subjectMode, disabled);
+  const pool = templatesForGrade(grade, subjectMode, disabled, isApproved);
   if (pool.length === 0) {
     // Safe fallback so battles never crash if admin disabled everything.
     return {

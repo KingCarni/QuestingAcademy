@@ -1,0 +1,36 @@
+{
+  "summary": "Frontend-only testing of the new Content Studio (Pack D). Verified PIN gate (2580 wrong/right), all 13 tabs render, /admin/approvals shares the same component, 16 question templates with working filters + preview + approve/reject/publish/archive cycle, every non-question tab exposes the {tab}-generator panel + {tab}-generate-btn + {tab}-approve/-publish/-reject/-archive/-resend testids, Nano Banana mock returns inline SVG data URLs visible in Companion Art + Battle BGs, Publish Queue checkboxes + queue-publish-selected/queue-archive-selected bulk actions work and published items disappear from the queue, player-facing gate works (rejecting all 16 templates still produces a safe fallback prompt '1 + 1 = ?' in battle — engine does NOT crash), battle-speech-btn clicks without error in headless, localStorage persists across reload. Re-verified ZERO 'Maximum update depth exceeded' errors and ZERO console errors across full navigation including all 13 tabs.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "AdminDashboard",
+        "issue": "admin-open-studio and admin-open-approvals buttons are unreachable when no player exists in localStorage. The early-return `if (!player) return <NoPlayer/>` at AdminDashboard.tsx:74 renders the 'No player yet' card BEFORE the Studio link row at lines 105-120, so a fresh visitor (or anyone who ran admin-reset-all) sees ONLY the 'Go to landing' stub and cannot enter the Studio from /admin. The Studio is a staff/content tool and should not depend on a child player existing. Spec explicitly asks: \"Regression: /admin (PIN 2580) still works, has new 'admin-open-studio' and 'admin-open-approvals' buttons linking to studio\".",
+        "selector": "[data-testid=\"admin-open-studio\"], [data-testid=\"admin-open-approvals\"]",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/test_reports/iteration_4.json"],
+  "action_items": [
+    "Move the admin-open-studio / admin-open-approvals link row (AdminDashboard.tsx lines 105-120) ABOVE the `if (!player) return <NoPlayer />` early return at line 74, OR render them inside the NoPlayer stub. Studio access must be independent of player state."
+  ],
+  "critical_code_review_comments": [
+    "AdminDashboard.tsx: studio entry buttons placed inside the player-required render branch — guard ordering bug (see action_items).",
+    "ContentStudio.tsx (~700 lines) — already at the soft size threshold. As more tab-specific item renderers/editors are added, consider extracting per-collection tab components (QuestionsTab.tsx, AvatarsTab.tsx, etc.) so each tab can grow features independently.",
+    "GeneratorPanel uses testid pattern `${prefix}-input-${field.key}` for inputs. The review request spec mentioned 'input fields' generically — current pattern is fine and discoverable but worth documenting so future testers don't guess `${prefix}-field-${key}`.",
+    "Studio PIN session does not persist across hard navigations away from /admin/studio (every re-entry requires re-typing 2580). Acceptable for a prototype security UX, but worth noting that admin-open-studio click from /admin requires re-PIN, which slightly contradicts 'shares the same 2580 PIN as Admin' intent.",
+    "questionEngine fallback (id: 'fallback-...') successfully produces a safe '1 + 1 = ?' question when all 16 templates are rejected — confirmed no crash and the prompt renders. Excellent guard.",
+    "Nano Banana mock returns data:image/svg+xml URLs as expected; images render in both Companion Art and Battle BGs tabs."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (frontend-only request)", "frontend": "~93%"},
+  "seed_data_creation": "None — tested via natural onboarding flow (localStorage.clear -> grade 3 -> avatar name 'TK' -> first starter).",
+  "test_credentials": "Parent PIN 1234, Admin PIN 2580, Studio PIN 2580 — all verified working as documented in /app/memory/test_credentials.md.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All Content Studio test ids confirmed working: studio-pin-input, studio-pin-submit, studio-pin-error, studio-tab-{questions|avatars|companions|evolutions|arts|assets|realms|battleBgs|scenes|npcs|quests|events|queue}, studio-panel-{tab}, {tab}-card-{id}, {tab}-filter-{all|pending|approved|published|rejected}, {tab}-approve/publish/reject/archive/resend-{id}, {tab}-generator, {tab}-generate-btn, {tab}-input-{fieldKey}, questions-preview-{tid}, queue-check-{id}, queue-publish-selected, queue-archive-selected. After rejecting all 16 question templates, Battle still renders '1 + 1 = ?' fallback (no crash). battle-speech-btn exists in /battle. Studio PIN must be re-entered each time you navigate into /admin/studio or /admin/approvals (no session). Seed counts observed in Publish Queue (approved items): 25 items by default (mix from approved seed templates + approved avatars + companions etc).",
+  "rca_of_the_issue": "Bug: admin-open-studio + admin-open-approvals hidden for fresh users. Reproduction: 1) Clear localStorage. 2) Visit /admin, enter PIN 2580. 3) Observe the 'No player yet' card with ONLY a 'Go to landing' link — no Studio buttons. Root cause: AdminDashboard.tsx places the early `if (!player) return <NoPlayer/>` (line 74) BEFORE the Studio link Card (lines 105-120). Fix: hoist the Studio link Card above the player-required branch (or render inside the NoPlayer stub) so Studio access works regardless of child onboarding state."
+}

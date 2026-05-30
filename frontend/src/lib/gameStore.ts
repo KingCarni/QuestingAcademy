@@ -14,6 +14,7 @@ import type {
 } from "./types";
 import { STARTER_EGGS } from "./mockData";
 import { generateQuestion } from "./questionEngine";
+import { useStudio } from "./studioStore";
 
 // TODO(backend): swap zustand+localStorage for API + auth-bound state when backend exists.
 
@@ -286,7 +287,9 @@ export const useGame = create<GameState>()(
         const acc = s.battleStats.totalQuestions
           ? s.battleStats.totalCorrect / s.battleStats.totalQuestions
           : 0.6;
-        return generateQuestion(grade, s.settings.subjectMode, s.settings.disabledTemplateIds, acc);
+        const isApproved = (templateId: string) =>
+          useStudio.getState().isTemplatePlayerReady(templateId);
+        return generateQuestion(grade, s.settings.subjectMode, s.settings.disabledTemplateIds, acc, isApproved);
       },
 
       recordWrong: (q) =>
