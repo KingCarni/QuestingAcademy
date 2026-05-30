@@ -96,7 +96,7 @@ const Battle: React.FC = () => {
       } else {
         setPhase("intro");
       }
-    }, 900);
+    }, 1800);
   };
 
   useEffect(() => {
