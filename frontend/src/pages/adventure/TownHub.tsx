@@ -21,18 +21,18 @@ interface BuildingConfig {
 }
 
 const BUILDING_MAP: Record<string, BuildingConfig> = {
-  "learning-academy": { label: "Academy", icon: GraduationCap, to: "/academy", color: "bg-sage text-white", emoji: "🎓", description: "Practice math & reading with friendly tutors.", pos: { left: "20%", top: "30%" }, npcRole: "teacher" },
-  hatchery: { label: "Hatchery", icon: Egg, to: "/egg", color: "bg-gold text-ink", emoji: "🥚", description: "Warm your egg and meet a new companion!", pos: { left: "78%", top: "28%" }, npcRole: "caretaker" },
-  "town-hub": { label: "Battle Path", icon: Swords, to: "/battle", color: "bg-primary text-white", emoji: "⚔️", description: "Start an adventure and challenge cozy critters.", pos: { left: "50%", top: "22%" } },
-  "quest-board": { label: "Quest Board", icon: Scroll, to: "/adventure/quests", color: "bg-[#FF9F68] text-white", emoji: "📜", description: "See today's quests and pick a mission.", pos: { left: "32%", top: "60%" }, npcRole: "quest-giver" },
-  shop: { label: "Shop", icon: ShoppingBag, color: "bg-white text-ink-muted", emoji: "🛍️", description: "Stickers, hats, and sparkles. (Coming soon)", pos: { left: "68%", top: "60%" }, npcRole: "shopkeeper" },
-  "guild-hall": { label: "Guild Hall", icon: Users, color: "bg-white text-ink-muted", emoji: "🏰", description: "Team up with classmates. (Coming soon)", pos: { left: "85%", top: "55%" }, npcRole: "guide" },
-  "companion-habitat": { label: "Habitat", icon: Users, color: "bg-white text-ink-muted", emoji: "🌿", description: "Hang out with your pets in their home. (Coming soon)", pos: { left: "12%", top: "55%" } },
-  "boss-gate": { label: "Boss Gate", icon: DoorClosed, color: "bg-white text-ink-muted", emoji: "🚪", description: "A bigger challenge awaits beyond. (Coming soon)", pos: { left: "50%", top: "78%" } },
+  "learning-academy": { label: "Academy", icon: GraduationCap, to: "/academy", color: "bg-sage text-white", emoji: "🎓", description: "Practice math & reading with friendly tutors.", pos: { left: "25%", top: "18%" }, npcRole: "teacher" },
+  hatchery: { label: "Hatchery", icon: Egg, to: "/egg", color: "bg-gold text-ink", emoji: "🥚", description: "Warm your egg and meet a new companion!", pos: { left: "58%", top: "14%" }, npcRole: "caretaker" },
+  "town-hub": { label: "Battle Path", icon: Swords, to: "/battle", color: "bg-primary text-white", emoji: "⚔️", description: "Start an adventure and challenge cozy critters.", pos: { left: "52%", top: "82%" } },
+  "quest-board": { label: "Quest Board", icon: Scroll, to: "/adventure/quests", color: "bg-[#FF9F68] text-white", emoji: "📜", description: "See today's quests and pick a mission.", pos: { left: "83%", top: "54%" }, npcRole: "quest-giver" },
+  shop: { label: "Shop", icon: ShoppingBag, color: "bg-white text-ink-muted", emoji: "🛍️", description: "Stickers, hats, and sparkles. (Coming soon)", pos: { left: "20%", top: "68%" }, npcRole: "shopkeeper" },
+  "guild-hall": { label: "Guild Hall", icon: Users, color: "bg-white text-ink-muted", emoji: "🏰", description: "Team up with classmates. (Coming soon)", pos: { left: "73%", top: "32%" }, npcRole: "guide" },
+  "companion-habitat": { label: "Habitat", icon: Users, color: "bg-white text-ink-muted", emoji: "🌿", description: "Hang out with your pets in their home. (Coming soon)", pos: { left: "12%", top: "50%" } },
+  "boss-gate": { label: "Boss Gate", icon: DoorClosed, color: "bg-white text-ink-muted", emoji: "🚪", description: "A bigger challenge awaits beyond. (Coming soon)", pos: { left: "50%", top: "92%" } },
 };
 
 const WALK_DURATION_S = 0.9;
-const TOWN_SCENE = "https://static.prod-images.emergentagent.com/jobs/2eddbcc9-3d07-49c8-985b-00a190300e36/images/3c0bb9d1132f7acc1e24202db1dd9fe4f6d6bf544566fa6b2336a6a5ad7aba12.png";
+const TOWN_SCENE = "/assets/town hub 1.png";
 
 const TownHub: React.FC = () => {
   const nav = useNavigate();
@@ -47,7 +47,7 @@ const TownHub: React.FC = () => {
   }, [realmId, setActiveRealm]);
 
   const realm = realms.find((r) => r.id === realmId);
-  const [hero, setHero] = useState<{ x: number; y: number }>({ x: 50, y: 86 });
+  const [hero, setHero] = useState<{ x: number; y: number }>({ x: 50, y: 74 });
   const [dialogueNpc, setDialogueNpc] = useState<StudioNPC | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
 
@@ -71,25 +71,25 @@ const TownHub: React.FC = () => {
     const rect = c.getBoundingClientRect();
     const x = ((e.clientX - rect.left) / rect.width) * 100;
     const y = ((e.clientY - rect.top) / rect.height) * 100;
-    walkTo(Math.max(6, Math.min(94, x)), Math.max(12, Math.min(90, y)));
+    walkTo(Math.max(5, Math.min(95, x)), Math.max(8, Math.min(92, y)));
   };
 
   const enterBuilding = async (cfg: BuildingConfig) => {
     if (!cfg.to) return;
-    await walkTo(parseFloat(cfg.pos.left), parseFloat(cfg.pos.top) + 12);
+    await walkTo(parseFloat(cfg.pos.left), Math.min(92, parseFloat(cfg.pos.top) + 10));
     nav(cfg.to);
   };
 
   const openTalk = async (cfg: BuildingConfig) => {
     const npc = findNpc(cfg.npcRole);
     if (!npc) return;
-    await walkTo(parseFloat(cfg.pos.left), parseFloat(cfg.pos.top) + 12);
+    await walkTo(parseFloat(cfg.pos.left), Math.min(92, parseFloat(cfg.pos.top) + 10));
     setDialogueNpc(npc);
   };
 
   return (
     <AdventureLayout title={realm.name} subtitle={`${realm.biome}${realm.tone ? ` · ${realm.tone}` : ""}`} back="/adventure/realms">
-      <section className="max-w-7xl mx-auto">
+      <section className="max-w-[min(82vw,1220px)] mx-auto">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <p className="text-xs md:text-sm font-extrabold uppercase tracking-widest text-primary">
             <Footprints size={13} strokeWidth={3} className="inline -mt-0.5 mr-1" />
@@ -103,11 +103,14 @@ const TownHub: React.FC = () => {
             ref={canvasRef}
             onClick={handleCanvasClick}
             data-testid="town-canvas"
-            className="relative min-h-[560px] md:min-h-[680px] cursor-pointer select-none bg-cover bg-center"
-            style={{ backgroundImage: `url(${TOWN_SCENE})` }}
+            className="relative w-full cursor-pointer select-none bg-cover bg-center"
+            style={{
+              minHeight: "min(74vh, 860px)",
+              backgroundImage: `url(${TOWN_SCENE})`,
+            }}
           >
-            <div className="absolute inset-0 bg-gradient-to-b from-white/10 via-transparent to-ink/20 pointer-events-none" />
-            <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-white/80 to-transparent pointer-events-none" />
+            <div className="absolute inset-0 bg-gradient-to-b from-white/5 via-transparent to-ink/20 pointer-events-none" />
+            <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-white/65 to-transparent pointer-events-none" />
 
             {buildings.map((b) => {
               const cfg = BUILDING_MAP[b];
@@ -124,7 +127,7 @@ const TownHub: React.FC = () => {
                       data-testid={`town-tile-${b}`}
                       aria-label={`${cfg.label} — ${cfg.description}`}
                       disabled={!available}
-                      className={`${cfg.color} relative rounded-3xl px-4 py-3 md:px-5 md:py-4 min-w-[112px] flex flex-col items-center gap-1 font-extrabold shadow-xl border-2 border-white/90 transition group-hover:brightness-110 group-hover:-translate-y-1 group-active:translate-y-px ${!available ? "opacity-90 cursor-not-allowed" : ""}`}
+                      className={`${cfg.color} relative rounded-3xl px-4 py-3 md:px-5 md:py-4 min-w-[118px] flex flex-col items-center gap-1 font-extrabold shadow-xl border-2 border-white/90 transition group-hover:brightness-110 group-hover:-translate-y-1 group-active:translate-y-px ${!available ? "opacity-90 cursor-not-allowed" : ""}`}
                     >
                       <span className="text-2xl md:text-3xl" aria-hidden>{cfg.emoji}</span>
                       <Icon size={18} strokeWidth={3} />
@@ -164,7 +167,7 @@ const TownHub: React.FC = () => {
                 style={{ translateX: "-50%", translateY: "-100%" }}
               >
                 <motion.div animate={{ y: [0, -3, 0, -3, 0] }} transition={{ duration: WALK_DURATION_S, ease: "easeInOut", repeat: 0 }} key={`${hero.x.toFixed(0)}-${hero.y.toFixed(0)}`}>
-                  <ChibiAvatar config={player.avatar} size={74} />
+                  <ChibiAvatar config={player.avatar} size={78} />
                 </motion.div>
               </motion.div>
             )}
