@@ -1,6 +1,7 @@
 // Mock content generators used by the Content Studio.
 // All generators return draft/generated items that must pass human approval before going live.
-// TODO(api): Replace mockNanoBananaGenerateImage with backend call to Gemini / Nano Banana image generation.
+// Image generation uses a free/no-key Pollinations URL for prototype previews.
+// TODO(api): Replace prototype image URLs with a backend storage/CDN pipeline when available.
 // TODO(api): Replace mockTextGenerate* with backend call to LLM (Claude / GPT) when available.
 
 import { ALL_TEMPLATES } from "./questionEngine";
@@ -28,40 +29,24 @@ export function baseMeta(origin: StudioBase["origin"] = "generator"): Omit<Studi
   return { status: "pending", createdAt: t, updatedAt: t, origin };
 }
 
-// ---- Mock Nano Banana ------------------------------------------------------
-// Returns a styled inline SVG data URL — pure frontend, zero network.
+// ---- Prototype image generation --------------------------------------------
+// Returns a live free/no-key image URL. This keeps the Studio flow working:
+// prompt -> generated preview -> pending review -> approve/publish.
 export function mockNanoBananaGenerateImage(prompt: string, palette?: { from: string; to: string }): string {
-  // TODO(api): Replace with `await fetch('/api/studio/generate-image', { body: { prompt } })`
-  // when the backend / Gemini-Nano-Banana integration is connected.
-  const seed = Array.from(prompt).reduce((a, c) => a + c.charCodeAt(0), 0);
-  const hues = [
-    ["#9D8DF1", "#F4C753"],
-    ["#86A789", "#FFE6D6"],
-    ["#FF9F68", "#FCE2F0"],
-    ["#7BB7D6", "#E6F2FF"],
-    ["#D4A373", "#FFF3D6"],
-  ];
-  const c = palette ?? { from: hues[seed % hues.length][0], to: hues[seed % hues.length][1] };
-  const safe = prompt.replace(/[<>&]/g, "").slice(0, 60);
-  const svg = `
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 220">
-  <defs>
-    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="${c.from}"/>
-      <stop offset="100%" stop-color="${c.to}"/>
-    </linearGradient>
-    <filter id="b"><feGaussianBlur stdDeviation="14"/></filter>
-  </defs>
-  <rect width="320" height="220" rx="22" fill="url(#g)"/>
-  <circle cx="60" cy="50" r="40" fill="#ffffff55" filter="url(#b)"/>
-  <circle cx="280" cy="170" r="56" fill="#ffffff44" filter="url(#b)"/>
-  <g font-family="Fredoka, Nunito, sans-serif" fill="#3F2A6B">
-    <text x="20" y="38" font-size="14" font-weight="700" opacity="0.6">Nano Banana · preview</text>
-    <text x="20" y="120" font-size="20" font-weight="700">${safe}</text>
-    <text x="20" y="200" font-size="11" font-weight="600" opacity="0.6">Pending Review · prototype mock</text>
-  </g>
-</svg>`.trim();
-  return `data:image/svg+xml;base64,${typeof btoa !== "undefined" ? btoa(svg) : Buffer.from(svg).toString("base64")}`;
+  const stylePrompt = [
+    "Questing Academy game art",
+    "cute chibi fantasy RPG companion or scene",
+    "soft pastel colors",
+    "storybook illustration",
+    "kid-friendly",
+    "cozy lighting",
+    "clean readable silhouette",
+    palette ? `palette ${palette.from} to ${palette.to}` : "",
+    prompt,
+  ].filter(Boolean).join(", ");
+
+  const encodedPrompt = encodeURIComponent(stylePrompt);
+  return `https://image.pollinations.ai/prompt/${encodedPrompt}?width=768&height=768&nologo=true&enhance=true&safe=true&seed=${Date.now()}`;
 }
 
 // ---- Companion concept generator -------------------------------------------
@@ -186,7 +171,7 @@ export function mockCompanionArt(companionId: string, companionName: string, pro
     companionName,
     prompt,
     styleNotes,
-    previewUrl: mockNanoBananaGenerateImage(`${companionName} — ${prompt}`),
+    previewUrl: mockNanoBananaGenerateImage(`${companionName} — ${prompt}${styleNotes ? ` — ${styleNotes}` : ""}`),
   };
 }
 
