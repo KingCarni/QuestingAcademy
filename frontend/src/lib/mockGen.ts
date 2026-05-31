@@ -46,7 +46,7 @@ export function mockNanoBananaGenerateImage(prompt: string, palette?: { from: st
   ].filter(Boolean).join(", ");
 
   const encodedPrompt = encodeURIComponent(stylePrompt);
-  return `https://image.pollinations.ai/prompt/${encodedPrompt}?width=768&height=768&nologo=true&enhance=true&safe=true&seed=${Date.now()}`;
+  return `http://localhost:5050/api/studio/image?prompt=${encodedPrompt}&seed=${Date.now()}`;
 }
 
 // ---- Companion concept generator -------------------------------------------

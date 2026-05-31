@@ -136,6 +136,9 @@ export interface StudioAvatar extends StudioBase {
   previewColor: string;
   paletteId?: string;
   description?: string;
+  previewUrl?: string;
+  promptUsed?: string;
+  imageProvider?: string;
   // category-specific
   hair?: AvatarHairFields;
   outfit?: AvatarOutfitFields;
@@ -179,6 +182,9 @@ export interface StudioEvolution extends StudioBase {
   academyInfluence: string;
   visualNotes: string;
   statGrowthNotes: string;
+  previewUrl?: string;
+  promptUsed?: string;
+  imageProvider?: string;
   // legacy: kept so old seed data still renders
   stages?: { name: string; lore: string; unlockCondition: string; visualDescription: string }[];
 }
@@ -217,6 +223,9 @@ export interface StudioAsset extends StudioBase {
   previewColor: string;
   paletteId?: string;
   description?: string;
+  previewUrl?: string;
+  promptUsed?: string;
+  imageProvider?: string;
   egg?: AssetEggFields;
   badge?: AssetBadgeFields;
 }
@@ -234,6 +243,9 @@ export interface StudioRealm extends StudioBase {
   mapNotes?: string;
   battleBackgroundSet?: string;
   stylePresetId?: string;
+  previewUrl?: string;
+  promptUsed?: string;
+  imageProvider?: string;
 }
 
 export interface StudioBattleBg extends StudioBase {
@@ -245,6 +257,8 @@ export interface StudioBattleBg extends StudioBase {
   prompt: string;
   stylePresetId?: string;
   previewUrl?: string;
+  promptUsed?: string;
+  imageProvider?: string;
 }
 
 export interface StudioScene extends StudioBase {
@@ -256,6 +270,9 @@ export interface StudioScene extends StudioBase {
   npcs: string[]; // names for legacy display
   visualPrompt: string;
   stylePresetId?: string;
+  previewUrl?: string;
+  promptUsed?: string;
+  imageProvider?: string;
 }
 
 export interface StudioNPC extends StudioBase {
@@ -272,6 +289,9 @@ export interface StudioNPC extends StudioBase {
   formality: NPCFormality;
   encouragementStyle: NPCEncouragement;
   safetyNotes: string;
+  previewUrl?: string;
+  promptUsed?: string;
+  imageProvider?: string;
 }
 
 export interface StudioQuest extends StudioBase {

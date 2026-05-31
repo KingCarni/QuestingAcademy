@@ -5,7 +5,7 @@ import { AdventureLayout } from "../../components/adventure/AdventureLayout";
 import { ChibiAvatar } from "../../components/ChibiAvatar";
 import { useStudio } from "../../lib/studioStore";
 import { useGame } from "../../lib/gameStore";
-import { Lock, MapPin, ArrowRight, Sparkles, Footprints } from "lucide-react";
+import { Lock, MapPin, ArrowRight, Sparkles, Footprints, Compass } from "lucide-react";
 
 // Painted "world map" — floating realm islands connected by a dashed adventure trail.
 // Click anywhere on the canvas → hero strolls there.
@@ -91,26 +91,40 @@ const RealmMap: React.FC = () => {
 
   return (
     <AdventureLayout title="Realm Map" subtitle="Tap an island to travel — tap the map to take a stroll" back="/adventure">
-      <p className="text-ink-muted mb-4">
-        <Footprints size={14} strokeWidth={3} className="inline -mt-0.5 mr-1 text-primary" />
-        Pick where to adventure today. New realms unlock as you grow!
-      </p>
+      <section className="w-full max-w-[1500px] mx-auto pb-28">
+        <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <div className="inline-flex items-center gap-2 rounded-full bg-white/85 border-2 border-white px-4 py-2 shadow-sm text-xs font-extrabold uppercase tracking-widest text-primary">
+              <Compass size={15} strokeWidth={3} />
+              Realm Atlas
+            </div>
+            <p className="text-ink-muted mt-3 text-base md:text-lg">
+              <Footprints size={16} strokeWidth={3} className="inline -mt-0.5 mr-1 text-primary" />
+              Pick where to adventure today. New realms unlock as you grow!
+            </p>
+          </div>
 
-      {/* Painted world canvas */}
-      <div
-        ref={canvasRef}
-        onClick={handleCanvasClick}
-        data-testid="realm-world-canvas"
-        className="relative rounded-card overflow-hidden border-4 border-white shadow-xl shadow-indigo-900/10 cursor-pointer select-none"
-        style={{
-          minHeight: 560,
+          <div className="rounded-3xl bg-white/80 border-2 border-white px-4 py-3 shadow-sm text-sm text-ink-muted max-w-xl">
+            Tap the map to stroll, or choose an open island to enter its town. Locked realms are peeking through the clouds for later.
+          </div>
+        </div>
+
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start">
+          {/* Painted world canvas */}
+          <div
+            ref={canvasRef}
+            onClick={handleCanvasClick}
+            data-testid="realm-world-canvas"
+            className="relative rounded-[2.25rem] overflow-hidden border-[6px] border-white shadow-2xl shadow-indigo-900/15 cursor-pointer select-none ring-4 ring-primary/10"
+            style={{
+              minHeight: "clamp(620px, 70vh, 820px)",
           background:
             "radial-gradient(ellipse at 50% -10%, #FFF6D8 0%, transparent 55%)," +
             "radial-gradient(ellipse at 90% 60%, #DCEEF7 0%, transparent 45%)," +
             "radial-gradient(ellipse at 10% 75%, #E6F1DE 0%, transparent 45%)," +
             "linear-gradient(180deg, #BFE0F2 0%, #D6E9F5 45%, #F4EBD0 100%)",
-        }}
-      >
+            }}
+          >
         {/* Painted clouds */}
         <div aria-hidden className="pointer-events-none absolute inset-0">
           <div className="absolute top-6 left-12 w-40 h-12 rounded-full bg-white/80 blur-md" />
@@ -239,30 +253,38 @@ const RealmMap: React.FC = () => {
             <span className="text-primary text-lg">✦</span>
           </div>
         </div>
-      </div>
+          </div>
 
-      {/* Realm legend list */}
-      <p className="text-xs font-extrabold uppercase tracking-widest text-ink-muted mt-6 mb-3">Realms unlocked</p>
-      <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-3" data-testid="realm-legend">
-        {live.map((r) => (
-          <button
-            type="button"
-            key={`legend-${r.id}`}
-            onClick={() => { setActiveRealm(r.id); nav(`/adventure/town/${r.id}`); }}
-            data-testid={`realm-legend-${r.id}`}
-            className="card-base !p-4 hover:-translate-y-0.5 transition flex items-center gap-3 text-left"
-          >
-            <div className="w-12 h-12 rounded-2xl bg-sage/40 grid place-items-center text-2xl shrink-0" aria-hidden>
-              {emojiFor(r.biome)}
+          {/* Realm legend list */}
+          <aside className="rounded-[2rem] border-4 border-white bg-white/75 shadow-xl shadow-indigo-900/10 p-5 xl:sticky xl:top-6" data-testid="realm-legend">
+            <div className="mb-4">
+              <p className="text-xs font-extrabold uppercase tracking-widest text-ink-muted">Realms unlocked</p>
+              <h2 className="h-display text-2xl text-ink mt-1">Choose your path</h2>
             </div>
-            <div className="min-w-0">
-              <p className="h-display text-lg leading-tight truncate">{r.name}</p>
-              <p className="text-xs text-ink-muted truncate">{r.biome}</p>
+            <div className="grid sm:grid-cols-2 xl:grid-cols-1 gap-3">
+              {live.map((r) => (
+                <button
+                  type="button"
+                  key={`legend-${r.id}`}
+                  onClick={() => { setActiveRealm(r.id); nav(`/adventure/town/${r.id}`); }}
+                  data-testid={`realm-legend-${r.id}`}
+                  className="card-base !p-4 hover:-translate-y-0.5 transition flex items-center gap-3 text-left border-2 border-white/80"
+                >
+                  <div className="w-14 h-14 rounded-2xl bg-sage/40 grid place-items-center text-3xl shrink-0" aria-hidden>
+                    {emojiFor(r.biome)}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="h-display text-lg leading-tight truncate">{r.name}</p>
+                    <p className="text-xs text-ink-muted truncate">{r.biome}</p>
+                    <p className="text-[10px] font-extrabold uppercase tracking-wider text-primary mt-1">Open realm</p>
+                  </div>
+                  <ArrowRight size={16} strokeWidth={3} className="ml-auto text-primary shrink-0" />
+                </button>
+              ))}
             </div>
-            <ArrowRight size={16} strokeWidth={3} className="ml-auto text-primary shrink-0" />
-          </button>
-        ))}
-      </div>
+          </aside>
+        </div>
+      </section>
     </AdventureLayout>
   );
 };
