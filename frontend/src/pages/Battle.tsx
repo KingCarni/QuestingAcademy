@@ -1,4 +1,4 @@
-import React, { useRef, useState, useMemo } from "react";
+import React, { useRef, useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { TopBar } from "../components/TopBar";
 import { Card } from "../components/Card";
@@ -70,6 +70,8 @@ const Battle: React.FC = () => {
   const [confettiActive, setConfettiActive] = useState(false);
   const [levelUp, setLevelUp] = useState<number | null>(null);
   const [questCompleteToast, setQuestCompleteToast] = useState<{ xp: number; coins: number; label: string } | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (toastTimerRef.current) clearTimeout(toastTimerRef.current); }, []);
 
   // Question source: procedural engine + spaced repetition (see gameStore.nextQuestion)
   const newQuestion = () => setQuestion(nextQuestion());
@@ -100,7 +102,8 @@ const Battle: React.FC = () => {
         setConfettiActive(true);
         if (soundOn) sfx.levelUp();
         // Auto-dismiss toast after a few seconds
-        setTimeout(() => setQuestCompleteToast(null), 4500);
+        if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+        toastTimerRef.current = setTimeout(() => setQuestCompleteToast(null), 4500);
       }
     }
 

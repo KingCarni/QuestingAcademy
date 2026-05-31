@@ -49,7 +49,7 @@ const TownHub: React.FC = () => {
 
   const realm = realms.find((r) => r.id === realmId);
   // Hero state + canvas ref must be declared before any early return to keep hook order stable.
-  const [hero, setHero] = useState<{ x: number; y: number }>({ x: 50, y: 88 });
+  const [hero, setHero] = useState<{ x: number; y: number }>({ x: 50, y: 95 });
   const [dialogueNpc, setDialogueNpc] = useState<StudioNPC | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
 
