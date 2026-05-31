@@ -32,7 +32,7 @@ const BUILDING_MAP: Record<string, BuildingConfig> = {
 };
 
 const WALK_DURATION_S = 0.9;
-const TOWN_SCENE = "/assets/town hub 1.png";
+const TOWN_SCENE = "/assets/town-hub-1.png";
 
 const TownHub: React.FC = () => {
   const nav = useNavigate();
@@ -89,7 +89,7 @@ const TownHub: React.FC = () => {
 
   return (
     <AdventureLayout title={realm.name} subtitle={`${realm.biome}${realm.tone ? ` · ${realm.tone}` : ""}`} back="/adventure/realms">
-      <section className="max-w-[min(82vw,1220px)] mx-auto">
+      <section className="w-[94vw] max-w-[1500px] mx-auto">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <p className="text-xs md:text-sm font-extrabold uppercase tracking-widest text-primary">
             <Footprints size={13} strokeWidth={3} className="inline -mt-0.5 mr-1" />
@@ -105,7 +105,9 @@ const TownHub: React.FC = () => {
             data-testid="town-canvas"
             className="relative w-full cursor-pointer select-none bg-cover bg-center"
             style={{
-              minHeight: "min(74vh, 860px)",
+              height: "calc(100vh - 190px)",
+              minHeight: 720,
+              maxHeight: 920,
               backgroundImage: `url(${TOWN_SCENE})`,
             }}
           >
