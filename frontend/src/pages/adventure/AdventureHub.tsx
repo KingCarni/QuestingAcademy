@@ -6,7 +6,7 @@ import { ChibiAvatar } from "../../components/ChibiAvatar";
 import { CompanionAvatar } from "../../components/CompanionAvatar";
 import { useGame } from "../../lib/gameStore";
 import { COMPANIONS } from "../../lib/mockData";
-import { Map, PawPrint, Scroll, Swords, Sparkles } from "lucide-react";
+import { Map, PawPrint, Scroll, Swords, Sparkles, Trophy } from "lucide-react";
 
 const HELPER_TEXT: Record<string, string> = {
   spriggle: "Spriggle loves sums — addition feels sunny with this leafy buddy.",
@@ -16,6 +16,7 @@ const HELPER_TEXT: Record<string, string> = {
 
 const AdventureHub: React.FC = () => {
   const player = useGame((s) => s.player);
+  const questRun = useGame((s) => s.questRun);
   const active = COMPANIONS.find((c) => c.id === player?.activeCompanionId);
 
   return (
@@ -38,6 +39,32 @@ const AdventureHub: React.FC = () => {
           </div>
         </div>
       </Card>
+
+      {/* Daily Mission — surfaces an active quest run */}
+      {questRun && (
+        <Card className="mb-5 border-primary/30 bg-gradient-to-r from-primary/5 to-gold/5" data-testid="adv-daily-mission">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+            <div className="w-14 h-14 rounded-3xl bg-primary text-white grid place-items-center shrink-0">
+              <Trophy size={22} strokeWidth={3} />
+            </div>
+            <div className="flex-1 min-w-0 w-full">
+              <p className="text-[10px] font-extrabold uppercase tracking-widest text-primary">Daily mission</p>
+              <p className="h-display text-2xl truncate">{questRun.questTitle}</p>
+              <div className="mt-2 h-3 rounded-full bg-bg overflow-hidden border-2 border-white">
+                <div
+                  className="h-full bg-primary transition-all"
+                  style={{ width: `${Math.min(100, (questRun.progress / questRun.target) * 100)}%` }}
+                  data-testid="adv-daily-mission-progress"
+                />
+              </div>
+              <p className="text-xs text-ink-muted mt-1">{questRun.progress} / {questRun.target} correct · Reward: {questRun.rewardLabel}</p>
+            </div>
+            <Link to="/battle" data-testid="adv-daily-mission-resume" className="btn-primary !text-sm !py-2 !px-4 shrink-0">
+              Resume
+            </Link>
+          </div>
+        </Card>
+      )}
 
       <div className="grid md:grid-cols-2 gap-5">
         {active && (
