@@ -161,6 +161,9 @@ export interface StudioCompanion extends StudioBase {
   emoji: string;
   stats: CompanionStats;
   palette: { from: string; to: string };
+  previewUrl?: string;
+  promptUsed?: string;
+  imageProvider?: string;
   // Shiny variant — recolor only, no stat changes.
   shinyEnabled?: boolean;
   shinyPalette?: { from: string; to: string };

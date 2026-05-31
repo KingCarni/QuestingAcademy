@@ -13,7 +13,7 @@ import { useStudio } from "../lib/studioStore";
 import { ALL_TEMPLATES, generateQuestion } from "../lib/questionEngine";
 import {
   mockCompanionConcept, mockRealmConcept, mockQuestChain,
-  mockBattleBackground, mockCompanionArt, baseMeta, nowISO,
+  mockBattleBackground, mockCompanionArt, mockNanoBananaGenerateImage, baseMeta, nowISO,
 } from "../lib/mockGen";
 import {
   randomAvatarName, randomCompanionName, randomCompanionLore, randomMoveSet,
@@ -420,9 +420,45 @@ const AvatarsTab: React.FC = () => {
 // ============================================================================
 // COMPANIONS (Pets)
 // ============================================================================
+type CompanionGeneratedPreview = {
+  url: string;
+  prompt: string;
+  provider: string;
+};
+
+const buildCompanionImagePrompt = (draft: Partial<StudioCompanion>): string => {
+  const name = draft.name?.trim() || "unnamed companion";
+  const affinity = draft.affinity || "nature";
+  const rarity = draft.rarity || "common";
+  const role = draft.role || "balanced";
+  const academy = draft.academyAffinity || "addition";
+  const personality = draft.personality || "friendly, brave, emotionally appealing";
+  const lore = draft.lore || "A kind companion who helps kids feel excited to learn.";
+  const moves = (draft.moves ?? ["Pat", "Hug", "Shield"]).join(", ");
+  const palette = draft.palette ?? { from: "#E8F4E1", to: "#86A789" };
+  const shiny = draft.shinyEnabled && draft.shinyPalette
+    ? `Optional shiny recolor palette ${draft.shinyPalette.from} to ${draft.shinyPalette.to}; same design, no stat or shape changes.`
+    : "No shiny variant needed for this image.";
+
+  return [
+    `Create a Questing Academy companion concept for ${name}.`,
+    `Creature type: cute chibi educational fantasy RPG pet companion, not a human.`,
+    `Affinity/element: ${affinity}. Rarity: ${rarity}. Battle role: ${role}. Academy learning affinity: ${academy}.`,
+    `Personality: ${personality}.`,
+    `Lore: ${lore}.`,
+    `Move inspirations: ${moves}.`,
+    `Use palette from ${palette.from} to ${palette.to}.`,
+    shiny,
+    "Style rules: full body visible, centered in frame, big expressive eyes, rounded soft shapes, cozy storybook watercolor, pastel colors, child-safe for ages 5-12, friendly expression, clean readable silhouette, simple light background.",
+    "Negative rules: no text, no watermark, no cropped character, no realistic animal violence, no horror, no weapons, no dark scary mood, no photorealism.",
+  ].join(" ");
+};
+
 const CompanionsTab: React.FC = () => {
   const items = useStudio((s) => s.companions);
   const addItem = useStudio((s) => s.addItem);
+  const [generatedPreview, setGeneratedPreview] = useState<CompanionGeneratedPreview | null>(null);
+  const [savedPreview, setSavedPreview] = useState<CompanionGeneratedPreview | null>(null);
   const [draft, setDraft] = useState<Partial<StudioCompanion>>({
     affinity: "nature", rarity: "common", role: "balanced",
     stats: { hp: 90, attack: 20, defense: 14, speed: 15 },
@@ -435,6 +471,8 @@ const CompanionsTab: React.FC = () => {
 
   const randomize = () => {
     const aff = AFFINITIES[Math.floor(Math.random() * AFFINITIES.length)];
+    setGeneratedPreview(null);
+    setSavedPreview(null);
     setDraft((d) => ({
       ...d,
       name: randomCompanionName(),
@@ -448,6 +486,23 @@ const CompanionsTab: React.FC = () => {
       shinyPalette: { from: randomHex(), to: randomHex() },
       emoji: ({ nature: "🌱", fire: "🔥", earth: "🪨", water: "🫧", air: "🌬️", star: "✨" } as any)[aff],
     }));
+  };
+
+  const generateImagePreview = () => {
+    const prompt = buildCompanionImagePrompt(draft);
+    const url = mockNanoBananaGenerateImage(prompt, draft.palette);
+    setGeneratedPreview({ url, prompt, provider: "prototype-generator" });
+    setSavedPreview(null);
+  };
+
+  const saveGeneratedPreview = () => {
+    if (!generatedPreview) return;
+    setSavedPreview(generatedPreview);
+  };
+
+  const discardGeneratedPreview = () => {
+    setGeneratedPreview(null);
+    setSavedPreview(null);
   };
 
   const submit = () => {
@@ -467,8 +522,13 @@ const CompanionsTab: React.FC = () => {
       palette: draft.palette ?? { from: "#E8F4E1", to: "#86A789" },
       shinyEnabled: !!draft.shinyEnabled,
       shinyPalette: draft.shinyPalette,
+      previewUrl: savedPreview?.url,
+      promptUsed: savedPreview?.prompt,
+      imageProvider: savedPreview?.provider,
     };
     addItem("companions", item);
+    setGeneratedPreview(null);
+    setSavedPreview(null);
   };
 
   return (
@@ -500,6 +560,7 @@ const CompanionsTab: React.FC = () => {
             <Field label="Speed"><NumberField testid="companions-stat-speed" value={draft.stats?.speed ?? 0} onChange={(n) => update("stats", { ...(draft.stats!), speed: n })} min={1} max={120} /></Field>
             <Field label="Color from"><ColorField testid="companions-palette-from" value={draft.palette?.from ?? "#E8F4E1"} onChange={(v) => update("palette", { ...(draft.palette!), from: v })} onSave={() => {}} /></Field>
             <Field label="Color to"><ColorField testid="companions-palette-to" value={draft.palette?.to ?? "#86A789"} onChange={(v) => update("palette", { ...(draft.palette!), to: v })} onSave={() => {}} /></Field>
+            <Field label="Personality" full><TextField testid="companions-input-personality" value={draft.personality ?? ""} onChange={(v) => update("personality", v)} placeholder="friendly support / bold defender / playful trickster" /></Field>
             <Field label="Lore" full><TextArea testid="companions-input-lore" value={draft.lore ?? ""} onChange={(v) => update("lore", v)} placeholder="Short, kid-friendly backstory" onRandomize={() => update("lore", randomCompanionLore())} /></Field>
             <Field label="Moves (comma separated)" full><TextField testid="companions-input-moves" value={(draft.moves ?? []).join(", ")} onChange={(v) => update("moves", v.split(",").map((m) => m.trim()).filter(Boolean))} placeholder="Pat, Hug, Shield" /></Field>
             <Field label="Shiny enabled?">
@@ -514,7 +575,7 @@ const CompanionsTab: React.FC = () => {
             </>}
           </div>
           {/* Live preview */}
-          <div className="mt-4 flex flex-wrap items-center gap-4">
+          <div className="mt-4 flex flex-wrap items-start gap-4">
             <div>
               <p className="text-[10px] font-extrabold uppercase text-ink-muted mb-1">Standard preview</p>
               <CompanionDot emoji={draft.emoji ?? "🌱"} palette={draft.palette ?? { from: "#E8F4E1", to: "#86A789" }} />
@@ -525,7 +586,44 @@ const CompanionsTab: React.FC = () => {
                 <CompanionDot emoji={draft.emoji ?? "🌱"} palette={draft.shinyPalette ?? { from: "#FCE2F0", to: "#D77DA5" }} />
               </div>
             )}
+            {savedPreview && (
+              <div className="rounded-2xl bg-sage/10 border-2 border-sage/30 px-3 py-2">
+                <p className="text-[10px] font-extrabold uppercase text-sage">Image saved to draft</p>
+                <p className="text-xs text-ink-muted">It will attach when you add this companion concept.</p>
+              </div>
+            )}
           </div>
+
+          <div className="mt-4 rounded-3xl bg-white/70 border-4 border-white p-4" data-testid="companions-image-generator">
+            <div className="flex flex-wrap justify-between gap-3 items-start">
+              <div>
+                <p className="h-display text-lg leading-tight">Generated image preview</p>
+                <p className="text-xs text-ink-muted">Generate from this companion draft, then save or discard before adding it to review.</p>
+              </div>
+              <button type="button" data-testid="companions-generate-image" onClick={generateImagePreview} className="btn-outline !text-sm !py-2 !px-4">
+                <Wand2 size={14} strokeWidth={3} /> Generate image preview
+              </button>
+            </div>
+
+            {generatedPreview ? (
+              <div className="mt-4 grid md:grid-cols-[220px,1fr] gap-4 items-start">
+                <img src={generatedPreview.url} alt="Generated companion preview" className="w-full max-w-[220px] aspect-square object-cover rounded-2xl border-4 border-white shadow-lg" />
+                <div className="min-w-0">
+                  <p className="text-[10px] font-extrabold uppercase text-ink-muted mb-1">Prompt used</p>
+                  <p className="text-xs text-ink-muted bg-bg border-2 border-white rounded-2xl p-3 max-h-32 overflow-auto">{generatedPreview.prompt}</p>
+                  <div className="flex flex-wrap gap-2 mt-3">
+                    <button type="button" data-testid="companions-save-image" onClick={saveGeneratedPreview} className="btn-primary !text-sm !py-2 !px-4">Save image to draft</button>
+                    <button type="button" data-testid="companions-discard-image" onClick={discardGeneratedPreview} className="btn-ghost !text-sm !py-2 !px-4">Discard</button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-4 rounded-2xl bg-bg border-2 border-white p-4 text-sm text-ink-muted">
+                No generated image yet. Generate a preview when the companion fields are ready. Nothing is saved automatically.
+              </div>
+            )}
+          </div>
+
           <button type="button" data-testid="companions-generate-btn" onClick={submit} className="btn-primary mt-4 !text-base !py-3 !px-6">
             <Wand2 size={16} strokeWidth={3} /> Add companion concept
           </button>
@@ -534,11 +632,16 @@ const CompanionsTab: React.FC = () => {
       renderItem={(i: StudioCompanion) => (
         <div>
           <div className="flex items-start gap-3">
-            <CompanionDot emoji={i.emoji} palette={i.palette} size={64} />
+            {i.previewUrl ? (
+              <img src={i.previewUrl} alt={`${i.name} companion art`} className="w-16 h-16 object-cover rounded-2xl border-4 border-white shrink-0 shadow-lg" />
+            ) : (
+              <CompanionDot emoji={i.emoji} palette={i.palette} size={64} />
+            )}
             <div className="min-w-0 flex-1">
               <p className="h-display text-lg truncate">{i.name}</p>
               <p className="text-[10px] font-extrabold uppercase text-ink-muted">{i.affinity} · {i.role} · {i.rarity}</p>
               <p className="text-xs text-ink-muted line-clamp-2 mt-1">{i.lore}</p>
+              {i.previewUrl && <p className="text-[10px] font-extrabold text-sage mt-1">Generated image attached · {i.imageProvider ?? "prototype"}</p>}
             </div>
           </div>
           <div className="grid grid-cols-4 gap-1.5 mt-2">
