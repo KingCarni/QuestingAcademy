@@ -15,7 +15,7 @@ export const TopBar: React.FC<Props> = ({ back, title, rightSlot }) => {
   const soundOn = useGame((s) => s.settings.soundOn);
   const setSoundOn = useGame((s) => s.setSoundOn);
   const loc = useLocation();
-  const isHub = loc.pathname === "/hub";
+  const isHub = loc.pathname === "/hub" || loc.pathname === "/adventure";
 
   return (
     <header className="sticky top-0 z-30 px-4 md:px-8 pt-4">
@@ -32,7 +32,7 @@ export const TopBar: React.FC<Props> = ({ back, title, rightSlot }) => {
         ) : !isHub ? (
           <Link
             data-testid="topbar-home-btn"
-            to="/hub"
+            to="/adventure"
             className="btn-ghost !py-2 !px-4 !text-base"
             aria-label="Home"
           >

@@ -56,7 +56,7 @@ const Landing: React.FC = () => {
             <div className="mt-8 flex flex-wrap gap-3">
               <Link
                 data-testid="landing-play-btn"
-                to={hasStarter ? "/hub" : "/onboarding"}
+                to={hasStarter ? "/adventure" : "/onboarding"}
                 className="btn-primary !text-2xl !px-10 !py-5"
               >
                 {hasStarter ? "Continue Quest" : "Play Now"}

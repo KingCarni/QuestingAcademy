@@ -1,0 +1,46 @@
+{
+  "summary": "Comprehensive frontend testing of TEA-76/77/78 RPG Adventure shell (/adventure/* routes replacing /hub). Ran full E2E flow on desktop (1440x900) + mobile (390x844) spot-check. 49/49 critical UI assertions passed.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/adventure/realms (mobile 390px)", "issues": ["Meadowfall Grove island/label is positioned at left:10% which on narrow mobile widths causes the name chip to be clipped at the left edge of the painted canvas (visible as 'eadowfall Grove'). The realm-1 island circle itself also overlaps the left border. Consider raising left% from 10% to ~16% or constraining label width on small viewports."]}
+    ]
+  },
+  "test_report_links": ["/app/test_reports/iteration_5.json"],
+  "action_items": [
+    "(Optional/minor) Tune RealmMap LIVE_POSITIONS / label width for <420px viewports so the Meadowfall Grove chip isn't clipped at the left edge.",
+    "(Optional) Admin & Parent 'Open game' link href targeting /adventure was inspected via code (AdminDashboard.tsx / Parent.tsx in files_of_reference). Playwright assertion was inconclusive because Admin requires PIN entry; recommend adding data-testid='admin-open-game' and 'parent-open-game' to make these links directly assertable."
+  ],
+  "critical_code_review_comments": [
+    "Code is clean: /hub route correctly uses <Navigate to='/adventure' replace/>; all required data-testids present and wired (adv-start-btn, adv-active-companion, adv-quick-*, adventure-dock, realm-world-canvas, realm-node-realm-1, realm-locked-realm-2, realm-legend-realm-1, town-pin-grid, town-tile-*, companions-active, companions-card-*, companions-pick-*, companions-go-battle, quest-card-q-1, quest-start-q-1, dock-*).",
+    "TownHub correctly redirects unknown realmId via <Navigate to='/adventure/realms' replace/>.",
+    "Shop tile gracefully renders as focusable non-link <div tabIndex={0}> when cfg.to is missing.",
+    "AdventureLayout dock uses fixed bottom positioning with sufficient pb-28 padding on main; verified on mobile no overlap with primary CTAs on /adventure (Start Adventure button sits well above the dock).",
+    "React-Router future-flag warnings appear in console (v7_startTransition, v7_relativeSplatPath) — informational only, no errors."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (frontend-only per request)", "frontend": "100% (49/49)"},
+  "test_credentials": "Admin PIN 2580 not exercised in this iteration; onboarding used name='Tester', Grade=Kindergarten (default), Companion=Spriggle.",
+  "seed_data_creation": "None. localStorage-only onboarding flow used.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Each browser_automation invocation starts a fresh session (no persisted localStorage between calls) — when testing /adventure/* deep links, complete the onboarding flow first (Landing→Play→Continue grade→fill name 'Tester'→Continue→Spriggle→Start Adventure) in the SAME script before navigating to /adventure/*. RequirePlayer + requireStarter guards will otherwise bounce you to /onboarding. The grade picker defaults to Kindergarten selected; just press Continue. The character name input must be filled (use get_by_placeholder(/Mochi/)) before Continue is enabled.",
+  "rca of the issue": "N/A — no failures observed.",
+  "tests_executed": [
+    "landing-loads", "onboarding->character", "character->starter", "starter->adventure (NOT /hub)",
+    "adv-hub-* (7 testids)", "adv-start-to-realms",
+    "realm-world-canvas / realm-node-realm-1 / realm-locked-realm-2 / realm-legend-realm-1",
+    "realm-1-island-click->town/realm-1",
+    "town-pin-grid + town-tile-{town-hub,hatchery,learning-academy,quest-board,shop}",
+    "hatchery->/egg, academy->/academy, town-hub->/battle, quest-board->/adventure/quests, shop-no-nav",
+    "bad realmId (/adventure/town/does-not-exist) -> /adventure/realms",
+    "companions-active / cards / go-battle->/battle",
+    "quest-card-q-1 / quest-start-q-1->/battle",
+    "/hub legacy redirect -> /adventure",
+    "Bottom dock: dock-hub/map/companions/quests/battle navigation",
+    "TopBar Back from /battle, /egg, /academy, /collection -> /adventure",
+    "Mobile 390x844: adventure-dock visible on /adventure, realm-world-canvas visible on /adventure/realms"
+  ]
+}

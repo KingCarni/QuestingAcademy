@@ -125,7 +125,7 @@ const Battle: React.FC = () => {
   return (
     <div className="min-h-screen pb-12">
       <ConfettiBurst active={confettiActive} onDone={() => setConfettiActive(false)} />
-      <TopBar back="/hub" title="Adventure: Meadowfall Path" />
+      <TopBar back="/adventure" title="Adventure: Meadowfall Path" />
       <main className="max-w-5xl mx-auto px-4 md:px-8 py-6 space-y-5">
         <Card className="!p-0 overflow-hidden">
           <div
@@ -303,7 +303,7 @@ const Battle: React.FC = () => {
               >
                 Try Again
               </button>
-              <button data-testid="battle-home-btn-defeat" onClick={() => nav("/hub")} className="btn-outline">
+              <button data-testid="battle-home-btn-defeat" onClick={() => nav("/adventure")} className="btn-outline">
                 Back to Hub
               </button>
             </div>

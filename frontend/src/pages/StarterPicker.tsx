@@ -14,7 +14,7 @@ const StarterPicker: React.FC = () => {
   const choose = () => {
     if (!selected) return;
     pickStarter(selected);
-    nav("/hub");
+    nav("/adventure");
   };
 
   return (
