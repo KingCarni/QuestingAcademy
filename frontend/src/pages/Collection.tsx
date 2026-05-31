@@ -13,7 +13,7 @@ const Collection: React.FC = () => {
 
   return (
     <div className="min-h-screen pb-12">
-      <TopBar back="/hub" title="Companion Collection" />
+      <TopBar back="/adventure" title="Companion Collection" />
       <main className="max-w-6xl mx-auto px-4 md:px-8 py-6 space-y-5">
         <Card>
           <div className="flex flex-wrap items-end justify-between gap-3">

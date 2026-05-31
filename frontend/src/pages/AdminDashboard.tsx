@@ -127,7 +127,7 @@ const AdminDashboard: React.FC = () => {
               <h1 className="h-display text-3xl md:text-4xl">Staff tools</h1>
               <p className="text-ink-muted">Prototype-only. Edits write straight to localStorage state.</p>
             </div>
-            <Link to="/hub" data-testid="admin-go-hub" className="btn-outline ml-auto !text-base">Open game</Link>
+            <Link to="/adventure" data-testid="admin-go-hub" className="btn-outline ml-auto !text-base">Open game</Link>
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
             <Link

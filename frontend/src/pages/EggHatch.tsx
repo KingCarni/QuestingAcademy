@@ -30,7 +30,7 @@ const EggHatch: React.FC = () => {
   return (
     <div className="min-h-screen pb-12">
       <ConfettiBurst active={confetti} onDone={() => setConfetti(false)} />
-      <TopBar back="/hub" title="The Hatchery" />
+      <TopBar back="/adventure" title="The Hatchery" />
       <main className="max-w-5xl mx-auto px-4 md:px-8 py-6 space-y-6">
         <Card className="!p-0 overflow-hidden relative">
           <div className="absolute inset-0 bg-cover bg-center opacity-90" style={{ backgroundImage: `url(${HATCHERY_BG})` }} />

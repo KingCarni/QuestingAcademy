@@ -72,7 +72,7 @@ const Parent: React.FC = () => {
               <h1 className="h-display text-3xl md:text-4xl">{player ? `${player.name}'s journey` : "Learning Snapshot"}</h1>
               <p className="text-ink-muted">A friendly weekly overview. No personal data is sent anywhere.</p>
             </div>
-            <Link to="/hub" data-testid="parent-go-hub" className="btn-outline !text-base">Open the game</Link>
+            <Link to="/adventure" data-testid="parent-go-hub" className="btn-outline !text-base">Open the game</Link>
           </div>
           <div className="mt-3">
             <Link to="/admin" data-testid="parent-admin-link" className="text-xs font-extrabold text-primary hover:underline">
