@@ -1,18 +1,22 @@
-import React from "react";
-import { Link } from "react-router-dom";
+import React, { useState, useRef, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { motion } from "framer-motion";
 import { AdventureLayout } from "../../components/adventure/AdventureLayout";
+import { ChibiAvatar } from "../../components/ChibiAvatar";
 import { useStudio } from "../../lib/studioStore";
-import { Lock, MapPin, ArrowRight, Sparkles } from "lucide-react";
+import { useGame } from "../../lib/gameStore";
+import { Lock, MapPin, ArrowRight, Sparkles, Footprints } from "lucide-react";
 
 // Painted "world map" — floating realm islands connected by a dashed adventure trail.
-// Frontend-only: pure SVG + CSS, no external images.
+// Click anywhere on the canvas → hero strolls there.
+// Click an island → hero strolls to it, then enters the town (sets activeRealmId).
 
 type Pos = { left: string; top: string };
 const LIVE_POSITIONS: Pos[] = [
-  { left: "18%",  top: "62%" },   // starter realm bottom-left (kept inset for mobile)
-  { left: "50%",  top: "22%" },   // second realm up & center
-  { left: "78%",  top: "60%" },   // third realm bottom-right
-  { left: "55%",  top: "82%" },   // optional spillover
+  { left: "18%",  top: "62%" },
+  { left: "50%",  top: "22%" },
+  { left: "78%",  top: "60%" },
+  { left: "55%",  top: "82%" },
 ];
 const UPCOMING_POSITIONS: Pos[] = [
   { left: "82%",  top: "20%" },
@@ -21,17 +25,17 @@ const UPCOMING_POSITIONS: Pos[] = [
 ];
 
 const BIOME_EMOJI: Record<string, string> = {
-  "spring meadow":        "🌳",
-  "snowy pine forest":    "❄️",
-  "snowy":                "❄️",
-  "desert":               "🏜️",
-  "beach":                "🏖️",
-  "ocean":                "🌊",
-  "mountain":             "🏔️",
-  "cave":                 "🕳️",
-  "volcano":              "🌋",
-  "swamp":                "🪻",
-  "sky":                  "☁️",
+  "spring meadow":      "🌳",
+  "snowy pine forest":  "❄️",
+  snowy:                "❄️",
+  desert:               "🏜️",
+  beach:                "🏖️",
+  ocean:                "🌊",
+  mountain:             "🏔️",
+  cave:                 "🕳️",
+  volcano:              "🌋",
+  swamp:                "🪻",
+  sky:                  "☁️",
 };
 const emojiFor = (biome: string) => {
   const key = biome.toLowerCase();
@@ -39,19 +43,65 @@ const emojiFor = (biome: string) => {
   return "🗺️";
 };
 
+// Cozy stroll: ~900ms, slight bob.
+const WALK_DURATION_S = 0.9;
+
 const RealmMap: React.FC = () => {
+  const nav = useNavigate();
   const realms = useStudio((s) => s.realms);
+  const setActiveRealm = useGame((s) => s.setActiveRealm);
+  const player = useGame((s) => s.player);
+
   const live = realms.filter((r) => r.status === "approved" || r.status === "published");
   const upcoming = realms.filter((r) => r.status === "pending" || r.status === "draft" || r.status === "generated");
 
+  // Hero walk position (as % within the canvas)
+  const [hero, setHero] = useState<{ x: number; y: number }>({ x: 50, y: 88 });
+  const canvasRef = useRef<HTMLDivElement | null>(null);
+  const walkingRef = useRef(false);
+
+  const walkTo = (x: number, y: number): Promise<void> => {
+    walkingRef.current = true;
+    setHero({ x, y });
+    return new Promise((resolve) => setTimeout(() => { walkingRef.current = false; resolve(); }, WALK_DURATION_S * 1000));
+  };
+
+  const handleCanvasClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const c = canvasRef.current;
+    if (!c) return;
+    const rect = c.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * 100;
+    const y = ((e.clientY - rect.top) / rect.height) * 100;
+    walkTo(Math.max(4, Math.min(96, x)), Math.max(8, Math.min(92, y)));
+  };
+
+  const handleIslandClick = async (realmId: string, pos: Pos, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const x = parseFloat(pos.left);
+    const y = parseFloat(pos.top) + 8; // stand at the foot of the island
+    await walkTo(x, y);
+    setActiveRealm(realmId);
+    nav(`/adventure/town/${realmId}`);
+  };
+
+  // Reset hero to entry point each mount
+  useEffect(() => {
+    setHero({ x: 50, y: 88 });
+  }, []);
+
   return (
-    <AdventureLayout title="Realm Map" subtitle="Tap a glowing island to travel" back="/adventure">
-      <p className="text-ink-muted mb-4">A whole world to explore. New realms unlock as you grow!</p>
+    <AdventureLayout title="Realm Map" subtitle="Tap an island to travel — tap the map to take a stroll" back="/adventure">
+      <p className="text-ink-muted mb-4">
+        <Footprints size={14} strokeWidth={3} className="inline -mt-0.5 mr-1 text-primary" />
+        Pick where to adventure today. New realms unlock as you grow!
+      </p>
 
       {/* Painted world canvas */}
       <div
+        ref={canvasRef}
+        onClick={handleCanvasClick}
         data-testid="realm-world-canvas"
-        className="relative rounded-card overflow-hidden border-4 border-white shadow-xl shadow-indigo-900/10"
+        className="relative rounded-card overflow-hidden border-4 border-white shadow-xl shadow-indigo-900/10 cursor-pointer select-none"
         style={{
           minHeight: 560,
           background:
@@ -70,7 +120,7 @@ const RealmMap: React.FC = () => {
           <div className="absolute bottom-6 right-1/4 w-32 h-10 rounded-full bg-white/70 blur-md" />
         </div>
 
-        {/* Painted sea/grass texture dots */}
+        {/* Painted texture dots */}
         <div aria-hidden className="pointer-events-none absolute inset-0 opacity-30"
           style={{
             backgroundImage:
@@ -81,38 +131,53 @@ const RealmMap: React.FC = () => {
           }}
         />
 
-        {/* Dashed adventure path between islands */}
-        <svg aria-hidden viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 w-full h-full">
-          <defs>
-            <filter id="softGlow" x="-20%" y="-20%" width="140%" height="140%">
-              <feGaussianBlur stdDeviation="0.6" />
-            </filter>
-          </defs>
+        {/* Dashed adventure path */}
+        <svg aria-hidden viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 w-full h-full pointer-events-none">
           <path
-            d="M 12 65 Q 26 35 46 26 T 78 60"
+            d="M 18 70 Q 32 38 50 30 T 78 64"
             fill="none"
             stroke="#9D8DF1"
             strokeWidth="0.9"
             strokeDasharray="2 2.5"
             strokeLinecap="round"
             opacity="0.7"
-            filter="url(#softGlow)"
           />
         </svg>
+
+        {/* Walking hero (chibi) */}
+        {player && (
+          <motion.div
+            data-testid="hero-sprite"
+            className="absolute pointer-events-none"
+            initial={false}
+            animate={{ left: `${hero.x}%`, top: `${hero.y}%` }}
+            transition={{ duration: WALK_DURATION_S, ease: "easeInOut" }}
+            style={{ translateX: "-50%", translateY: "-100%" }}
+          >
+            <motion.div
+              animate={{ y: [0, -3, 0, -3, 0] }}
+              transition={{ duration: WALK_DURATION_S, ease: "easeInOut", repeat: 0 }}
+              key={`${hero.x.toFixed(0)}-${hero.y.toFixed(0)}`}
+            >
+              <ChibiAvatar config={player.avatar} size={64} />
+            </motion.div>
+          </motion.div>
+        )}
 
         {/* Floating realm islands */}
         {live.map((r, i) => {
           const pos = LIVE_POSITIONS[i % LIVE_POSITIONS.length];
           const emoji = emojiFor(r.biome);
           return (
-            <Link
+            <button
+              type="button"
               key={r.id}
-              to={`/adventure/town/${r.id}`}
+              onClick={(e) => handleIslandClick(r.id, pos, e)}
               data-testid={`realm-node-${r.id}`}
+              aria-label={`Travel to ${r.name}`}
               className="group absolute -translate-x-1/2 -translate-y-1/2 focus:outline-none"
               style={pos}
             >
-              {/* Island */}
               <div className="relative flex flex-col items-center">
                 <div className="relative">
                   <div aria-hidden className="absolute inset-x-2 -bottom-2 h-3 bg-ink/20 blur-md rounded-full" />
@@ -131,18 +196,18 @@ const RealmMap: React.FC = () => {
                   Travel here <ArrowRight size={10} strokeWidth={3} />
                 </div>
               </div>
-            </Link>
+            </button>
           );
         })}
 
-        {/* Locked / coming-soon islands */}
+        {/* Locked islands */}
         {upcoming.map((r, i) => {
           const pos = UPCOMING_POSITIONS[i % UPCOMING_POSITIONS.length];
           return (
             <div
               key={r.id}
               data-testid={`realm-locked-${r.id}`}
-              className="absolute -translate-x-1/2 -translate-y-1/2"
+              className="absolute -translate-x-1/2 -translate-y-1/2 pointer-events-none"
               style={pos}
               title={`${r.name} · coming soon`}
             >
@@ -165,7 +230,7 @@ const RealmMap: React.FC = () => {
         })}
 
         {/* Compass */}
-        <div aria-hidden className="absolute top-3 right-3 w-14 h-14 rounded-full bg-white/90 border-2 border-white shadow grid place-items-center font-extrabold text-ink-muted text-xs">
+        <div aria-hidden className="absolute top-3 right-3 w-14 h-14 rounded-full bg-white/90 border-2 border-white shadow grid place-items-center font-extrabold text-ink-muted text-xs pointer-events-none">
           <div className="relative w-full h-full grid place-items-center">
             <span className="absolute top-1">N</span>
             <span className="absolute bottom-1">S</span>
@@ -176,15 +241,16 @@ const RealmMap: React.FC = () => {
         </div>
       </div>
 
-      {/* Realm legend list (kid-friendly fallback / accessibility) */}
+      {/* Realm legend list */}
       <p className="text-xs font-extrabold uppercase tracking-widest text-ink-muted mt-6 mb-3">Realms unlocked</p>
       <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-3" data-testid="realm-legend">
         {live.map((r) => (
-          <Link
+          <button
+            type="button"
             key={`legend-${r.id}`}
-            to={`/adventure/town/${r.id}`}
+            onClick={() => { setActiveRealm(r.id); nav(`/adventure/town/${r.id}`); }}
             data-testid={`realm-legend-${r.id}`}
-            className="card-base !p-4 hover:-translate-y-0.5 transition flex items-center gap-3"
+            className="card-base !p-4 hover:-translate-y-0.5 transition flex items-center gap-3 text-left"
           >
             <div className="w-12 h-12 rounded-2xl bg-sage/40 grid place-items-center text-2xl shrink-0" aria-hidden>
               {emojiFor(r.biome)}
@@ -194,7 +260,7 @@ const RealmMap: React.FC = () => {
               <p className="text-xs text-ink-muted truncate">{r.biome}</p>
             </div>
             <ArrowRight size={16} strokeWidth={3} className="ml-auto text-primary shrink-0" />
-          </Link>
+          </button>
         ))}
       </div>
     </AdventureLayout>

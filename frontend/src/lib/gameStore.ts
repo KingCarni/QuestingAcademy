@@ -18,6 +18,17 @@ import { useStudio } from "./studioStore";
 
 // TODO(backend): swap zustand+localStorage for API + auth-bound state when backend exists.
 
+export interface QuestRun {
+  questId: string;
+  questTitle: string;
+  target: number;
+  progress: number;
+  rewardXp: number;
+  rewardCoins: number;
+  rewardLabel: string;
+  startedAt: string;
+}
+
 interface GameState {
   player: Player | null;
   eggs: Egg[];
@@ -26,12 +37,21 @@ interface GameState {
   battleStats: BattleStats;
   tricky: TrickyEntry[];
   settings: GameSettings;
+  // RPG world state
+  activeRealmId: string | null;
+  questRun: QuestRun | null;
 
   // Setup actions
   setGrade: (g: Grade) => void;
   setAvatar: (a: AvatarConfig) => void;
   pickStarter: (companionId: string) => void;
   resetAll: () => void;
+
+  // RPG world actions
+  setActiveRealm: (id: string | null) => void;
+  startQuest: (q: Omit<QuestRun, "progress" | "startedAt">) => void;
+  abandonQuest: () => void;
+  tickQuestOnCorrect: () => { completed: boolean; reward?: { xp: number; coins: number; label: string } };
 
   // Gameplay
   awardBattle: (xp: number, coins: number, eggProgress: number) => { leveledUp: boolean; newLevel: number };
@@ -120,6 +140,8 @@ export const useGame = create<GameState>()(
       battleStats: { totalBattles: 0, totalQuestions: 0, totalCorrect: 0 },
       tricky: [],
       settings: baseSettings,
+      activeRealmId: null,
+      questRun: null,
 
       setGrade: (g) =>
         set((s) => {
@@ -155,7 +177,54 @@ export const useGame = create<GameState>()(
           battleStats: { totalBattles: 0, totalQuestions: 0, totalCorrect: 0 },
           tricky: [],
           settings: baseSettings,
+          activeRealmId: null,
+          questRun: null,
         }),
+
+      // -- RPG world ---------------------------------------------------------
+      setActiveRealm: (id) => set({ activeRealmId: id }),
+
+      startQuest: (q) =>
+        set({
+          questRun: { ...q, progress: 0, startedAt: new Date().toISOString() },
+        }),
+
+      abandonQuest: () => set({ questRun: null }),
+
+      tickQuestOnCorrect: () => {
+        const s = get();
+        if (!s.questRun) return { completed: false };
+        const nextProgress = s.questRun.progress + 1;
+        if (nextProgress >= s.questRun.target) {
+          // Award rewards + clear quest
+          const reward = {
+            xp: s.questRun.rewardXp,
+            coins: s.questRun.rewardCoins,
+            label: s.questRun.rewardLabel,
+          };
+          // Apply XP / coins through awardBattle-like math (simple add + level check)
+          if (s.player) {
+            let nxp = s.player.xp + reward.xp;
+            let level = s.player.level;
+            let xpToNext = s.player.xpToNext;
+            while (nxp >= xpToNext) {
+              nxp -= xpToNext;
+              level += 1;
+              xpToNext = Math.floor(xpToNext * 1.25);
+            }
+            set({
+              player: { ...s.player, xp: nxp, level, xpToNext, coins: s.player.coins + reward.coins },
+              questRun: null,
+            });
+          } else {
+            set({ questRun: null });
+          }
+          return { completed: true, reward };
+        }
+        set({ questRun: { ...s.questRun, progress: nextProgress } });
+        return { completed: false };
+      },
+
 
       awardBattle: (xp, coins, eggProgress) => {
         const before = get();

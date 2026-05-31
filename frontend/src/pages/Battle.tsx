@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useRef, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { TopBar } from "../components/TopBar";
 import { Card } from "../components/Card";
@@ -7,12 +7,15 @@ import { ProgressBar } from "../components/ProgressBar";
 import { SpeechButton } from "../components/SpeechButton";
 import { ConfettiBurst } from "../components/ConfettiBurst";
 import { useGame } from "../lib/gameStore";
+import { useStudio } from "../lib/studioStore";
 import { COMPANIONS, ENEMIES } from "../lib/mockData";
 import type { Enemy, Question } from "../lib/types";
 import { sfx } from "../lib/sfx";
-import { Swords, Shield, Sparkles, Coins, Heart, BookOpen } from "lucide-react";
+import { Swords, Shield, Sparkles, Coins, Heart, BookOpen, Trophy, X as XIcon } from "lucide-react";
 
 type Phase = "intro" | "question" | "feedback" | "victory" | "defeat";
+
+const DEFAULT_BG = "https://static.prod-images.emergentagent.com/jobs/2eddbcc9-3d07-49c8-985b-00a190300e36/images/3c0bb9d1132f7acc1e24202db1dd9fe4f6d6bf544566fa6b2336a6a5ad7aba12.png";
 
 const pickRandom = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
 
@@ -26,7 +29,30 @@ const Battle: React.FC = () => {
   const recordWrong = useGame((s) => s.recordWrong);
   const recordCorrect = useGame((s) => s.recordCorrect);
   const soundOn = useGame((s) => s.settings.soundOn);
+  const activeRealmId = useGame((s) => s.activeRealmId);
+  const questRun = useGame((s) => s.questRun);
+  const tickQuestOnCorrect = useGame((s) => s.tickQuestOnCorrect);
+  const abandonQuest = useGame((s) => s.abandonQuest);
+  const battleBgs = useStudio((s) => s.battleBgs);
+  const realms = useStudio((s) => s.realms);
   const companion = COMPANIONS.find((c) => c.id === player.activeCompanionId)!;
+
+  // Realm-specific background: pick first approved/published bg for active realm.
+  const realmBg = useMemo(() => {
+    if (!activeRealmId) return null;
+    const bg = battleBgs.find(
+      (b) =>
+        b.realmId === activeRealmId &&
+        (b.status === "approved" || b.status === "published") &&
+        b.previewUrl
+    );
+    return bg ?? null;
+  }, [activeRealmId, battleBgs]);
+
+  const realmName = useMemo(() => {
+    if (!activeRealmId) return "Meadowfall Path";
+    return realms.find((r) => r.id === activeRealmId)?.name ?? "Meadowfall Path";
+  }, [activeRealmId, realms]);
 
   const startTimeRef = useRef<number>(Date.now());
 
@@ -43,6 +69,7 @@ const Battle: React.FC = () => {
   const [shake, setShake] = useState<"player" | "enemy" | null>(null);
   const [confettiActive, setConfettiActive] = useState(false);
   const [levelUp, setLevelUp] = useState<number | null>(null);
+  const [questCompleteToast, setQuestCompleteToast] = useState<{ xp: number; coins: number; label: string } | null>(null);
 
   // Question source: procedural engine + spaced repetition (see gameStore.nextQuestion)
   const newQuestion = () => setQuestion(nextQuestion());
@@ -64,6 +91,18 @@ const Battle: React.FC = () => {
     // Spaced repetition bookkeeping
     if (correct) recordCorrect(question);
     else recordWrong(question);
+
+    // Quest progress on correct answers
+    if (correct && questRun) {
+      const res = tickQuestOnCorrect();
+      if (res.completed && res.reward) {
+        setQuestCompleteToast(res.reward);
+        setConfettiActive(true);
+        if (soundOn) sfx.levelUp();
+        // Auto-dismiss toast after a few seconds
+        setTimeout(() => setQuestCompleteToast(null), 4500);
+      }
+    }
 
     // Damage logic
     const baseDmg = move === "attack" ? 22 : move === "special" ? 30 : 10;
@@ -125,13 +164,60 @@ const Battle: React.FC = () => {
   return (
     <div className="min-h-screen pb-12">
       <ConfettiBurst active={confettiActive} onDone={() => setConfettiActive(false)} />
-      <TopBar back="/adventure" title="Adventure: Meadowfall Path" />
+      <TopBar back="/adventure" title={`Adventure: ${realmName}`} />
       <main className="max-w-5xl mx-auto px-4 md:px-8 py-6 space-y-5">
+        {/* Quest banner */}
+        {questRun && (
+          <Card className="!p-3 border-primary/30 bg-primary/5" data-testid="battle-quest-banner">
+            <div className="flex items-center gap-3 flex-wrap">
+              <div className="w-9 h-9 rounded-2xl bg-primary text-white grid place-items-center shrink-0">
+                <Trophy size={16} strokeWidth={3} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] font-extrabold uppercase tracking-widest text-primary">Quest</p>
+                <p className="h-display text-base truncate">{questRun.questTitle}</p>
+                <div className="mt-1 h-2 rounded-full bg-bg overflow-hidden border border-white">
+                  <div
+                    className="h-full bg-primary transition-all"
+                    style={{ width: `${Math.min(100, (questRun.progress / questRun.target) * 100)}%` }}
+                    data-testid="battle-quest-progress"
+                  />
+                </div>
+                <p className="text-[11px] text-ink-muted mt-1">
+                  {questRun.progress} / {questRun.target} correct · Reward: {questRun.rewardLabel}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={abandonQuest}
+                data-testid="battle-quest-abandon"
+                className="btn-ghost !text-xs !py-1.5 !px-3"
+                aria-label="Abandon quest"
+              >
+                <XIcon size={12} strokeWidth={3} /> Abandon
+              </button>
+            </div>
+          </Card>
+        )}
+
+        {/* Quest complete celebration toast */}
+        {questCompleteToast && (
+          <Card className="!p-4 border-gold/40 bg-gold/10 animate-popIn" data-testid="battle-quest-complete-toast">
+            <div className="flex items-center gap-3">
+              <div className="text-3xl" aria-hidden>🏆</div>
+              <div className="min-w-0">
+                <p className="h-display text-xl">Quest Complete!</p>
+                <p className="text-sm text-ink-muted">+{questCompleteToast.xp} XP · +{questCompleteToast.coins} coins · {questCompleteToast.label}</p>
+              </div>
+            </div>
+          </Card>
+        )}
+
         <Card className="!p-0 overflow-hidden">
           <div
             className="relative px-6 md:px-10 py-8 md:py-12"
             style={{
-              backgroundImage: `url(https://static.prod-images.emergentagent.com/jobs/2eddbcc9-3d07-49c8-985b-00a190300e36/images/3c0bb9d1132f7acc1e24202db1dd9fe4f6d6bf544566fa6b2336a6a5ad7aba12.png)`,
+              backgroundImage: `url(${realmBg?.previewUrl ?? DEFAULT_BG})`,
               backgroundSize: "cover",
               backgroundPosition: "center",
             }}
@@ -274,7 +360,7 @@ const Battle: React.FC = () => {
               >
                 Next Battle
               </button>
-              <button data-testid="battle-home-btn" onClick={() => nav("/hub")} className="btn-outline">
+              <button data-testid="battle-home-btn" onClick={() => nav("/adventure")} className="btn-outline">
                 Back to Hub
               </button>
               <button data-testid="battle-egg-btn" onClick={() => nav("/egg")} className="btn-gold">
