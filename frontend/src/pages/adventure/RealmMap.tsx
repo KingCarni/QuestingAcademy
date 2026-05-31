@@ -9,14 +9,14 @@ import { Lock, MapPin, ArrowRight, Sparkles } from "lucide-react";
 
 type Pos = { left: string; top: string };
 const LIVE_POSITIONS: Pos[] = [
-  { left: "10%",  top: "62%" },   // starter realm bottom-left
-  { left: "44%",  top: "22%" },   // second realm up & center
-  { left: "76%",  top: "58%" },   // third realm bottom-right
-  { left: "55%",  top: "78%" },   // optional spillover
+  { left: "18%",  top: "62%" },   // starter realm bottom-left (kept inset for mobile)
+  { left: "50%",  top: "22%" },   // second realm up & center
+  { left: "78%",  top: "60%" },   // third realm bottom-right
+  { left: "55%",  top: "82%" },   // optional spillover
 ];
 const UPCOMING_POSITIONS: Pos[] = [
-  { left: "82%",  top: "18%" },
-  { left: "18%",  top: "18%" },
+  { left: "82%",  top: "20%" },
+  { left: "22%",  top: "20%" },
   { left: "62%",  top: "50%" },
 ];
 
@@ -123,7 +123,7 @@ const RealmMap: React.FC = () => {
                     <Sparkles size={10} strokeWidth={3} /> Open
                   </div>
                 </div>
-                <div className="mt-3 chip bg-white/95 border-white whitespace-nowrap">
+                <div className="mt-3 chip bg-white/95 border-white max-w-[140px] sm:max-w-none truncate sm:whitespace-nowrap text-center">
                   <MapPin size={12} strokeWidth={3} className="text-primary" />
                   <span className="h-bouncy">{r.name}</span>
                 </div>
@@ -153,7 +153,7 @@ const RealmMap: React.FC = () => {
                     <Lock size={26} strokeWidth={3} className="text-ink-muted" />
                   </div>
                 </div>
-                <span className="chip mt-2 bg-white/85 border-white text-ink-muted whitespace-nowrap text-[11px]">
+                <span className="chip mt-2 bg-white/85 border-white text-ink-muted max-w-[120px] sm:max-w-none truncate sm:whitespace-nowrap text-[11px]">
                   {r.name}
                 </span>
                 <span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted mt-1">

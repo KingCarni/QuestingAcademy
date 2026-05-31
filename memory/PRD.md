@@ -1,7 +1,7 @@
-# Questing Academy — Frontend MVP PRD (v0.5)
+# Questing Academy — Frontend MVP PRD (v0.6)
 
 ## Concept
-Cute chibi-style educational RPG for Grades K-7. Avatar creation, companion collection, math + reading battles, egg hatching, Learning Academy training, parent progress dashboard, and a full internal **TeachMe Content Studio** with structured generator/review forms.
+Cute chibi-style educational RPG for Grades K-7. Avatar creation, companion collection, math + reading battles, egg hatching, Learning Academy training, parent progress dashboard, a full internal **TeachMe Content Studio**, and a Prodigy-style **RPG Adventure shell** that wraps the game in a magical map / town / quest world.
 
 ## Stack & Constraints
 - React + TypeScript SPA (CRA), Tailwind, zustand+persist (localStorage)
@@ -9,50 +9,48 @@ Cute chibi-style educational RPG for Grades K-7. Avatar creation, companion coll
 - Parent PIN `1234`, Admin/Studio PIN `2580`
 
 ## Routes
-- Player: `/`, `/onboarding`, `/character`, `/starter`, `/hub`, `/battle`, `/egg`, `/collection`, `/academy`
+- Player core: `/`, `/onboarding`, `/character`, `/starter`, `/battle`, `/egg`, `/collection`, `/academy`
+- **RPG Adventure shell (v0.6)**: `/adventure`, `/adventure/realms`, `/adventure/town/:realmId`, `/adventure/companions`, `/adventure/quests`
+- Legacy: `/hub` now redirects to `/adventure`
 - Parent: `/parent`
 - Staff: `/admin`, `/admin/studio`, `/admin/approvals`
 
 ## Versions
-- v0.1 MVP · v0.2 Senses Pack + K-7 · v0.3 Pack C + Admin · v0.4 Content Studio · **v0.5 TEA-74 Studio Refinement**
+- v0.1 MVP · v0.2 Senses Pack + K-7 · v0.3 Pack C + Admin · v0.4 Content Studio · v0.5 TEA-74 Studio Refinement · **v0.6 TEA-76/77/78 RPG Foundation**
 
-### v0.5 — TEA-74 (current)
-- 📝 **Questions** now grouped: Subject → Topic → Template → Generated Examples. Approval is per-template/concept; "Generate 4 samples" collapsible underneath each card.
-- 🧑 **Avatars**: dropdowns for category & rarity, color picker with saved palettes, category-specific fields (hair/outfit/accessory), ageRange removed.
-- 🐾 **Pets**: full editable stats (HP/ATK/DEF/SPD), affinity/rarity/role dropdowns, shiny recolor variant (stat-safe), live preview, Randomize.
-- 🌱 **Evolutions**: companion **searchable dropdown**, stage selector, evolution name, unlock condition, academy influence, visual notes, stat growth notes, Randomize.
-- 🎨 **Companion Art**: companion search-select, style preset dropdown + "Save new", randomize prompt/title/style. Mock Nano Banana retained with `TODO(api)`.
-- 🎒 **Assets**: kind dropdown, color picker + saved palettes, egg/badge category-specific fields.
-- 🗺️ **Realms**: buildings/hubs multi-select, tone dropdown, style preset, map notes, Randomize.
-- ⚔️ **Battle BGs**: realm dropdown (relationship), time-of-day + mood dropdowns, style preset, randomize prompt.
-- 🏠 **Scenes**: purpose dropdown, realm dropdown, NPC multi-select (relationship), style preset, randomize.
-- 💬 **NPCs**: realm dropdown, role + custom-role field, 7 persona dropdowns (tone, temperament, teaching style, humor, formality, encouragement), randomize name/line.
-- 📜 **Quests**: lightweight + `TODO(roadmap)` — full chain design after RPG systems mature. NPC giver dropdown.
-- 🚀 **Publish Queue**: unchanged behavior, supports new data shape.
-- 🎨 **Reusable presets**: ColorPalette[] + StylePreset[] stored in studio, surfaced in Color/Style pickers across tabs.
+### v0.6 — RPG Foundation (current, 2026-05-31)
+- 🏰 **AdventureLayout** — shared painted pastel background + Prodigy-style fixed bottom dock (Hub/Map/Pets/Quests/Practice)
+- 🏠 **/adventure (AdventureHub)** — hero banner with chibi avatar greeting, "Start Adventure" CTA, today's-buddy card, quick-travel tiles
+- 🗺️ **/adventure/realms (RealmMap)** — painted top-down world canvas with floating realm islands, dashed adventure trail (SVG), animated hover lift, locked "coming soon" islands for pending realms; accessibility-friendly legend list below
+- 🏘️ **/adventure/town/:realmId (TownHub)** — painted panorama header, building pin grid sourced from `studioStore.realm.buildings`, **hover tooltips** with description on each pin, redirect on unknown realmId
+- 🐾 **/adventure/companions (CompanionsPanel)** — active companion hero + owned-team grid; "Take with me" swaps active companion
+- 📜 **/adventure/quests (QuestsPreview)** — quest cards sourced from `studioStore.quests` (approved/published only)
+- 🔁 **Landing pivot** — onboarding now lands at `/adventure` after starter pick; all TopBar Back buttons and Admin/Parent "Open game" links redirected accordingly
 
-## Architecture additions
-- `lib/randomizer.ts` — name/prompt/stats pools
-- `components/studio/FormFields.tsx` — Field, TextField, TextArea, SelectField, NumberField, ColorField (with palette save), SearchSelect, MultiSelectChips, StylePresetPicker
-- `lib/studioTypes.ts` — extensive enum exports, new shape fields, palettes/stylePresets
-- `lib/studioStore.ts` — bumped persistence key to `v2`, added palette + preset CRUD
+### v0.5 — TEA-74 (previous)
+- Studio refinement: grouped Questions, color/palette pickers, randomizers, reusable style presets, full editable stats, etc. (See v0.5 history above.)
 
-## Testing (manual visual verification)
-- Questions grouped (Math + Reading visible) ✓
-- Pets stats/shiny/role ✓
-- Avatars category-specific reveal + color picker ✓
-- Realms buildings multi-select ✓
-- Battle BGs realm relationship + time/mood ✓
-- NPCs 7 persona dropdowns ✓
-- Publish Queue intact ✓
-- Game loop (landing/battle) unaffected ✓
-- `webpack compiled successfully · No issues found.`
+## Architecture additions (v0.6)
+- `components/adventure/AdventureLayout.tsx` — chrome + dock
+- `pages/adventure/AdventureHub.tsx | RealmMap.tsx | TownHub.tsx | CompanionsPanel.tsx | QuestsPreview.tsx`
+- Reads from `useStudio.realms` (filter `published`/`approved`) and `useStudio.quests`
+- `gameStore` consumed for active companion, owned roster, and player chibi avatar
+
+## Testing (v0.6)
+- Iteration 5: **49/49 frontend assertions passed** (desktop 1440x900 + mobile 390x844)
+- All new data-testids verified: `adventure-dock`, `adv-start-btn`, `adv-active-companion`, `adv-quick-*`, `realm-world-canvas`, `realm-node-realm-1`, `realm-locked-realm-2`, `realm-legend-*`, `town-pin-grid`, `town-tile-*`, `companions-active`, `companions-card-*`, `companions-pick-*`, `companions-go-battle`, `quest-card-q-1`, `quest-start-q-1`, `dock-*`
+- Legacy `/hub` → `/adventure` redirect verified
+- Bad realmId redirects to `/adventure/realms`
+- Minor mobile clipping on realm-1 chip fixed post-test (16% inset + responsive truncate)
 
 ## Backlog
-- P1 Real backend + Emergent Google Auth + multi-device sync
-- P1 Real Gemini/Nano Banana wired
-- P1 AI Companion Art Pipeline → `Companion.illustrationUrl`
-- P1 Quest chain v2 (branching, multi-step gating)
-- P2 Per-collection tab file extraction (ContentStudio.tsx ~1300 lines)
-- P2 Persistent Studio PIN session
-- P2 Live diff preview before publishing
+- **P1** Walking / point-and-click character movement on map & town screens
+- **P1** NPC dialogue overlay/system
+- **P1** Quest engine v2 wired to battles (multi-step, branching)
+- **P1** Real backend + Emergent Google Auth + multi-device sync
+- **P1** Real Gemini/Nano Banana wired for companion + battle bg art
+- **P2** Realm-specific battle background swap based on selected realm
+- **P2** Per-collection tab file extraction (ContentStudio.tsx ~1300 lines)
+- **P2** Persistent Studio PIN session
+- **P2** Live diff preview before publishing
+- **P2** `data-testid="admin-open-game"` and `parent-open-game` rename for cleaner assertions (testing agent suggestion)
