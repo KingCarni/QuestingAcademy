@@ -16,7 +16,7 @@ import {
 } from "../lib/mockGen";
 import {
   randomAvatarName, randomCompanionName, randomCompanionLore, randomMoveSet,
-  randomStats, randomRealmName, randomBiome, randomQuestTitle, randomScenePrompt,
+  randomStats, randomBiome, randomQuestTitle, randomScenePrompt,
   randomVisualPrompt, randomNPCName, randomDialogueLine, randomHex,
 } from "../lib/randomizer";
 import type {
@@ -34,10 +34,106 @@ import {
   NPC_TEACHING_STYLES, NPC_HUMOR_LEVELS, NPC_FORMALITIES, NPC_ENCOURAGEMENT,
   TIMES_OF_DAY, SCENE_MOODS,
 } from "../lib/studioTypes";
-import { ShieldCheck, Library, Lock, Send, Eye, ChevronDown, ChevronRight, Wand2, Sparkles } from "lucide-react";
+import { ShieldCheck, Library, Lock, Send, Eye, ChevronDown, ChevronRight, Wand2, Sparkles, Download, Archive } from "lucide-react";
 import { cn } from "../lib/cn";
 
 const STUDIO_PIN = "2580";
+const slugifyForDownload = (value: string): string =>
+  (value || "questing-academy-image")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80) || "questing-academy-image";
+
+const inferImageExtension = (url: string): string => {
+  const clean = url.split("?")[0].toLowerCase();
+  if (clean.endsWith(".jpg") || clean.endsWith(".jpeg")) return "jpg";
+  if (clean.endsWith(".webp")) return "webp";
+  return "png";
+};
+
+const downloadImageFromUrl = async (url: string, filenameBase: string) => {
+  try {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`Image download failed: ${response.status}`);
+    const blob = await response.blob();
+    const ext = blob.type.includes("jpeg") ? "jpg" : blob.type.includes("webp") ? "webp" : inferImageExtension(url);
+    const objectUrl = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = objectUrl;
+    a.download = `${slugifyForDownload(filenameBase)}.${ext}`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+  } catch (err) {
+    console.error(err);
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
+};
+
+
+
+const exportTransparentPngFromUrl = async (url: string, filenameBase: string) => {
+  try {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`Image download failed: ${response.status}`);
+    const blob = await response.blob();
+    const bitmap = await createImageBitmap(blob);
+    const canvas = document.createElement("canvas");
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) throw new Error("Canvas is not available");
+    ctx.drawImage(bitmap, 0, 0);
+
+    const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = image.data;
+    const sample = (x: number, y: number) => {
+      const idx = (y * canvas.width + x) * 4;
+      return [data[idx], data[idx + 1], data[idx + 2]] as const;
+    };
+    const corners = [
+      sample(0, 0),
+      sample(canvas.width - 1, 0),
+      sample(0, canvas.height - 1),
+      sample(canvas.width - 1, canvas.height - 1),
+    ];
+    const bg = corners.reduce(
+      (acc, c) => [acc[0] + c[0] / corners.length, acc[1] + c[1] / corners.length, acc[2] + c[2] / corners.length],
+      [0, 0, 0]
+    );
+    const distance = (r: number, g: number, b: number) => Math.sqrt((r - bg[0]) ** 2 + (g - bg[1]) ** 2 + (b - bg[2]) ** 2);
+    const hard = 42;
+    const soft = 118;
+
+    for (let i = 0; i < data.length; i += 4) {
+      const d = distance(data[i], data[i + 1], data[i + 2]);
+      if (d < hard) {
+        data[i + 3] = 0;
+      } else if (d < soft) {
+        const keep = Math.max(0, Math.min(1, (d - hard) / (soft - hard)));
+        data[i + 3] = Math.round(data[i + 3] * keep);
+      }
+    }
+
+    ctx.putImageData(image, 0, 0);
+    const pngBlob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob((out) => out ? resolve(out) : reject(new Error("PNG export failed")), "image/png");
+    });
+    const objectUrl = URL.createObjectURL(pngBlob);
+    const a = document.createElement("a");
+    a.href = objectUrl;
+    a.download = `${slugifyForDownload(filenameBase)}-transparent.png`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+  } catch (err) {
+    console.error(err);
+    alert("Transparent export failed. Try Export image, or regenerate with a plainer background.");
+  }
+};
 
 type TabKey =
   | "questions" | "avatars" | "companions" | "evolutions" | "arts" | "assets"
@@ -335,6 +431,10 @@ const getEditableStudioFields = (collection: StudioCollectionKey, item: any): { 
     { key: "personality", label: "Personality" },
     { key: "lore", label: "Lore", multiline: true },
     { key: "academyAffinity", label: "Academy affinity" },
+    { key: "stats.hp", label: "HP" },
+    { key: "stats.attack", label: "Attack" },
+    { key: "stats.defense", label: "Defense" },
+    { key: "stats.speed", label: "Speed" },
     { key: "promptUsed", label: "Prompt used", multiline: true },
     ...common,
   ];
@@ -344,7 +444,16 @@ const getEditableStudioFields = (collection: StudioCollectionKey, item: any): { 
     { key: "lore", label: "Lore", multiline: true },
     { key: "unlockCondition", label: "Unlock condition" },
     { key: "academyInfluence", label: "Academy influence" },
+    { key: "evolutionType", label: "Evolution type" },
     { key: "visualNotes", label: "Visual notes", multiline: true },
+    { key: "statGrowth.hp", label: "HP growth" },
+    { key: "statGrowth.attack", label: "Attack growth" },
+    { key: "statGrowth.defense", label: "Defense growth" },
+    { key: "statGrowth.speed", label: "Speed growth" },
+    { key: "evolvedStats.hp", label: "Evolved HP" },
+    { key: "evolvedStats.attack", label: "Evolved Attack" },
+    { key: "evolvedStats.defense", label: "Evolved Defense" },
+    { key: "evolvedStats.speed", label: "Evolved Speed" },
     { key: "statGrowthNotes", label: "Stat growth notes" },
     { key: "promptUsed", label: "Prompt used", multiline: true },
     ...common,
@@ -399,8 +508,23 @@ const getEditableStudioFields = (collection: StudioCollectionKey, item: any): { 
 const getStudioItemTitle = (item: any): string =>
   item.name || item.title || item.evolutionName || item.realm || item.companionName || item.id || "Studio item";
 
+const getNestedValue = (item: any, key: string): any =>
+  key.split(".").reduce((acc, part) => (acc == null ? undefined : acc[part]), item);
+
+const setNestedValue = (target: any, key: string, value: any) => {
+  const parts = key.split(".");
+  let cursor = target;
+  parts.slice(0, -1).forEach((part) => {
+    if (!cursor[part] || typeof cursor[part] !== "object") cursor[part] = {};
+    cursor = cursor[part];
+  });
+  cursor[parts[parts.length - 1]] = value;
+};
+
 const StudioViewEditButton: React.FC<StudioViewEditButtonProps> = ({ collection, item, title, imageUrl }) => {
+  const exportFilename = `${collection}-${getStudioItemTitle(item)}-${item.outputMode || item.zonePurpose || item.id || "image"}`;
   const updateItem = useStudio((s) => s.updateItem);
+  const setStatus = useStudio((s) => s.setStatus);
   const [open, setOpen] = useState(false);
   const [edit, setEdit] = useState(false);
   const [fullscreenImage, setFullscreenImage] = useState(false);
@@ -410,7 +534,7 @@ const StudioViewEditButton: React.FC<StudioViewEditButtonProps> = ({ collection,
   const resetForm = () => {
     const next: Record<string, string> = {};
     editableFields.forEach((f) => {
-      const value = item[f.key];
+      const value = getNestedValue(item, f.key);
       next[f.key] = value === undefined || value === null ? "" : String(value);
     });
     setForm(next);
@@ -422,10 +546,15 @@ const StudioViewEditButton: React.FC<StudioViewEditButtonProps> = ({ collection,
     setOpen(true);
   };
 
+  const archiveCard = () => {
+    setStatus(collection, item.id, "archived");
+    setOpen(false);
+  };
+
   const save = () => {
     const patch: Record<string, string> = {};
     editableFields.forEach((f) => {
-      patch[f.key] = form[f.key] ?? "";
+      setNestedValue(patch, f.key, form[f.key] ?? "");
     });
     updateItem(collection, item.id, { ...patch, updatedAt: new Date().toISOString() });
     setEdit(false);
@@ -466,9 +595,19 @@ const StudioViewEditButton: React.FC<StudioViewEditButtonProps> = ({ collection,
                 <button type="button" onClick={() => setFullscreenImage(true)} className="group block w-full text-left">
                   <img src={imageUrl} alt={`${displayTitle} full preview`} className="w-full max-h-[420px] object-cover rounded-2xl border-4 border-white shadow-lg transition group-hover:brightness-95" />
                 </button>
-                <button type="button" onClick={() => setFullscreenImage(true)} className="btn-outline !text-xs !py-1.5 !px-3 mt-2">
-                  <Eye size={13} strokeWidth={3} /> View image fullscreen
-                </button>
+                <div className="flex flex-wrap gap-2 mt-2">
+                  <button type="button" onClick={() => setFullscreenImage(true)} className="btn-outline !text-xs !py-1.5 !px-3">
+                    <Eye size={13} strokeWidth={3} /> View image fullscreen
+                  </button>
+                  <button type="button" onClick={() => downloadImageFromUrl(imageUrl, exportFilename)} className="btn-outline !text-xs !py-1.5 !px-3">
+                    <Download size={13} strokeWidth={3} /> Export image
+                  </button>
+                  {/^(assets|companions|arts|avatars|evolutions|npcs)$/.test(collection) && (
+                    <button type="button" onClick={() => exportTransparentPngFromUrl(imageUrl, exportFilename)} className="btn-outline !text-xs !py-1.5 !px-3">
+                      <Download size={13} strokeWidth={3} /> Export transparent PNG
+                    </button>
+                  )}
+                </div>
               </div>
             )}
 
@@ -513,7 +652,7 @@ const StudioViewEditButton: React.FC<StudioViewEditButtonProps> = ({ collection,
                         />
                       )
                     ) : (
-                      <p className="text-xs text-ink-muted whitespace-pre-wrap">{String(item[f.key] ?? "") || "—"}</p>
+                      <p className="text-xs text-ink-muted whitespace-pre-wrap">{String(getNestedValue(item, f.key) ?? "") || "—"}</p>
                     )}
                   </div>
                 ))}
@@ -532,7 +671,10 @@ const StudioViewEditButton: React.FC<StudioViewEditButtonProps> = ({ collection,
                   <button type="button" onClick={cancelEdit} className="btn-ghost !text-sm !py-2 !px-4">Cancel</button>
                 </>
               ) : (
-                <button type="button" onClick={startEdit} className="btn-primary !text-sm !py-2 !px-4">Edit fields</button>
+                <>
+                  <button type="button" onClick={startEdit} className="btn-primary !text-sm !py-2 !px-4">Edit fields</button>
+                  <button type="button" onClick={archiveCard} className="btn-ghost !text-sm !py-2 !px-4 text-ink-muted"><Archive size={14} strokeWidth={3} /> Archive card</button>
+                </>
               )}
             </div>
           </div>
@@ -541,7 +683,13 @@ const StudioViewEditButton: React.FC<StudioViewEditButtonProps> = ({ collection,
 
       {fullscreenImage && imageUrl && (
         <div className="fixed inset-0 z-[60] bg-black/85 p-4 flex items-center justify-center" role="dialog" aria-modal="true">
-          <button type="button" onClick={() => setFullscreenImage(false)} className="absolute top-4 right-4 btn-ghost !bg-white !text-ink !text-sm !py-2 !px-4">Close</button>
+          <div className="absolute top-4 right-4 flex gap-2">
+            <button type="button" onClick={() => downloadImageFromUrl(imageUrl, exportFilename)} className="btn-ghost !bg-white !text-ink !text-sm !py-2 !px-4"><Download size={14} strokeWidth={3} /> Export</button>
+            {/^(assets|companions|arts|avatars|evolutions|npcs)$/.test(collection) && (
+              <button type="button" onClick={() => exportTransparentPngFromUrl(imageUrl, exportFilename)} className="btn-ghost !bg-white !text-ink !text-sm !py-2 !px-4"><Download size={14} strokeWidth={3} /> Transparent PNG</button>
+            )}
+            <button type="button" onClick={() => setFullscreenImage(false)} className="btn-ghost !bg-white !text-ink !text-sm !py-2 !px-4">Close</button>
+          </div>
           <img src={imageUrl} alt={`${displayTitle} fullscreen`} className="max-w-[95vw] max-h-[92vh] object-contain rounded-2xl shadow-2xl" />
         </div>
       )}
@@ -570,7 +718,8 @@ const ImagePreviewWorkflow: React.FC<{
   onDiscard: () => void;
   disabled?: boolean;
   imageClassName?: string;
-}> = ({ testid, title, helper, generatedPreview, savedPreview, onGenerate, onSave, onDiscard, disabled, imageClassName }) => {
+  exportFilename?: string;
+}> = ({ testid, title, helper, generatedPreview, savedPreview, onGenerate, onSave, onDiscard, disabled, imageClassName, exportFilename }) => {
   const [status, setStatus] = useState<ImageLoadStatus>("idle");
   const [attempt, setAttempt] = useState(0);
 
@@ -625,6 +774,7 @@ const ImagePreviewWorkflow: React.FC<{
 
   const isBusy = status === "generating" || status === "loading";
   const isReady = status === "ready";
+  const canExportTransparent = /assets|companions|arts|avatars|evolutions|npcs/i.test(testid);
   const cacheBustedUrl = generatedPreview?.url ? `${generatedPreview.url}${generatedPreview.url.includes("?") ? "&" : "?"}qaRetry=${attempt}` : "";
 
   return (
@@ -671,6 +821,8 @@ const ImagePreviewWorkflow: React.FC<{
             <p className="text-xs text-ink-muted bg-bg border-2 border-white rounded-2xl p-3 max-h-32 overflow-auto">{generatedPreview.prompt}</p>
             <div className="flex flex-wrap gap-2 mt-3">
               {isReady && <button type="button" data-testid={`${testid}-save`} onClick={onSave} className="btn-primary !text-sm !py-2 !px-4">Save image to draft</button>}
+              {isReady && <button type="button" data-testid={`${testid}-export`} onClick={() => downloadImageFromUrl(generatedPreview.url, exportFilename || `${testid}-generated-preview`)} className="btn-outline !text-sm !py-2 !px-4"><Download size={14} strokeWidth={3} /> Export image</button>}
+              {isReady && canExportTransparent && <button type="button" data-testid={`${testid}-export-transparent`} onClick={() => exportTransparentPngFromUrl(generatedPreview.url, exportFilename || `${testid}-generated-preview`)} className="btn-outline !text-sm !py-2 !px-4"><Download size={14} strokeWidth={3} /> Export transparent PNG</button>}
               {status === "error" && <button type="button" onClick={handleGenerate} className="btn-outline !text-sm !py-2 !px-4">Regenerate</button>}
               <button type="button" data-testid={`${testid}-discard`} onClick={handleDiscard} className="btn-ghost !text-sm !py-2 !px-4">Discard</button>
             </div>
@@ -869,7 +1021,7 @@ const AvatarsTab: React.FC = () => {
           <div className="min-w-0">
             <p className="h-display text-lg truncate">{i.name}</p>
             <p className="text-[10px] font-extrabold uppercase text-ink-muted">{i.category.replace("-"," ")} · {i.rarity}</p>
-            {i.previewUrl && <p className="text-[10px] font-extrabold text-sage mt-1">Generated image attached · {i.imageProvider ?? "prototype"}</p>}
+            {i.previewUrl && <p className="text-[10px] font-extrabold text-sage mt-1">Generated image attached · {(i as any).outputMode ?? "Walking Map"} · {i.imageProvider ?? "prototype"}</p>}
             {i.description && <p className="text-xs text-ink-muted mt-1 line-clamp-2">{i.description}</p>}
             {i.hair?.style && <p className="text-[10px] font-bold text-primary mt-1">Hair: {i.hair.style}, {i.hair.length}, {i.hair.texture}</p>}
             {i.outfit?.outfitType && <p className="text-[10px] font-bold text-primary mt-1">Outfit: {i.outfit.outfitType} · {i.outfit.theme}</p>}
@@ -891,6 +1043,53 @@ type CompanionGeneratedPreview = {
   provider: string;
 };
 
+const COMPANION_MOVE_CATEGORIES = ["attack", "support", "defense", "utility"] as const;
+const COMPANION_MOVE_DB = [
+  { name: "Pat", affinity: "all", category: "support", defaultLevel: 1, flavor: "gentle comfort move" },
+  { name: "Warm Hug", affinity: "all", category: "support", defaultLevel: 3, flavor: "friendly encouragement move" },
+  { name: "Spark Hop", affinity: "star", category: "attack", defaultLevel: 99, flavor: "small cheerful sparkle attack" },
+  { name: "Pebble Shield", affinity: "earth", category: "defense", defaultLevel: 99, flavor: "protective stone shield" },
+  { name: "Bubble Bop", affinity: "water", category: "attack", defaultLevel: 99, flavor: "soft bouncing water attack" },
+  { name: "Leaf Twirl", affinity: "nature", category: "attack", defaultLevel: 99, flavor: "gentle leafy spin" },
+  { name: "Ember Pat", affinity: "fire", category: "attack", defaultLevel: 99, flavor: "tiny warm ember tap" },
+  { name: "Breeze Veil", affinity: "air", category: "support", defaultLevel: 99, flavor: "soft wind support veil" },
+  { name: "Glow Guard", affinity: "star", category: "defense", defaultLevel: 99, flavor: "friendly glowing guard" },
+  { name: "Snack Cheer", affinity: "all", category: "utility", defaultLevel: 99, flavor: "happy utility boost" },
+] as const;
+
+const DEFAULT_COMPANION_MOVE_ROWS = [
+  { moveName: "Pat", unlockLevel: 1, category: "support" },
+  { moveName: "Warm Hug", unlockLevel: 3, category: "support" },
+  { moveName: "Spark Hop", unlockLevel: 99, category: "attack" },
+  { moveName: "Pebble Shield", unlockLevel: 99, category: "defense" },
+  { moveName: "Bubble Bop", unlockLevel: 99, category: "attack" },
+  { moveName: "Leaf Twirl", unlockLevel: 99, category: "attack" },
+  { moveName: "Breeze Veil", unlockLevel: 99, category: "support" },
+  { moveName: "Snack Cheer", unlockLevel: 99, category: "utility" },
+] as const;
+
+const normalizeCompanionMoveRows = (moves?: string[]) => {
+  const source = moves && moves.length ? moves : DEFAULT_COMPANION_MOVE_ROWS.map((m) => `Lv ${m.unlockLevel} · ${m.category} · ${m.moveName}`);
+  return source.slice(0, 8).map((line, index) => {
+    const parts = String(line).split("·").map((p) => p.trim());
+    const levelMatch = parts[0]?.match(/\d+/);
+    const category = (parts[1] || (index < 2 ? "support" : "attack")).toLowerCase();
+    const moveName = parts[2] || parts[0]?.replace(/^Lv\s*\d+/i, "").trim() || DEFAULT_COMPANION_MOVE_ROWS[index]?.moveName || "Pat";
+    return {
+      moveName,
+      unlockLevel: levelMatch ? Number(levelMatch[0]) : (index === 0 ? 1 : index === 1 ? 3 : 99),
+      category: COMPANION_MOVE_CATEGORIES.includes(category as any) ? category : "attack",
+    };
+  });
+};
+
+const formatCompanionMoveRows = (rows: { moveName: string; unlockLevel: number; category: string }[]) =>
+  rows.slice(0, 8).map((m, index) => {
+    const level = index === 0 ? 1 : Math.max(2, Math.min(99, Number(m.unlockLevel) || 99));
+    const category = COMPANION_MOVE_CATEGORIES.includes(m.category as any) ? m.category : "attack";
+    return `Lv ${level} · ${category} · ${m.moveName || "Pat"}`;
+  });
+
 const buildCompanionImagePrompt = (draft: Partial<StudioCompanion>): string => {
   const name = draft.name?.trim() || "unnamed companion";
   const affinity = draft.affinity || "nature";
@@ -899,7 +1098,8 @@ const buildCompanionImagePrompt = (draft: Partial<StudioCompanion>): string => {
   const academy = draft.academyAffinity || "addition";
   const personality = draft.personality || "friendly, brave, emotionally appealing";
   const lore = draft.lore || "A kind companion who helps kids feel excited to learn.";
-  const moves = (draft.moves ?? ["Pat", "Hug", "Shield"]).join(", ");
+  const moveRows = normalizeCompanionMoveRows(draft.moves);
+  const moves = moveRows.slice(0, 4).map((m) => `Lv ${m.unlockLevel} ${m.category} ${m.moveName}`).join(", ");
   const palette = draft.palette ?? { from: "#E8F4E1", to: "#86A789" };
   const shiny = draft.shinyEnabled && draft.shinyPalette
     ? `Optional shiny recolor palette ${draft.shinyPalette.from} to ${draft.shinyPalette.to}; same design, no stat or shape changes.`
@@ -914,7 +1114,7 @@ const buildCompanionImagePrompt = (draft: Partial<StudioCompanion>): string => {
     `Move inspirations: ${moves}.`,
     `Use palette from ${palette.from} to ${palette.to}.`,
     shiny,
-    "Style rules: full body visible, centered in frame, big expressive eyes, rounded soft shapes, cozy storybook watercolor, pastel colors, child-safe for ages 5-12, friendly expression, clean readable silhouette, simple light background.",
+    "Style rules: full body visible, centered in frame, big expressive eyes, rounded soft shapes, cozy storybook watercolor, pastel colors, child-safe for ages 5-12, friendly expression, clean readable silhouette, isolated companion cutout, plain transparent-ready/removable background.",
     "Negative rules: no text, no watermark, no cropped character, no realistic animal violence, no horror, no weapons, no dark scary mood, no photorealism.",
   ].join(" ");
 };
@@ -929,10 +1129,23 @@ const CompanionsTab: React.FC = () => {
     stats: { hp: 90, attack: 20, defense: 14, speed: 15 },
     palette: { from: "#E8F4E1", to: "#86A789" },
     shinyEnabled: false, shinyPalette: { from: "#FCE2F0", to: "#D77DA5" },
-    moves: ["Pat", "Hug", "Shield"],
+    moves: formatCompanionMoveRows([...DEFAULT_COMPANION_MOVE_ROWS]),
   });
   const update = <K extends keyof StudioCompanion>(k: K, v: StudioCompanion[K]) =>
     setDraft((d) => ({ ...d, [k]: v }));
+  const moveRows = normalizeCompanionMoveRows(draft.moves);
+  const updateMoveRow = (index: number, patch: Partial<{ moveName: string; unlockLevel: number; category: string }>) => {
+    const next = moveRows.map((row, i) => i === index ? { ...row, ...patch } : row);
+    update("moves", formatCompanionMoveRows(next));
+  };
+  const addMoveRow = () => {
+    if (moveRows.length >= 8) return;
+    update("moves", formatCompanionMoveRows([...moveRows, { moveName: "Spark Hop", unlockLevel: 99, category: "attack" }]));
+  };
+  const removeMoveRow = (index: number) => {
+    if (moveRows.length <= 1) return;
+    update("moves", formatCompanionMoveRows(moveRows.filter((_, i) => i !== index)));
+  };
 
   const randomize = () => {
     const aff = AFFINITIES[Math.floor(Math.random() * AFFINITIES.length)];
@@ -945,7 +1158,11 @@ const CompanionsTab: React.FC = () => {
       rarity: RARITIES[Math.floor(Math.random() * 4)] as Rarity, // skip legendary by default
       role: COMPANION_ROLES[Math.floor(Math.random() * COMPANION_ROLES.length)],
       lore: randomCompanionLore(),
-      moves: randomMoveSet(aff),
+      moves: formatCompanionMoveRows([
+        { moveName: "Pat", unlockLevel: 1, category: "support" },
+        { moveName: "Warm Hug", unlockLevel: 3, category: "support" },
+        ...randomMoveSet(aff).slice(0, 6).map((move) => ({ moveName: move, unlockLevel: 99, category: "attack" })),
+      ]),
       stats: randomStats(),
       palette: { from: randomHex(), to: randomHex() },
       shinyPalette: { from: randomHex(), to: randomHex() },
@@ -981,7 +1198,7 @@ const CompanionsTab: React.FC = () => {
       academyAffinity: draft.academyAffinity ?? "addition",
       personality: draft.personality ?? "—",
       lore: draft.lore ?? randomCompanionLore(),
-      moves: draft.moves ?? ["Pat", "Hug", "Shield"],
+      moves: draft.moves ?? formatCompanionMoveRows([...DEFAULT_COMPANION_MOVE_ROWS]),
       emoji: draft.emoji ?? "🌱",
       stats: draft.stats ?? { hp: 90, attack: 20, defense: 14, speed: 15 },
       palette: draft.palette ?? { from: "#E8F4E1", to: "#86A789" },
@@ -1018,7 +1235,7 @@ const CompanionsTab: React.FC = () => {
             <Field label="Rarity"><SelectField testid="companions-input-rarity" value={draft.rarity ?? ""} options={RARITIES} onChange={(v) => update("rarity", v as Rarity)} /></Field>
             <Field label="Role"><SelectField testid="companions-input-role" value={draft.role ?? ""} options={COMPANION_ROLES} onChange={(v) => update("role", v as CompanionRole)} /></Field>
             <Field label="Academy affinity"><TextField testid="companions-input-academy" value={draft.academyAffinity ?? ""} onChange={(v) => update("academyAffinity", v)} placeholder="addition / fractions / rhyming…" /></Field>
-            <Field label="Emoji glyph"><TextField testid="companions-input-emoji" value={draft.emoji ?? ""} onChange={(v) => update("emoji", v)} placeholder="🌱" /></Field>
+            <Field label="Emoji glyph"><SelectField testid="companions-input-emoji" value={draft.emoji ?? ""} onChange={(v) => update("emoji", v)} options={["🌱","🔥","💧","🪨","🌬️","✨","🐾","🐣","🦊","🐰","🐢","🐉","🦉","🦋","🫧","🌸"]} placeholder="—" /></Field>
             <Field label="HP"><NumberField testid="companions-stat-hp" value={draft.stats?.hp ?? 0} onChange={(n) => update("stats", { ...(draft.stats!), hp: n })} min={1} max={300} /></Field>
             <Field label="Attack"><NumberField testid="companions-stat-attack" value={draft.stats?.attack ?? 0} onChange={(n) => update("stats", { ...(draft.stats!), attack: n })} min={1} max={120} /></Field>
             <Field label="Defense"><NumberField testid="companions-stat-defense" value={draft.stats?.defense ?? 0} onChange={(n) => update("stats", { ...(draft.stats!), defense: n })} min={1} max={120} /></Field>
@@ -1027,7 +1244,38 @@ const CompanionsTab: React.FC = () => {
             <Field label="Color to"><ColorField testid="companions-palette-to" value={draft.palette?.to ?? "#86A789"} onChange={(v) => update("palette", { ...(draft.palette!), to: v })} onSave={() => {}} /></Field>
             <Field label="Personality" full><TextField testid="companions-input-personality" value={draft.personality ?? ""} onChange={(v) => update("personality", v)} placeholder="friendly support / bold defender / playful trickster" /></Field>
             <Field label="Lore" full><TextArea testid="companions-input-lore" value={draft.lore ?? ""} onChange={(v) => update("lore", v)} placeholder="Short, kid-friendly backstory" onRandomize={() => update("lore", randomCompanionLore())} /></Field>
-            <Field label="Moves (comma separated)" full><TextField testid="companions-input-moves" value={(draft.moves ?? []).join(", ")} onChange={(v) => update("moves", v.split(",").map((m) => m.trim()).filter(Boolean))} placeholder="Pat, Hug, Shield" /></Field>
+            <Field label="Moves / spells (up to 8, level locked)" full>
+              <div className="space-y-2">
+                {moveRows.map((move, idx) => (
+                  <div key={idx} className="grid grid-cols-[1fr,110px,130px,auto] gap-2 items-center rounded-2xl bg-white/80 border-2 border-white p-2">
+                    <SelectField
+                      testid={`companions-move-name-${idx}`}
+                      value={move.moveName}
+                      options={COMPANION_MOVE_DB.map((m) => m.name)}
+                      onChange={(v) => updateMoveRow(idx, { moveName: v })}
+                    />
+                    <NumberField
+                      testid={`companions-move-level-${idx}`}
+                      value={idx === 0 ? 1 : move.unlockLevel}
+                      min={idx === 0 ? 1 : 2}
+                      max={99}
+                      onChange={(n) => updateMoveRow(idx, { unlockLevel: idx === 0 ? 1 : n })}
+                    />
+                    <SelectField
+                      testid={`companions-move-category-${idx}`}
+                      value={move.category}
+                      options={COMPANION_MOVE_CATEGORIES}
+                      onChange={(v) => updateMoveRow(idx, { category: v })}
+                    />
+                    <button type="button" onClick={() => removeMoveRow(idx)} disabled={idx === 0} className="btn-ghost !text-xs !py-1.5 !px-2 disabled:opacity-30">Remove</button>
+                  </div>
+                ))}
+                <button type="button" onClick={addMoveRow} disabled={moveRows.length >= 8} className="btn-outline !text-xs !py-1.5 !px-3 disabled:opacity-40">
+                  + Add move slot
+                </button>
+                <p className="text-[10px] font-bold text-ink-muted">Slot 1 is always level 1. Slot 2 defaults early. Extra move slots default/should stay locked at level 99 until manually tuned.</p>
+              </div>
+            </Field>
             <Field label="Shiny enabled?">
               <label className="inline-flex items-center gap-2 px-3 py-2 rounded-full bg-white border-2 border-white">
                 <input type="checkbox" data-testid="companions-shiny-enabled" checked={!!draft.shinyEnabled} onChange={(e) => update("shinyEnabled", e.target.checked)} className="w-5 h-5 accent-primary" />
@@ -1103,6 +1351,7 @@ const CompanionsTab: React.FC = () => {
             </div>
           )}
           <StudioViewEditButton collection="companions" item={i} title={i.name} imageUrl={i.previewUrl} />
+          <button type="button" onClick={() => useStudio.getState().setStatus("companions", i.id, "archived")} className="btn-ghost !text-xs !py-1.5 !px-3 mt-2 w-full">Archive card</button>
         </div>
       )}
     />
@@ -1133,71 +1382,188 @@ type EvolutionGeneratedPreview = {
   provider: string;
 };
 
-const buildEvolutionImagePrompt = (draft: Partial<StudioEvolution>, baseCompanion?: StudioCompanion): string => {
-  const baseName = baseCompanion?.name || draft.baseCompanionName || "unnamed base companion";
+const EVOLUTION_TYPES = ["minor", "major", "final", "alternate", "shiny-only"] as const;
+const EVOLUTION_BACKGROUND_MODES = ["transparent-ready", "plain removable background", "simple light background", "game UI presentation"] as const;
+const EVOLUTION_PALETTE_RELATIONSHIPS = ["preserve base palette", "darker / stronger version", "lighter / angelic version", "shiny alternate", "complementary colors", "custom palette"] as const;
+const EVOLUTION_INTENSITIES = ["subtle first evolution", "clear second form", "final form", "alternate form"] as const;
+
+const getEvolutionStatGrowth = (stage: number, evolutionType?: string) => {
+  if (evolutionType === "shiny-only") return { hp: 0, attack: 0, defense: 0, speed: 0 };
+  if (evolutionType === "alternate") return { hp: 6, attack: 3, defense: 3, speed: 3 };
+  if (evolutionType === "minor" || stage === 2) return { hp: 10, attack: 4, defense: 4, speed: 3 };
+  if (evolutionType === "final" || stage === 3) return { hp: 20, attack: 8, defense: 6, speed: 5 };
+  return { hp: 12, attack: 5, defense: 5, speed: 4 };
+};
+
+const calculateEvolvedStats = (base?: StudioCompanion, growth?: any) => ({
+  hp: (base?.stats?.hp ?? 0) + Number(growth?.hp ?? 0),
+  attack: (base?.stats?.attack ?? 0) + Number(growth?.attack ?? 0),
+  defense: (base?.stats?.defense ?? 0) + Number(growth?.defense ?? 0),
+  speed: (base?.stats?.speed ?? 0) + Number(growth?.speed ?? 0),
+});
+
+const compactPromptText = (value?: string, fallback = ""): string =>
+  (value || fallback || "")
+    .replace(/https?:\/\/\S+/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 220);
+
+const inferBaseVisualSummary = (baseCompanion?: StudioCompanion): string => {
+  if (!baseCompanion) return "cute rounded fantasy pet companion with friendly big eyes";
+  const lore = compactPromptText(baseCompanion.lore, "friendly fantasy pet companion");
+  const palette = baseCompanion.palette ? ` Palette ${baseCompanion.palette.from} to ${baseCompanion.palette.to}.` : "";
+  return compactPromptText(`${lore}.${palette}`, "cute rounded fantasy pet companion with friendly big eyes");
+};
+
+const buildEvolutionImagePrompt = (draft: Partial<StudioEvolution> & Record<string, any>, baseCompanion?: StudioCompanion, previousEvolutions: StudioEvolution[] = []): string => {
+  const baseName = baseCompanion?.name || draft.baseCompanionName || "base pet";
   const evolutionName = draft.evolutionName?.trim() || `${baseName} evolved form`;
-  const stage = draft.stageNumber ?? 2;
+  const stage = Number(draft.stageNumber ?? 2);
+  const evolutionType = draft.evolutionType || (stage >= 3 ? "final" : "major");
+  const evolutionIntensity = draft.evolutionIntensity || (stage >= 3 ? "final form" : "subtle first evolution");
+  const speciesFamily = compactPromptText(draft.speciesFamily, inferBaseVisualSummary(baseCompanion));
+  const baseVisualSummary = compactPromptText(draft.baseVisualSummary, inferBaseVisualSummary(baseCompanion));
+  const visual = compactPromptText(draft.visualNotes, "make it slightly bigger, more confident, and clearly related to the base pet");
   const affinity = baseCompanion?.affinity || "fantasy";
-  const role = baseCompanion?.role || "balanced";
-  const rarity = baseCompanion?.rarity || "common";
-  const academy = draft.academyInfluence || baseCompanion?.academyAffinity || "addition";
-  const lore = draft.lore || `As ${baseName} grows, its powers bloom into a new friendly form.`;
-  const unlock = draft.unlockCondition || "Unlocked through steady learning progress.";
-  const visual = draft.visualNotes || "Keep the same cute companion family, but slightly more advanced and magical.";
-  const stats = draft.statGrowthNotes || "Stronger, more confident, but still approachable and child-safe.";
   const palette = baseCompanion?.palette;
-  const paletteText = palette ? `Use a related palette from ${palette.from} to ${palette.to}, preserving visual ancestry from the base companion.` : "Use a soft pastel palette that clearly relates to the base companion.";
-  const basePrompt = baseCompanion?.promptUsed ? `Base companion image prompt context: ${baseCompanion.promptUsed}` : "";
+  const useBasePalette = draft.useBasePalette !== false;
+  const paletteRelationship = draft.paletteRelationship || "preserve base palette";
+  const evolutionPalette = draft.evolutionPalette || { from: palette?.from || "#9D8DF1", to: palette?.to || "#F4C753" };
+  const paletteLine = useBasePalette
+    ? (palette ? `${palette.from} and ${palette.to}; ${paletteRelationship}` : `soft pastel related colors; ${paletteRelationship}`)
+    : `${evolutionPalette.from} and ${evolutionPalette.to}; ${paletteRelationship}`;
+  const previous = previousEvolutions.length
+    ? compactPromptText(previousEvolutions[previousEvolutions.length - 1]?.visualNotes || previousEvolutions[previousEvolutions.length - 1]?.evolutionName || "previous form exists")
+    : "none";
 
   return [
-    `Create a Questing Academy evolution concept for ${evolutionName}.`,
-    `This is stage ${stage} evolved form of ${baseName}; keep recognizable visual ancestry from the base companion, not a totally unrelated creature.`,
-    `Base companion context: affinity/element ${affinity}, rarity ${rarity}, battle role ${role}. Academy learning influence: ${academy}.`,
-    `Evolution lore: ${lore}.`,
-    `Unlock condition inspiration: ${unlock}.`,
-    `Visual direction: ${visual}.`,
-    `Stat growth feeling: ${stats}.`,
-    paletteText,
-    basePrompt,
-    "Style rules: cute chibi educational fantasy RPG pet companion, full body visible, centered in frame, big expressive eyes, rounded soft shapes, slightly more mature and magical than the base form but still friendly, cozy storybook watercolor, pastel colors, child-safe for ages 5-12, clean readable silhouette, simple light background.",
-    "Negative rules: no text, no watermark, no cropped character, no realistic animal violence, no horror, no weapons, no dark scary mood, no photorealism.",
-  ].filter(Boolean).join(" ");
+    "Create one single game-ready evolved pet asset for Questing Academy.",
+    `Pet name: ${evolutionName}.`,
+    `Base pet: ${baseName}.`,
+    `Evolution: stage ${stage}, ${evolutionType}, ${evolutionIntensity}.`,
+    stage <= 2 ? "This is a modest first evolution, not a final mega form." : "This is a stronger later evolution while preserving the base identity.",
+    `Species/body family: ${speciesFamily}.`,
+    `Base visual DNA: ${baseVisualSummary}.`,
+    previous !== "none" ? `Previous evolution note: ${previous}.` : "",
+    `Change direction: ${visual}.`,
+    `Affinity cue: ${affinity}.`,
+    `Color palette: ${paletteLine}.`,
+    "Keep the same creature family, face feel, body rhythm, and cute friendly emotional tone.",
+    "Show exactly one creature only, centered, full body visible, clean readable silhouette.",
+    "Style: cute chibi fantasy RPG pet, soft pastel storybook game art, rounded shapes, big expressive eyes, child-safe, polished game asset.",
+    "Background: flat pure white removable background for transparent PNG export.",
+    "Negative: no text, no labels, no watermark, no logo, no UI, no concept sheet, no design sheet, no side sketches, no alternate poses, no duplicate creatures, no extra creatures, no parchment, no poster, no border, no scenery, no props, no cropped body, no photorealism, no horror, no weapons."
+  ].filter(Boolean).join("\n");
 };
 
 const EvolutionsTab: React.FC = () => {
   const items = useStudio((s) => s.evolutions);
   const companions = useStudio((s) => s.companions);
   const addItem = useStudio((s) => s.addItem);
-  const [draft, setDraft] = useState<Partial<StudioEvolution>>({ stageNumber: 2 });
+  const approvedCompanions = companions.filter((c) => c.status === "approved" || c.status === "published");
+  const [draft, setDraft] = useState<Partial<StudioEvolution> & Record<string, any>>({
+    stageNumber: 2,
+    evolutionType: "major",
+    statGrowth: getEvolutionStatGrowth(2, "major"),
+    backgroundMode: "transparent-ready",
+    transparentIntent: true,
+    useBasePalette: true,
+    paletteRelationship: "preserve base palette",
+    evolutionPalette: { from: "#9D8DF1", to: "#F4C753" },
+    speciesFamily: "",
+    baseVisualSummary: "",
+  });
   const [generatedPreview, setGeneratedPreview] = useState<EvolutionGeneratedPreview | null>(null);
   const [savedPreview, setSavedPreview] = useState<EvolutionGeneratedPreview | null>(null);
   const update = <K extends keyof StudioEvolution>(k: K, v: StudioEvolution[K]) => setDraft((d) => ({ ...d, [k]: v }));
+  const updateAny = (k: string, v: any) => setDraft((d) => ({ ...d, [k]: v }));
 
   const baseCompanion = companions.find((c) => c.id === draft.baseCompanionId);
+  const previousEvolutions = items
+    .filter((e) => e.baseCompanionId === draft.baseCompanionId && Number(e.stageNumber) < Number(draft.stageNumber ?? 2) && (e.status === "approved" || e.status === "published"))
+    .sort((a, b) => Number(a.stageNumber) - Number(b.stageNumber));
+  const evolvedStats = calculateEvolvedStats(baseCompanion, draft.statGrowth);
 
   const randomize = () => {
-    const c = companions[Math.floor(Math.random() * companions.length)];
+    const c = approvedCompanions[Math.floor(Math.random() * approvedCompanions.length)];
     if (!c) return;
     setGeneratedPreview(null);
     setSavedPreview(null);
     const stage = Math.random() < 0.5 ? 2 : 3;
+    const evolutionType = stage === 3 ? "final" : "major";
+    const statGrowth = getEvolutionStatGrowth(stage, evolutionType);
     setDraft({
       baseCompanionId: c.id,
       baseCompanionName: c.name,
       stageNumber: stage as 2 | 3,
-      evolutionName: `${c.name} ${stage === 2 ? "mid" : "final"}`,
-      lore: `As ${c.name} grows, its ${c.affinity} powers bloom.`,
-      unlockCondition: stage === 2 ? `Answer 30 ${c.academyAffinity} correctly` : `Reach Academy mastery 80%`,
+      evolutionType,
+      evolutionName: `${c.name} ${stage === 2 ? "Bloom" : "Apex"}`,
+      lore: `As ${c.name} grows, its ${c.affinity} powers bloom while keeping its kind heart.`,
+      unlockCondition: stage === 2 ? `Answer 30 ${c.academyAffinity} questions correctly` : `Reach Academy mastery 80% with ${c.name}`,
       academyInfluence: c.academyAffinity,
-      visualNotes: stage === 2 ? "Rounder body, accent ribbons" : "Antlered crown, glowing cape",
-      statGrowthNotes: stage === 2 ? "+10 HP, +4 ATK" : "+20 HP, +8 ATK, +4 DEF",
+      visualNotes: stage === 2 ? "Slightly taller, more confident pose, stronger markings, same friendly face family." : "Final form with clearer magical accents, stronger silhouette, and preserved base companion traits.",
+      statGrowth,
+      evolvedStats: calculateEvolvedStats(c, statGrowth),
+      statGrowthNotes: `HP +${statGrowth.hp}, ATK +${statGrowth.attack}, DEF +${statGrowth.defense}, SPD +${statGrowth.speed}`,
+      backgroundMode: "transparent-ready",
+      transparentIntent: true,
+      useBasePalette: true,
+      paletteRelationship: stage === 3 ? "darker / stronger version" : "preserve base palette",
+      evolutionPalette: { from: c.palette?.from || "#9D8DF1", to: c.palette?.to || "#F4C753" },
     });
+  };
+
+  const handleBaseCompanionChange = (id: string) => {
+    const c = companions.find((x) => x.id === id);
+    const stage = Number(draft.stageNumber ?? 2);
+    const evolutionType = draft.evolutionType || (stage >= 3 ? "final" : "major");
+    const statGrowth = draft.statGrowth || getEvolutionStatGrowth(stage, evolutionType);
+    setGeneratedPreview(null);
+    setSavedPreview(null);
+    setDraft((d) => ({
+      ...d,
+      baseCompanionId: id,
+      baseCompanionName: c?.name || "",
+      academyInfluence: d.academyInfluence || c?.academyAffinity,
+      statGrowth,
+      evolvedStats: calculateEvolvedStats(c, statGrowth),
+      statGrowthNotes: `HP +${statGrowth.hp}, ATK +${statGrowth.attack}, DEF +${statGrowth.defense}, SPD +${statGrowth.speed}`,
+      evolutionPalette: d.evolutionPalette || { from: c?.palette?.from || "#9D8DF1", to: c?.palette?.to || "#F4C753" },
+    }));
+  };
+
+  const handleStageOrTypeChange = (stageNumber?: number, evolutionType?: string) => {
+    const stage = stageNumber ?? Number(draft.stageNumber ?? 2);
+    const type = evolutionType ?? draft.evolutionType ?? (stage >= 3 ? "final" : "major");
+    const statGrowth = getEvolutionStatGrowth(stage, type);
+    setDraft((d) => ({
+      ...d,
+      stageNumber: stage as 1 | 2 | 3,
+      evolutionType: type,
+      statGrowth,
+      evolvedStats: calculateEvolvedStats(baseCompanion, statGrowth),
+      statGrowthNotes: `HP +${statGrowth.hp}, ATK +${statGrowth.attack}, DEF +${statGrowth.defense}, SPD +${statGrowth.speed}`,
+    }));
+  };
+
+  const updateGrowth = (key: "hp" | "attack" | "defense" | "speed", value: number) => {
+    const statGrowth = { ...(draft.statGrowth || getEvolutionStatGrowth(Number(draft.stageNumber ?? 2), draft.evolutionType)), [key]: value };
+    setDraft((d) => ({
+      ...d,
+      statGrowth,
+      evolvedStats: calculateEvolvedStats(baseCompanion, statGrowth),
+      statGrowthNotes: `HP +${statGrowth.hp}, ATK +${statGrowth.attack}, DEF +${statGrowth.defense}, SPD +${statGrowth.speed}`,
+    }));
   };
 
   const generateImagePreview = () => {
     if (!baseCompanion && !draft.baseCompanionName) return;
-    const prompt = buildEvolutionImagePrompt(draft, baseCompanion);
-    const url = mockNanoBananaGenerateImage(prompt, baseCompanion?.palette);
+    const prompt = buildEvolutionImagePrompt({ ...draft, evolvedStats }, baseCompanion, previousEvolutions);
+    const paletteForGeneration = draft.useBasePalette !== false
+      ? (baseCompanion?.palette || draft.evolutionPalette)
+      : draft.evolutionPalette;
+    const url = mockNanoBananaGenerateImage(prompt, paletteForGeneration);
     setGeneratedPreview({ url, prompt, provider: "prototype-generator" });
     setSavedPreview(null);
   };
@@ -1214,24 +1580,38 @@ const EvolutionsTab: React.FC = () => {
 
   const submit = () => {
     if (!draft.baseCompanionId) return;
+    const statGrowth = draft.statGrowth || getEvolutionStatGrowth(Number(draft.stageNumber ?? 2), draft.evolutionType);
+    const finalStats = calculateEvolvedStats(baseCompanion, statGrowth);
     const item: StudioEvolution = {
       ...baseMeta("user"),
       id: "evo-" + Date.now(),
       baseCompanionId: draft.baseCompanionId,
       baseCompanionName: baseCompanion?.name || draft.baseCompanionName || "",
       stageNumber: (draft.stageNumber as 1 | 2 | 3) ?? 2,
-      evolutionName: draft.evolutionName ?? "—",
+      evolutionName: draft.evolutionName ?? `${baseCompanion?.name || "Companion"} evolved form`,
       lore: draft.lore ?? "—",
       unlockCondition: draft.unlockCondition ?? "—",
       academyInfluence: draft.academyInfluence ?? baseCompanion?.academyAffinity ?? "addition",
       visualNotes: draft.visualNotes ?? "—",
-      statGrowthNotes: draft.statGrowthNotes ?? "—",
+      statGrowthNotes: `HP +${statGrowth.hp}, ATK +${statGrowth.attack}, DEF +${statGrowth.defense}, SPD +${statGrowth.speed}`,
       previewUrl: savedPreview?.url,
       promptUsed: savedPreview?.prompt,
       imageProvider: savedPreview?.provider,
-    };
+      evolutionType: draft.evolutionType,
+      statGrowth,
+      evolvedStats: finalStats,
+      backgroundMode: draft.backgroundMode,
+      transparentIntent: draft.transparentIntent,
+      useBasePalette: draft.useBasePalette,
+      paletteRelationship: draft.paletteRelationship,
+      evolutionPalette: draft.evolutionPalette,
+      basePreviewUrl: baseCompanion?.previewUrl,
+      speciesFamily: draft.speciesFamily,
+      baseVisualSummary: draft.baseVisualSummary,
+      previousEvolutionContext: previousEvolutions.map((e) => ({ id: e.id, name: e.evolutionName, stage: e.stageNumber, visualNotes: e.visualNotes, promptUsed: (e as any).promptUsed })),
+    } as StudioEvolution;
     addItem("evolutions", item);
-    setDraft({ stageNumber: 2 });
+    setDraft({ stageNumber: 2, evolutionType: "major", statGrowth: getEvolutionStatGrowth(2, "major"), backgroundMode: "transparent-ready", transparentIntent: true, useBasePalette: true, paletteRelationship: "preserve base palette", evolutionPalette: { from: "#9D8DF1", to: "#F4C753" }, speciesFamily: "", baseVisualSummary: "" });
     setGeneratedPreview(null);
     setSavedPreview(null);
   };
@@ -1246,40 +1626,98 @@ const EvolutionsTab: React.FC = () => {
           <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-2xl bg-primary text-white grid place-items-center shadow-btn-primary"><Wand2 size={18} strokeWidth={3} /></div>
-              <p className="h-display text-xl leading-tight">Add evolution stage</p>
+              <div><p className="h-display text-xl leading-tight">Add evolution stage</p><p className="text-sm text-ink-muted">Uses approved/published pets only. Evolutions inherit base stats + editable growth.</p></div>
             </div>
-            <button type="button" data-testid="evolutions-randomize" onClick={randomize} className="btn-outline !text-sm !py-2 !px-4"><Sparkles size={14} strokeWidth={3} /> Randomize</button>
+            <button type="button" data-testid="evolutions-randomize" onClick={randomize} disabled={approvedCompanions.length === 0} className="btn-outline !text-sm !py-2 !px-4 disabled:opacity-40"><Sparkles size={14} strokeWidth={3} /> Randomize</button>
           </div>
+          {approvedCompanions.length === 0 && <div className="mb-3 rounded-2xl bg-white/70 border-2 border-white p-3 text-xs font-bold text-ink-muted">Approve at least one pet before creating evolutions.</div>}
           <div className="grid sm:grid-cols-2 gap-3">
             <Field label="Base companion" full>
               <SearchSelect
                 testid="evolutions-input-base"
                 value={draft.baseCompanionId ?? ""}
-                onChange={(id) => { const c = companions.find((x) => x.id === id); setGeneratedPreview(null); setSavedPreview(null); update("baseCompanionId", id); if (c) update("baseCompanionName", c.name); }}
-                options={companions.map((c) => ({ id: c.id, label: c.name, sublabel: `${c.affinity} · ${c.rarity}` }))}
-                placeholder="Search companions…"
+                onChange={handleBaseCompanionChange}
+                options={approvedCompanions.map((c) => ({ id: c.id, label: c.name, sublabel: `${c.status} · ${c.affinity} · ${c.rarity}` }))}
+                placeholder="Search approved pets…"
               />
             </Field>
-            <Field label="Stage"><SelectField testid="evolutions-input-stage" value={String(draft.stageNumber)} options={["1","2","3"]} onChange={(v) => update("stageNumber", parseInt(v) as 1|2|3)} /></Field>
+            <Field label="Stage"><SelectField testid="evolutions-input-stage" value={String(draft.stageNumber)} options={["1","2","3"]} onChange={(v) => handleStageOrTypeChange(parseInt(v) as 1|2|3, undefined)} /></Field>
+            <Field label="Evolution type"><SelectField testid="evolutions-input-type" value={draft.evolutionType ?? "major"} options={EVOLUTION_TYPES} onChange={(v) => handleStageOrTypeChange(undefined, v)} /></Field>
+            <Field label="Evolution intensity"><SelectField testid="evolutions-input-intensity" value={draft.evolutionIntensity ?? "subtle first evolution"} options={EVOLUTION_INTENSITIES} onChange={(v) => updateAny("evolutionIntensity", v)} /></Field>
+            <Field label="Species/body family"><TextField testid="evolutions-input-species-family" value={draft.speciesFamily ?? ""} onChange={(v) => updateAny("speciesFamily", v)} placeholder="e.g. blue bubble bumblebee" /></Field>
+            <Field label="Base visual summary" full><TextArea testid="evolutions-input-base-visual" value={draft.baseVisualSummary ?? ""} onChange={(v) => updateAny("baseVisualSummary", v)} placeholder="Short visual DNA only: round blue bubble head, small bee body, tiny wings, yellow belly, friendly eyes" /></Field>
             <Field label="Evolution name"><TextField testid="evolutions-input-name" value={draft.evolutionName ?? ""} onChange={(v) => update("evolutionName", v)} placeholder="e.g. Bloomling" /></Field>
-            <Field label="Unlock condition" full><TextField testid="evolutions-input-unlock" value={draft.unlockCondition ?? ""} onChange={(v) => update("unlockCondition", v)} placeholder="e.g. Answer 50 of academy correctly" /></Field>
+            <Field label="Unlock condition" full><TextField testid="evolutions-input-unlock" value={draft.unlockCondition ?? ""} onChange={(v) => update("unlockCondition", v)} placeholder="e.g. Answer 50 academy questions correctly" /></Field>
             <Field label="Academy influence"><TextField testid="evolutions-input-academy" value={draft.academyInfluence ?? ""} onChange={(v) => update("academyInfluence", v)} placeholder="addition / rhyming / …" /></Field>
-            <Field label="Visual notes" full><TextArea testid="evolutions-input-visual" value={draft.visualNotes ?? ""} onChange={(v) => update("visualNotes", v)} placeholder="Petal armor, antlers, glow cape…" /></Field>
-            <Field label="Stat growth notes" full><TextField testid="evolutions-input-stats" value={draft.statGrowthNotes ?? ""} onChange={(v) => update("statGrowthNotes", v)} placeholder="+10 HP, +4 ATK…" /></Field>
+            <Field label="Background mode"><SelectField testid="evolutions-background-mode" value={draft.backgroundMode ?? "transparent-ready"} options={EVOLUTION_BACKGROUND_MODES} onChange={(v) => updateAny("backgroundMode", v)} /></Field>
+            <Field label="Transparent/removal-ready?">
+              <label className="inline-flex items-center gap-2 px-3 py-2 rounded-full bg-white border-2 border-white">
+                <input type="checkbox" data-testid="evolutions-transparent-intent" checked={draft.transparentIntent !== false} onChange={(e) => updateAny("transparentIntent", e.target.checked)} className="w-5 h-5 accent-primary" />
+                <span className="text-sm font-extrabold">Prepare transparent PNG export</span>
+              </label>
+            </Field>
+            <Field label="Use base palette?">
+              <label className="inline-flex items-center gap-2 px-3 py-2 rounded-full bg-white border-2 border-white">
+                <input type="checkbox" data-testid="evolutions-use-base-palette" checked={draft.useBasePalette !== false} onChange={(e) => updateAny("useBasePalette", e.target.checked)} className="w-5 h-5 accent-primary" />
+                <span className="text-sm font-extrabold">Inherit base colors</span>
+              </label>
+            </Field>
+            <Field label="Palette relationship"><SelectField testid="evolutions-palette-relationship" value={draft.paletteRelationship ?? "preserve base palette"} options={EVOLUTION_PALETTE_RELATIONSHIPS} onChange={(v) => updateAny("paletteRelationship", v)} /></Field>
+            <Field label="Primary evolution color"><ColorField testid="evolutions-palette-from" value={draft.evolutionPalette?.from ?? baseCompanion?.palette?.from ?? "#9D8DF1"} onChange={(v) => updateAny("evolutionPalette", { ...(draft.evolutionPalette ?? { from: "#9D8DF1", to: "#F4C753" }), from: v })} /></Field>
+            <Field label="Accent evolution color"><ColorField testid="evolutions-palette-to" value={draft.evolutionPalette?.to ?? baseCompanion?.palette?.to ?? "#F4C753"} onChange={(v) => updateAny("evolutionPalette", { ...(draft.evolutionPalette ?? { from: "#9D8DF1", to: "#F4C753" }), to: v })} /></Field>
+            <Field label="Visual notes" full><TextArea testid="evolutions-input-visual" value={draft.visualNotes ?? ""} onChange={(v) => update("visualNotes", v)} placeholder="Preserve base face shape, add stronger markings, bigger leaf ears…" /></Field>
             <Field label="Lore" full><TextArea testid="evolutions-input-lore" value={draft.lore ?? ""} onChange={(v) => update("lore", v)} placeholder="Short backstory" /></Field>
+            <Field label="HP growth"><NumberField testid="evolutions-growth-hp" value={Number(draft.statGrowth?.hp ?? 0)} onChange={(n) => updateGrowth("hp", n)} min={0} max={200} /></Field>
+            <Field label="Attack growth"><NumberField testid="evolutions-growth-attack" value={Number(draft.statGrowth?.attack ?? 0)} onChange={(n) => updateGrowth("attack", n)} min={0} max={100} /></Field>
+            <Field label="Defense growth"><NumberField testid="evolutions-growth-defense" value={Number(draft.statGrowth?.defense ?? 0)} onChange={(n) => updateGrowth("defense", n)} min={0} max={100} /></Field>
+            <Field label="Speed growth"><NumberField testid="evolutions-growth-speed" value={Number(draft.statGrowth?.speed ?? 0)} onChange={(n) => updateGrowth("speed", n)} min={0} max={100} /></Field>
           </div>
+
+          {baseCompanion && (
+            <div className="mt-4 grid md:grid-cols-2 gap-3">
+              <div className="rounded-2xl bg-white/70 border-2 border-white p-3">
+                <p className="text-[10px] font-extrabold uppercase text-primary mb-1">Base form</p>
+                <div className="flex gap-3 items-start">
+                  {baseCompanion.previewUrl ? <img src={baseCompanion.previewUrl} alt={`${baseCompanion.name} base pet`} className="w-16 h-16 object-cover rounded-2xl border-4 border-white shadow-lg" /> : <CompanionDot emoji={baseCompanion.emoji} palette={baseCompanion.palette} size={64} />}
+                  <div className="min-w-0">
+                    <p className="h-display text-lg truncate">{baseCompanion.name}</p>
+                    <p className="text-[10px] font-extrabold uppercase text-ink-muted">{baseCompanion.affinity} · {baseCompanion.role} · {baseCompanion.rarity}</p>
+                    <p className="text-xs text-ink-muted line-clamp-2 mt-1">{baseCompanion.lore}</p>
+                  </div>
+                </div>
+              </div>
+              <div className="rounded-2xl bg-white/70 border-2 border-white p-3">
+                <p className="text-[10px] font-extrabold uppercase text-primary mb-1">Calculated evolved stats</p>
+                <div className="grid grid-cols-4 gap-1.5">
+                  <Stat label="HP" v={evolvedStats.hp} /><Stat label="ATK" v={evolvedStats.attack} /><Stat label="DEF" v={evolvedStats.defense} /><Stat label="SPD" v={evolvedStats.speed} />
+                </div>
+                <p className="text-[10px] font-bold text-ink-muted mt-2">Base + growth. These values are saved on the evolution card.</p>
+              </div>
+            </div>
+          )}
+
+          {previousEvolutions.length > 0 && (
+            <div className="mt-3 rounded-2xl bg-white/70 border-2 border-white p-3">
+              <p className="text-[10px] font-extrabold uppercase text-primary mb-1">Previous approved evolution context</p>
+              <div className="space-y-1">
+                {previousEvolutions.map((e) => <p key={e.id} className="text-xs text-ink-muted"><b>Stage {e.stageNumber}:</b> {e.evolutionName} · {e.visualNotes}</p>)}
+              </div>
+            </div>
+          )}
 
           <ImagePreviewWorkflow
             testid="evolutions-image-generator"
             title="Generated evolution image preview"
-            helper="Generate from this evolution draft, then save or discard before sending it to review."
+            helper="Generate from the selected approved pet and previous evolution context, then save/export/discard before sending it to review."
             generatedPreview={generatedPreview}
             savedPreview={savedPreview}
             onGenerate={generateImagePreview}
             onSave={saveGeneratedPreview}
             onDiscard={discardGeneratedPreview}
-            disabled={!draft.baseCompanionId && !draft.baseCompanionName}
+            disabled={!draft.baseCompanionId || !baseCompanion}
             imageClassName="aspect-square"
+            exportFilename={`evolution-${baseCompanion?.name || draft.baseCompanionName || "base"}-stage-${draft.stageNumber || 2}-${draft.evolutionName || "evolved-form"}`}
+            
           />
 
           <button type="button" data-testid="evolutions-generate-btn" onClick={submit} disabled={!draft.baseCompanionId} className="btn-primary mt-4 !text-base !py-3 !px-6 disabled:opacity-40">
@@ -1294,6 +1732,8 @@ const EvolutionsTab: React.FC = () => {
           )}
           <p className="h-display text-lg">{i.evolutionName} <span className="text-xs font-extrabold uppercase text-ink-muted">Stage {i.stageNumber}</span></p>
           <p className="text-[10px] font-extrabold uppercase text-ink-muted">Base: {i.baseCompanionName} · Academy: {i.academyInfluence}</p>
+          {(i as any).evolutionType && <p className="text-[10px] font-extrabold text-primary mt-1">Type: {(i as any).evolutionType}{(i as any).evolutionIntensity ? ` · ${(i as any).evolutionIntensity}` : ""}</p>}
+          {(i as any).paletteRelationship && <p className="text-[10px] font-bold text-primary mt-1">Palette: {(i as any).useBasePalette === false ? "custom" : "base"} · {(i as any).paletteRelationship}{(i as any).evolutionPalette ? ` · ${(i as any).evolutionPalette.from} → ${(i as any).evolutionPalette.to}` : ""}</p>}
           {i.previewUrl && (
             <p className="text-[10px] font-extrabold text-sage mt-1">
               Generated image attached · {i.imageProvider ?? "prototype"}
@@ -1303,7 +1743,9 @@ const EvolutionsTab: React.FC = () => {
           <p className="text-[10px] font-bold text-primary mt-2">Unlock: {i.unlockCondition}</p>
           <p className="text-[10px] font-bold text-primary">Visual: {i.visualNotes}</p>
           <p className="text-[10px] font-bold text-primary">Stats: {i.statGrowthNotes}</p>
+          {(i as any).evolvedStats && <div className="grid grid-cols-4 gap-1.5 mt-2"><Stat label="HP" v={(i as any).evolvedStats.hp} /><Stat label="ATK" v={(i as any).evolvedStats.attack} /><Stat label="DEF" v={(i as any).evolvedStats.defense} /><Stat label="SPD" v={(i as any).evolvedStats.speed} /></div>}
           <StudioViewEditButton collection="evolutions" item={i} title={i.evolutionName} imageUrl={i.previewUrl} />
+          <button type="button" onClick={() => useStudio.getState().setStatus("evolutions", i.id, "archived")} className="btn-ghost !text-xs !py-1.5 !px-3 mt-2 w-full">Archive card</button>
         </div>
       )}
     />
@@ -1397,129 +1839,156 @@ type AssetGeneratedPreview = {
   provider: string;
 };
 
-const buildAssetImagePrompt = (draft: Partial<StudioAsset>): string => {
+const ASSET_BACKGROUND_MODES = ["transparent-ready", "plain removable background", "simple light background", "game UI presentation"] as const;
+const ASSET_UI_SIZES = ["small icon", "medium inventory icon", "large shop preview", "reward popup size"] as const;
+const ASSET_SHAPE_LANGUAGES = ["none", "round and soft", "star-like", "shield-like", "leaf-like", "gem-like", "book-like", "ribbon-like", "simple silhouette"] as const;
+const ASSET_TOKEN_TYPES = ["coin", "gem", "star shard", "crystal token", "leaf token", "moon token", "academy seal"] as const;
+const ASSET_MATERIALS = ["none", "soft fabric", "polished metal", "warm wood", "glowing crystal", "paper/card", "painted ceramic", "magical light"] as const;
+const ASSET_EFFECTS = ["none", "soft glow", "sparkle", "shimmer", "tiny floating motes", "gentle shine"] as const;
+const ASSET_COSMETIC_SLOTS = ["head", "face", "neck", "shoulder", "back", "hand", "outfit accent", "pet accessory"] as const;
+const ASSET_UI_PLACEMENTS = ["corner flourish", "button frame", "panel divider", "reward banner trim", "inventory slot frame", "quest card accent"] as const;
+
+const buildSection = (title: string, lines: string[]): string => [
+  `${title}:`,
+  ...lines.filter(Boolean).map((line) => `- ${line}`),
+].join("\n");
+
+const buildAssetImagePrompt = (draft: Partial<StudioAsset> & Record<string, any>): string => {
   const name = draft.name?.trim() || `unnamed ${draft.kind || "asset"}`;
   const kind = draft.kind || "icon";
-  const previewColor = draft.previewColor || "#9D8DF1";
+  const primaryColor = draft.previewColor || "#9D8DF1";
+  const accentColor = draft.accentColor || draft.egg?.accentColor || "#F4C753";
   const description = draft.description || "A cheerful Questing Academy visual game asset.";
+  const backgroundMode = draft.backgroundMode || "transparent-ready";
+  const transparentIntent = !!draft.transparentIntent || backgroundMode === "transparent-ready" || backgroundMode === "plain removable background";
+  const iconSubject = draft.iconSubject || name;
+  const uiSize = draft.uiSize || "medium inventory icon";
+  const shapeLanguage = draft.shapeLanguage || "none";
+  const tokenType = draft.tokenType || "coin";
+  const material = draft.material || "none";
+  const effect = draft.magicalEffect || draft.egg?.glowEffect || "soft glow";
+  const propContext = draft.propContext || "academy room";
+  const interactable = draft.interactable ? "yes" : "no";
+  const cosmeticSlot = draft.cosmeticSlot || "head";
+  const uiPlacement = draft.uiPlacement || "button frame";
 
-  const baseStyle =
-    "Style rules: cute chibi educational fantasy RPG game asset, centered in frame, clean readable silhouette, soft rounded shapes, cozy storybook watercolor, pastel colors, child-safe for ages 5-12, simple light background, game UI asset presentation.";
+  const positive = [
+    `Create one Questing Academy ${String(kind).replace(/-/g, " ")} asset named ${name}.`,
+    `Asset kind: ${kind}.`,
+    `Asset description: ${description}.`,
+    `Primary color: ${primaryColor}.`,
+    `Accent color: ${accentColor}.`,
+  ];
 
-  const negativeRules =
-    "Negative rules: no text, no watermark, no cropped object, no realistic violence, no horror, no weapons, no dark scary mood, no photorealism.";
+  const requirements: string[] = [];
 
   if (kind === "egg") {
-    return [
-      `Create a Questing Academy collectible companion egg concept for ${name}.`,
-      "Asset kind: egg.",
-      `Egg details: rarity ${draft.egg?.rarity || "common"}, base color ${draft.egg?.baseColor || previewColor}, accent color ${draft.egg?.accentColor || "#7BB7D6"}, glow effect ${draft.egg?.glowEffect || "soft"}, hatch category ${draft.egg?.hatchCategory || "friendly companion"}, companion family ${draft.egg?.companionFamily || "academy pets"}, event tag ${draft.egg?.eventTag || "none"}, shiny chance ${draft.egg?.shinyChance ?? 4} percent.`,
-      `Description: ${description}.`,
-      "Show one single full egg object only, large and centered, with decorative markings and a readable silhouette. Do not show a sheet of multiple eggs unless the name specifically asks for a set.",
-      baseStyle,
-      negativeRules,
-    ].join(" ");
+    requirements.push(`Show one single full companion egg object only.`);
+    requirements.push(`Egg rarity: ${draft.egg?.rarity || "common"}.`);
+    requirements.push(`Base color: ${draft.egg?.baseColor || primaryColor}; accent color: ${draft.egg?.accentColor || accentColor}.`);
+    requirements.push(`Glow effect: ${draft.egg?.glowEffect || effect}.`);
+    requirements.push(`Hatch category: ${draft.egg?.hatchCategory || "friendly companion"}.`);
+    requirements.push(`Companion family: ${draft.egg?.companionFamily || "academy pets"}.`);
+    requirements.push(`Decorative markings should be large, simple, and readable.`);
+  } else if (kind === "badge" || kind === "sticker") {
+    requirements.push(`Show one single ${kind}, not a sheet.`);
+    requirements.push(`Badge type: ${draft.badge?.badgeType || "achievement"}.`);
+    requirements.push(`Achievement theme: ${draft.badge?.achievementCategory || "learning milestone"}.`);
+    requirements.push(`Icon shape: ${draft.badge?.iconShape || (shapeLanguage !== "none" ? shapeLanguage : "simple readable silhouette")}.`);
+    requirements.push(`Rarity: ${draft.badge?.rarity || "common"}.`);
+    requirements.push(`Readable at small UI size with a bold central symbol.`);
+  } else if (kind === "icon") {
+    requirements.push(`Icon subject: ${iconSubject}.`);
+    requirements.push(`UI size target: ${uiSize}.`);
+    if (shapeLanguage !== "none") requirements.push(`Shape language: ${shapeLanguage}.`);
+    requirements.push(`Depict the named object or concept directly as one single readable icon.`);
+  } else if (kind === "currency") {
+    requirements.push(`Currency token type: ${tokenType}.`);
+    if (material !== "none") requirements.push(`Material: ${material}.`);
+    requirements.push(`Magical effect: ${effect}.`);
+    requirements.push(`Make it feel collectible, valuable, and readable as a reward currency.`);
+  } else if (kind === "academy-room-prop") {
+    requirements.push(`Prop context: ${propContext}.`);
+    if (material !== "none") requirements.push(`Material: ${material}.`);
+    requirements.push(`Interactable object: ${interactable}.`);
+    requirements.push(`Show the prop itself, not a full room or scene.`);
+  } else if (kind === "cosmetic") {
+    requirements.push(`Cosmetic slot: ${cosmeticSlot}.`);
+    if (material !== "none") requirements.push(`Material: ${material}.`);
+    requirements.push(`Magical effect: ${effect}.`);
+    requirements.push(`Show one wearable/customization item only, not a character wearing it.`);
+  } else if (kind === "ui-decoration") {
+    requirements.push(`UI placement: ${uiPlacement}.`);
+    if (shapeLanguage !== "none") requirements.push(`Motif / shape language: ${shapeLanguage}.`);
+    requirements.push(`Trim/material feel: ${material}.`);
+    requirements.push(`Show a polished interface ornament, not a full UI mockup.`);
+  } else {
+    requirements.push(`Depict the named asset directly as one single clear object.`);
+    if (shapeLanguage !== "none") requirements.push(`Shape language: ${shapeLanguage}.`);
+    if (material !== "none") requirements.push(`Material: ${material}.`);
   }
 
-  if (kind === "badge" || kind === "sticker") {
-    return [
-      `Create a Questing Academy ${kind} concept for ${name}.`,
-      `Asset kind: ${kind}.`,
-      `Badge/sticker details: badge type ${draft.badge?.badgeType || "achievement"}, achievement category ${draft.badge?.achievementCategory || "learning milestone"}, icon shape ${draft.badge?.iconShape || "star"}, rarity ${draft.badge?.rarity || "common"}.`,
-      `Description: ${description}.`,
-      `Depict the named ${kind} directly. Show one clear ${kind}, large and centered, readable at small UI size. Do not show eggs, currencies, props, or a multi-item sheet.`,
-      baseStyle,
-      negativeRules,
-    ].join(" ");
-  }
+  const style = [
+    `Cute chibi educational fantasy RPG game asset style.`,
+    `Centered in frame, full object visible, clean readable silhouette.`,
+    `Soft rounded shapes, cozy Questing Academy warmth, pastel colors, child-safe for ages 5-12.`,
+    `Crisp edges, readable at small game UI size, no blur, no complex scene.`
+  ];
 
-  if (kind === "icon") {
-    return [
-      `Create a Questing Academy game UI icon concept for ${name}.`,
-      "Asset kind: icon.",
-      `Icon object/concept to depict: ${name}.`,
-      `Primary color direction: ${previewColor}.`,
-      `Description: ${description}.`,
-      "Depict the named object or concept directly as one single readable icon. Make the object large, centered, and easy to recognize at small UI size",
-      baseStyle,
-      negativeRules,
-    ].join(" ");
-  }
+  const background = [
+    `Background mode: ${backgroundMode}.`,
+    transparentIntent
+      ? `Prepare for background removal: isolated object, strong clean outer contour, no cast shadow touching the border, no scenery behind the asset.`
+      : `Use only the selected simple presentation background, keeping the asset easy to crop or export.`,
+    backgroundMode === "transparent-ready"
+      ? `Use a plain flat near-white or checker-safe removable background style; asset should look suitable for transparent PNG conversion later.`
+      : backgroundMode === "plain removable background"
+        ? `Use a single flat plain background color with high separation from the asset.`
+        : backgroundMode === "game UI presentation"
+          ? `Use a simple game UI asset presentation with minimal framing, no extra objects.`
+          : `Use a simple light background with no scene details.`,
+  ];
 
-  if (kind === "currency") {
-    return [
-      `Create a Questing Academy currency icon concept for ${name}.`,
-      "Asset kind: currency.",
-      `Currency color direction: ${previewColor}.`,
-      `Description: ${description}.`,
-      "Show one single collectible reward currency object, large and centered, readable at game UI size. It may look like a coin, gem, token, star shard, or magical currency based on the name. Do not show eggs, badges, stickers, props, or a multi-item sheet.",
-      baseStyle,
-      negativeRules,
-    ].join(" ");
-  }
+  const negative = [
+    `No text, fake writing, labels, watermark, logo, UI words, numbers, or symbols that look like letters.`,
+    `No cropped object, no multi-item sheet, no extra duplicate objects, no unrelated asset categories.`,
+    `No full scene, no room background, no landscape, no characters, no hands, no object being worn by a character.`,
+    `No photorealism, realistic violence, horror, weapons, dark scary mood.`,
+  ];
 
-  if (kind === "academy-room-prop") {
-    return [
-      `Create a Questing Academy room prop concept for ${name}.`,
-      "Asset kind: academy-room-prop.",
-      `Prop color direction: ${previewColor}.`,
-      `Description: ${description}.`,
-      "Show one cozy academy classroom or town-room object, large and centered, clearly separated from any background scene. Do not show eggs, badges, stickers, currencies, characters, or a multi-item sheet.",
-      baseStyle,
-      negativeRules,
-    ].join(" ");
-  }
-
-  if (kind === "cosmetic") {
-    return [
-      `Create a Questing Academy cosmetic item concept for ${name}.`,
-      "Asset kind: cosmetic.",
-      `Cosmetic color direction: ${previewColor}.`,
-      `Description: ${description}.`,
-      "Show one wearable or decorative player customization item, large and centered, with a clear silhouette. Do not show eggs, badges, stickers, currencies, characters wearing the item, or a multi-item sheet.",
-      baseStyle,
-      negativeRules,
-    ].join(" ");
-  }
-
-  if (kind === "ui-decoration") {
-    return [
-      `Create a Questing Academy UI decoration concept for ${name}.`,
-      "Asset kind: ui-decoration.",
-      `Decoration color direction: ${previewColor}.`,
-      `Description: ${description}.`,
-      "Show one polished interface ornament or decorative UI element, large and centered, readable at small size. Do not show eggs, badges, stickers, currencies, props, characters, or a multi-item sheet.",
-      baseStyle,
-      negativeRules,
-    ].join(" ");
-  }
+  if (kind !== "egg") negative.push(`No eggs or egg shapes unless the asset kind is egg.`);
+  if (kind !== "currency") negative.push(`No coins, gems, or currency tokens unless the asset kind is currency.`);
+  if (kind !== "badge" && kind !== "sticker") negative.push(`No badges, stickers, seals, or achievement medals unless requested.`);
 
   return [
-    `Create a Questing Academy visual asset concept for ${name}.`,
-    `Asset kind: ${kind}.`,
-    `Primary color direction: ${previewColor}.`,
-    `Description: ${description}.`,
-    "Depict the named asset directly as one single clear object, large and centered, readable at small UI size. Do not show unrelated asset categories or a multi-item sheet.",
-    baseStyle,
-    negativeRules,
-  ].join(" ");
+    buildSection("POSITIVE PROMPT", positive),
+    "",
+    buildSection("ASSET REQUIREMENTS", requirements),
+    "",
+    buildSection("STYLE REQUIREMENTS", style),
+    "",
+    buildSection("BACKGROUND / EXPORT REQUIREMENTS", background),
+    "",
+    buildSection("STRICT NEGATIVE PROMPT", negative),
+  ].join("\n");
 };
 
 const AssetsTab: React.FC = () => {
   const items = useStudio((s) => s.assets);
   const addItem = useStudio((s) => s.addItem);
   const addPalette = useStudio((s) => s.addPalette);
-  const [draft, setDraft] = useState<Partial<StudioAsset>>({ kind: "icon", previewColor: "#9D8DF1" });
+  const [draft, setDraft] = useState<Partial<StudioAsset> & Record<string, any>>({ kind: "icon", previewColor: "#9D8DF1", accentColor: "#F4C753", backgroundMode: "transparent-ready", transparentIntent: true, uiSize: "medium inventory icon", shapeLanguage: "none", material: "none", magicalEffect: "soft glow" });
   const [generatedPreview, setGeneratedPreview] = useState<AssetGeneratedPreview | null>(null);
   const [savedPreview, setSavedPreview] = useState<AssetGeneratedPreview | null>(null);
   const update = <K extends keyof StudioAsset>(k: K, v: StudioAsset[K]) => setDraft((d) => ({ ...d, [k]: v }));
+  const updateAny = (k: string, v: any) => setDraft((d) => ({ ...d, [k]: v }));
   const handleSavePalette = (hex: string) =>
     addPalette({ id: "pal-user-" + Date.now(), name: `Saved ${hex}`, colors: [hex], createdAt: new Date().toISOString() });
 
   const generateImagePreview = () => {
     const prompt = buildAssetImagePrompt(draft);
-    const from = draft.egg?.baseColor || draft.badge?.rarity || draft.previewColor || "#9D8DF1";
-    const to = draft.egg?.accentColor || "#FFF8DD";
+    const from = draft.egg?.baseColor || draft.previewColor || "#9D8DF1";
+    const to = draft.egg?.accentColor || draft.accentColor || "#FFF8DD";
     const url = mockNanoBananaGenerateImage(prompt, { from: String(from), to: String(to) });
     setGeneratedPreview({ url, prompt, provider: "prototype-generator" });
     setSavedPreview(null);
@@ -1546,12 +2015,26 @@ const AssetsTab: React.FC = () => {
       previewUrl: savedPreview?.url,
       promptUsed: savedPreview?.prompt,
       imageProvider: savedPreview?.provider,
-      egg: draft.egg, badge: draft.badge,
-    };
+      egg: draft.egg,
+      badge: draft.badge,
+      accentColor: draft.accentColor,
+      backgroundMode: draft.backgroundMode,
+      transparentIntent: draft.transparentIntent,
+      iconSubject: draft.iconSubject,
+      uiSize: draft.uiSize,
+      shapeLanguage: draft.shapeLanguage,
+      tokenType: draft.tokenType,
+      material: draft.material,
+      magicalEffect: draft.magicalEffect,
+      propContext: draft.propContext,
+      interactable: draft.interactable,
+      cosmeticSlot: draft.cosmeticSlot,
+      uiPlacement: draft.uiPlacement,
+    } as StudioAsset;
     addItem("assets", item);
     setGeneratedPreview(null);
     setSavedPreview(null);
-    setDraft({ kind: "icon", previewColor: "#9D8DF1" });
+    setDraft({ kind: "icon", previewColor: "#9D8DF1", accentColor: "#F4C753", backgroundMode: "transparent-ready", transparentIntent: true, uiSize: "medium inventory icon", shapeLanguage: "none", material: "none", magicalEffect: "soft glow" });
   };
 
   const k = draft.kind as AssetKind | undefined;
@@ -1565,26 +2048,69 @@ const AssetsTab: React.FC = () => {
         <div className="rounded-card border-4 border-primary/20 bg-gradient-to-br from-[#F6F1FF] to-[#FFF8DD] p-5 md:p-6" data-testid="assets-generator">
           <div className="flex items-center gap-3 mb-3">
             <div className="w-10 h-10 rounded-2xl bg-primary text-white grid place-items-center shadow-btn-primary"><Wand2 size={18} strokeWidth={3} /></div>
-            <p className="h-display text-xl leading-tight">Add asset</p>
+            <div><p className="h-display text-xl leading-tight">Add asset</p><p className="text-sm text-ink-muted">Generate isolated game assets that are easy to export and later background-remove.</p></div>
           </div>
           <div className="grid sm:grid-cols-2 gap-3">
-            <Field label="Name"><TextField testid="assets-input-name" value={draft.name ?? ""} onChange={(v) => update("name", v)} placeholder="e.g. Aqua Egg Art" /></Field>
+            <Field label="Name"><TextField testid="assets-input-name" value={draft.name ?? ""} onChange={(v) => update("name", v)} placeholder="e.g. Sunberry Coin" /></Field>
             <Field label="Kind"><SelectField testid="assets-input-kind" value={draft.kind ?? ""} options={ASSET_KINDS} onChange={(v) => { update("kind", v as AssetKind); setGeneratedPreview(null); setSavedPreview(null); }} /></Field>
-            <Field label="Preview color"><ColorField testid="assets-input-color" value={draft.previewColor ?? "#9D8DF1"} onChange={(v) => update("previewColor", v)} onSave={handleSavePalette} /></Field>
-            <Field label="Notes"><TextField testid="assets-input-desc" value={draft.description ?? ""} onChange={(v) => update("description", v)} placeholder="Short description" /></Field>
+            <Field label="Primary color"><ColorField testid="assets-input-color" value={draft.previewColor ?? "#9D8DF1"} onChange={(v) => update("previewColor", v)} onSave={handleSavePalette} /></Field>
+            <Field label="Accent color"><ColorField testid="assets-input-accent-color" value={draft.accentColor ?? "#F4C753"} onChange={(v) => updateAny("accentColor", v)} onSave={handleSavePalette} /></Field>
+            <Field label="Background mode"><SelectField testid="assets-input-background-mode" value={draft.backgroundMode ?? "transparent-ready"} options={ASSET_BACKGROUND_MODES} onChange={(v) => updateAny("backgroundMode", v)} /></Field>
+            <Field label="Transparent/removal-ready?">
+              <label className="inline-flex items-center gap-2 px-3 py-2 rounded-full bg-white border-2 border-white">
+                <input type="checkbox" data-testid="assets-transparent-intent" checked={!!draft.transparentIntent} onChange={(e) => updateAny("transparentIntent", e.target.checked)} className="w-5 h-5 accent-primary" />
+                <span className="text-sm font-extrabold">Prepare for background removal</span>
+              </label>
+            </Field>
+            <Field label="Shape language"><SelectField testid="assets-input-shape-language" value={draft.shapeLanguage ?? "none"} options={ASSET_SHAPE_LANGUAGES} onChange={(v) => updateAny("shapeLanguage", v)} /></Field>
+            <Field label="Material"><SelectField testid="assets-input-material" value={draft.material ?? "none"} options={ASSET_MATERIALS} onChange={(v) => updateAny("material", v)} /></Field>
+            <Field label="Magical effect"><SelectField testid="assets-input-effect" value={draft.magicalEffect ?? "soft glow"} options={ASSET_EFFECTS} onChange={(v) => updateAny("magicalEffect", v)} /></Field>
+            <Field label="Notes" full><TextArea testid="assets-input-desc" value={draft.description ?? ""} onChange={(v) => update("description", v)} placeholder="Short description / visual intent" /></Field>
+
+            {k === "icon" && <>
+              <Field label="Icon subject"><TextField testid="assets-icon-subject" value={draft.iconSubject ?? ""} onChange={(v) => updateAny("iconSubject", v)} placeholder="single book / compass / apple / star" /></Field>
+              <Field label="UI size target"><SelectField testid="assets-icon-ui-size" value={draft.uiSize ?? "medium inventory icon"} options={ASSET_UI_SIZES} onChange={(v) => updateAny("uiSize", v)} /></Field>
+            </>}
+
+            {k === "currency" && <>
+              <Field label="Token type"><SelectField testid="assets-currency-token-type" value={draft.tokenType ?? "coin"} options={ASSET_TOKEN_TYPES} onChange={(v) => updateAny("tokenType", v)} /></Field>
+              <Field label="Currency motif"><TextField testid="assets-currency-motif" value={draft.iconSubject ?? ""} onChange={(v) => updateAny("iconSubject", v)} placeholder="sun, star, leaf, academy crest" /></Field>
+            </>}
+
+            {k === "academy-room-prop" && <>
+              <Field label="Room/context"><TextField testid="assets-prop-context" value={draft.propContext ?? ""} onChange={(v) => updateAny("propContext", v)} placeholder="library, academy room, hatchery" /></Field>
+              <Field label="Interactable?">
+                <label className="inline-flex items-center gap-2 px-3 py-2 rounded-full bg-white border-2 border-white">
+                  <input type="checkbox" data-testid="assets-prop-interactable" checked={!!draft.interactable} onChange={(e) => updateAny("interactable", e.target.checked)} className="w-5 h-5 accent-primary" />
+                  <span className="text-sm font-extrabold">Clickable/interactable prop</span>
+                </label>
+              </Field>
+            </>}
+
+            {k === "cosmetic" && <>
+              <Field label="Cosmetic slot"><SelectField testid="assets-cosmetic-slot" value={draft.cosmeticSlot ?? "head"} options={ASSET_COSMETIC_SLOTS} onChange={(v) => updateAny("cosmeticSlot", v)} /></Field>
+              <Field label="Wearable detail"><TextField testid="assets-cosmetic-detail" value={draft.iconSubject ?? ""} onChange={(v) => updateAny("iconSubject", v)} placeholder="wizard hat, cape clasp, ribbon" /></Field>
+            </>}
+
+            {k === "ui-decoration" && <>
+              <Field label="UI placement"><SelectField testid="assets-ui-placement" value={draft.uiPlacement ?? "button frame"} options={ASSET_UI_PLACEMENTS} onChange={(v) => updateAny("uiPlacement", v)} /></Field>
+              <Field label="Motif"><TextField testid="assets-ui-motif" value={draft.iconSubject ?? ""} onChange={(v) => updateAny("iconSubject", v)} placeholder="stars, leaves, academy crest" /></Field>
+            </>}
+
             {k === "egg" && <>
               <Field label="Rarity"><SelectField testid="assets-egg-rarity" value={draft.egg?.rarity ?? ""} options={RARITIES} onChange={(v) => update("egg", { ...(draft.egg ?? {}), rarity: v as Rarity })} placeholder="—" /></Field>
-              <Field label="Base color"><ColorField testid="assets-egg-base" value={draft.egg?.baseColor ?? "#DCEEF7"} onChange={(v) => update("egg", { ...(draft.egg ?? {}), baseColor: v })} onSave={handleSavePalette} /></Field>
-              <Field label="Accent color"><ColorField testid="assets-egg-accent" value={draft.egg?.accentColor ?? "#7BB7D6"} onChange={(v) => update("egg", { ...(draft.egg ?? {}), accentColor: v })} onSave={handleSavePalette} /></Field>
+              <Field label="Base color"><ColorField testid="assets-egg-base" value={draft.egg?.baseColor ?? draft.previewColor ?? "#DCEEF7"} onChange={(v) => update("egg", { ...(draft.egg ?? {}), baseColor: v })} onSave={handleSavePalette} /></Field>
+              <Field label="Egg accent color"><ColorField testid="assets-egg-accent" value={draft.egg?.accentColor ?? draft.accentColor ?? "#7BB7D6"} onChange={(v) => update("egg", { ...(draft.egg ?? {}), accentColor: v })} onSave={handleSavePalette} /></Field>
               <Field label="Shiny chance (0-100)"><NumberField testid="assets-egg-shiny" value={draft.egg?.shinyChance ?? 4} onChange={(n) => update("egg", { ...(draft.egg ?? {}), shinyChance: n })} min={0} max={100} /></Field>
               <Field label="Hatch category"><TextField testid="assets-egg-hatch" value={draft.egg?.hatchCategory ?? ""} onChange={(v) => update("egg", { ...(draft.egg ?? {}), hatchCategory: v })} placeholder="water / fire / nature" /></Field>
-              <Field label="Glow effect"><SelectField testid="assets-egg-glow" value={draft.egg?.glowEffect ?? ""} options={["none","soft","pulse","shimmer"]} onChange={(v) => update("egg", { ...(draft.egg ?? {}), glowEffect: v as "none"|"soft"|"pulse"|"shimmer" })} placeholder="—" /></Field>
+              <Field label="Glow effect"><SelectField testid="assets-egg-glow" value={draft.egg?.glowEffect ?? ""} options={ASSET_EFFECTS} onChange={(v) => update("egg", { ...(draft.egg ?? {}), glowEffect: v as any })} placeholder="—" /></Field>
               <Field label="Companion family"><TextField testid="assets-egg-family" value={draft.egg?.companionFamily ?? ""} onChange={(v) => update("egg", { ...(draft.egg ?? {}), companionFamily: v })} placeholder="water-pups" /></Field>
               <Field label="Event tag"><TextField testid="assets-egg-event" value={draft.egg?.eventTag ?? ""} onChange={(v) => update("egg", { ...(draft.egg ?? {}), eventTag: v })} placeholder="optional" /></Field>
             </>}
+
             {(k === "badge" || k === "sticker") && <>
               <Field label="Badge type"><SelectField testid="assets-badge-type" value={draft.badge?.badgeType ?? ""} options={["achievement","milestone","event","rank"]} onChange={(v) => update("badge", { ...(draft.badge ?? {}), badgeType: v as any })} placeholder="—" /></Field>
-              <Field label="Category"><TextField testid="assets-badge-category" value={draft.badge?.achievementCategory ?? ""} onChange={(v) => update("badge", { ...(draft.badge ?? {}), achievementCategory: v })} placeholder="first-correct" /></Field>
+              <Field label="Achievement theme"><TextField testid="assets-badge-category" value={draft.badge?.achievementCategory ?? ""} onChange={(v) => update("badge", { ...(draft.badge ?? {}), achievementCategory: v })} placeholder="first-correct / streak / kindness" /></Field>
               <Field label="Icon shape"><SelectField testid="assets-badge-icon" value={draft.badge?.iconShape ?? ""} options={["circle","star","shield","leaf","heart"]} onChange={(v) => update("badge", { ...(draft.badge ?? {}), iconShape: v as any })} placeholder="—" /></Field>
               <Field label="Rarity"><SelectField testid="assets-badge-rarity" value={draft.badge?.rarity ?? ""} options={RARITIES} onChange={(v) => update("badge", { ...(draft.badge ?? {}), rarity: v as Rarity })} placeholder="—" /></Field>
             </>}
@@ -1592,8 +2118,8 @@ const AssetsTab: React.FC = () => {
 
           <div className="mt-4 flex flex-wrap items-start gap-4">
             <div>
-              <p className="text-[10px] font-extrabold uppercase text-ink-muted mb-1">Standard preview</p>
-              <div className="w-16 h-16 rounded-2xl border-4 border-white shadow-lg" style={{ background: draft.previewColor ?? "#9D8DF1" }} aria-hidden />
+              <p className="text-[10px] font-extrabold uppercase text-ink-muted mb-1">Color preview</p>
+              <div className="w-16 h-16 rounded-2xl border-4 border-white shadow-lg" style={{ background: `linear-gradient(135deg, ${draft.previewColor ?? "#9D8DF1"}, ${draft.accentColor ?? "#F4C753"})` }} aria-hidden />
             </div>
             {savedPreview && (
               <div className="rounded-2xl bg-sage/10 border-2 border-sage/30 px-3 py-2">
@@ -1606,7 +2132,7 @@ const AssetsTab: React.FC = () => {
           <ImagePreviewWorkflow
             testid="assets-image-generator"
             title="Generated asset image preview"
-            helper="Generate from this asset draft, then save or discard before sending it to review."
+            helper="Generate from this asset draft, then save, export, or discard before sending it to review. Background removal is planned as a later processing step."
             generatedPreview={generatedPreview}
             savedPreview={savedPreview}
             onGenerate={generateImagePreview}
@@ -1614,6 +2140,7 @@ const AssetsTab: React.FC = () => {
             onDiscard={discardGeneratedPreview}
             disabled={false}
             imageClassName="aspect-square"
+            exportFilename={`asset-${draft.name || draft.kind || "item"}-${draft.kind || "asset"}-${draft.backgroundMode || "export"}`}
           />
 
           <button type="button" data-testid="assets-generate-btn" onClick={submit} className="btn-primary mt-4 !text-base !py-3 !px-6">
@@ -1626,12 +2153,13 @@ const AssetsTab: React.FC = () => {
           {i.previewUrl ? (
             <img src={i.previewUrl} alt={`${i.name} asset art`} className="w-16 h-16 object-cover rounded-2xl border-4 border-white shrink-0 shadow-lg" />
           ) : (
-            <div className="w-16 h-16 rounded-2xl border-4 border-white shrink-0" style={{ background: i.previewColor }} aria-hidden />
+            <div className="w-16 h-16 rounded-2xl border-4 border-white shrink-0" style={{ background: `linear-gradient(135deg, ${i.previewColor}, ${(i as any).accentColor || "#F4C753"})` }} aria-hidden />
           )}
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <p className="h-display text-lg truncate">{i.name}</p>
-            <p className="text-[10px] font-extrabold uppercase text-ink-muted">{i.kind.replace(/-/g," ")}</p>
+            <p className="text-[10px] font-extrabold uppercase text-ink-muted">{i.kind.replace(/-/g," ")}{(i as any).backgroundMode ? ` · ${(i as any).backgroundMode}` : ""}</p>
             {i.previewUrl && <p className="text-[10px] font-extrabold text-sage mt-1">Generated image attached · {i.imageProvider ?? "prototype"}</p>}
+            {(i as any).accentColor && <p className="text-[10px] font-bold text-primary mt-1">Colors: {i.previewColor} → {(i as any).accentColor}</p>}
             {i.egg && <p className="text-[10px] font-bold text-primary mt-1">{i.egg.rarity} · shiny {i.egg.shinyChance}% · {i.egg.glowEffect} glow</p>}
             {i.badge && <p className="text-[10px] font-bold text-primary mt-1">{i.badge.badgeType} · {i.badge.iconShape}</p>}
             {i.description && <p className="text-xs text-ink-muted mt-1 line-clamp-2">{i.description}</p>}
@@ -1646,6 +2174,26 @@ const AssetsTab: React.FC = () => {
 // ============================================================================
 // REALMS
 // ============================================================================
+
+const REALM_PREFIXES = ["Meadowfall", "Lullaby", "Starlit", "Sunberry", "Frostpine", "Moonpetal", "Pebblebrook", "Whisperwind", "Honeydew", "Brightbloom", "Cloudberry", "Willowwish"] as const;
+const REALM_TYPES = ["enchanted forest", "castle town", "mountain vale", "sky islands", "moonlit marsh", "crystal grotto", "desert oasis", "volcanic ridge", "snowfield", "coral lagoon", "academy grounds", "meadow village", "storybook kingdom", "river town", "sunlit plateau"] as const;
+const REALM_BUILDING_COUNTS = ["3", "5", "7", "10", "15", "20+"] as const;
+const REALM_CAMERA_OPTIONS = ["fixed 2D browser RPG screen", "orthographic oblique RPG screen", "top-down gameplay screen", "light isometric gameplay screen", "side-view scenic"] as const;
+const REALM_SCREEN_FORMATS = ["outdoor route", "outdoor town edge", "building entrance", "interior room", "plaza screen", "cave/dungeon room", "beach/water edge", "forest clearing"] as const;
+const REALM_CAMERA_DISTANCES = ["close", "medium", "overview"] as const;
+const REALM_BOUNDARY_STYLES = ["trees", "water", "fences", "room walls", "cliffs/rocks", "counters/shelves", "mixed natural edges"] as const;
+const REALM_BUILDING_MODES = ["none", "partial/cropped entrance", "one building edge", "multiple buildings"] as const;
+const REALM_MAP_SCALES = ["small room", "single-screen chunk", "town lane", "plaza chunk", "forest path", "building entrance", "cave room", "bridge crossing"] as const;
+const REALM_FANTASY_LEVELS = ["grounded", "magical", "high fantasy"] as const;
+const REALM_EXIT_OPTIONS = ["north gate", "south road", "east bridge", "west forest path", "secret portal", "boat dock", "mountain pass", "academy archway"] as const;
+const REALM_OUTPUT_MODES = ["Playable RPG Screen", "Map Chunk / Room", "Walking Map", "Realm Key Art"] as const;
+type RealmOutputMode = typeof REALM_OUTPUT_MODES[number];
+const REALM_VISUAL_REFERENCE_STYLES = ["cozy browser RPG", "tilemap-inspired", "Prodigy-like outdoor route", "cozy indoor RPG room"] as const;
+
+const pickRealm = <T,>(arr: readonly T[]): T => arr[Math.floor(Math.random() * arr.length)];
+const makeRealmName = (prefix?: string, type?: string) => `${prefix || pickRealm(REALM_PREFIXES)} ${type || pickRealm(REALM_TYPES)}`.replace(/\b\w/g, (c) => c.toUpperCase());
+const parseCount = (count?: string): number => count === "20+" ? 20 : Math.max(3, parseInt(count || "5", 10) || 5);
+
 type RealmGeneratedPreview = {
   url: string;
   prompt: string;
@@ -1653,47 +2201,159 @@ type RealmGeneratedPreview = {
 };
 
 const buildRealmImagePrompt = (draft: Partial<StudioRealm>): string => {
-  const name = draft.name?.trim() || "unnamed realm";
-  const biome = draft.biome || "friendly fantasy biome";
+  const d = draft as any;
+  const outputMode = (d.outputMode || "Playable RPG Screen") as RealmOutputMode;
+  const prefix = d.realmPrefix || "Meadowfall";
+  const type = d.realmType || "enchanted forest";
+  const name = draft.name?.trim() || makeRealmName(prefix, type);
+  const biome = draft.biome || `${type} fantasy biome`;
   const tone = draft.tone || "cozy";
-  const buildings = (draft.buildings ?? ["town-hub", "hatchery"]).map((b) => b.replace(/-/g, " ")).join(", ");
+  const fantasyLevel = d.fantasyLevel || "magical";
+  const visualReferenceStyle = d.visualReferenceStyle || "cozy browser RPG";
+  const screenFormat = d.screenFormat || "outdoor route";
+  const mapCamera = d.mapCamera || "fixed 2D browser RPG screen";
+  const cameraDistance = d.cameraDistance || "close";
+  const boundaryStyle = d.boundaryStyle || "trees";
+  const buildingMode = d.buildingMode || "none";
+  const gridCell = d.gridCell || "A2";
+  const zonePurpose = d.zonePurpose || "forest transition path";
+  const exits = d.entryExits || "north, east";
+  const zoneContents = d.zoneContents || "wide walkable path, open grass center, trees and flowers around the edges, one NPC spot, one pet spawn patch";
+  const mapNotes = draft.mapNotes || "one playable screen with clear exits and edge boundaries";
+  const inMapNotes = d.inMapNotes || "wide paths, readable NPC/pet zones, open touch/click movement space";
+  const mapScale = d.mapScale || "single-screen chunk";
+  const buildingCount = d.buildingCount || String((draft.buildings ?? []).length || 0);
+  const buildings = (draft.buildings ?? []).map((b) => String(b).replace(/-/g, " ")).join(", ");
   const grades = (draft.grades ?? ["K", "1", "2"]).join(", ");
   const subjects = (draft.subjects ?? ["math"]).join(", ");
-  const description = draft.description || "A welcoming learning realm for young adventurers.";
-  const mapNotes = draft.mapNotes || "Soft central plaza with readable paths to learning hubs.";
+  const description = draft.description || `A ${tone} ${type} realm for young adventurers.`;
+
+  const positive: string[] = [];
+  const layout: string[] = [];
+  const style: string[] = [];
+  const negative: string[] = [];
+
+  if (outputMode === "Playable RPG Screen" || outputMode === "Map Chunk / Room") {
+    positive.push(`Create a crisp 1920x1080 Questing Academy playable RPG screen background.`);
+    positive.push(`Scene: ${zonePurpose} in ${name}.`);
+    positive.push(`Realm name: ${name}.`);
+    positive.push(`Realm prefix/type: ${prefix} ${type}.`);
+    positive.push(`Biome: ${biome}.`);
+    positive.push(`Tone/mood: ${tone}.`);
+    positive.push(`Fantasy level: ${fantasyLevel}.`);
+    positive.push(`Learning audience: grades ${grades}; subjects ${subjects}.`);
+    positive.push(`Visual reference style: ${visualReferenceStyle}.`);
+    positive.push(`Output type: ${outputMode}.`);
+    positive.push(`Screen format: ${screenFormat}.`);
+    positive.push(`Camera: ${mapCamera}.`);
+    positive.push(`Camera distance: ${cameraDistance}.`);
+    positive.push(`Map scale: ${mapScale}.`);
+    positive.push(`Grid cell: ${gridCell}.`);
+    positive.push(`Boundary style: ${boundaryStyle}.`);
+    positive.push(`Building mode: ${buildingMode}.`);
+
+    layout.push(`Required exits: ${exits}.`);
+    layout.push(`Zone contents: ${zoneContents}.`);
+    layout.push(`Map notes: ${mapNotes}.`);
+    layout.push(`In-map walking notes: ${inMapNotes}.`);
+    layout.push(`Large walkable ground/path/floor space should dominate the image.`);
+    layout.push(`Use clear collision-friendly boundaries around the screen edges.`);
+    layout.push(`Leave open space for a small chibi player sprite, NPCs, pets, pickups, and click/touch movement.`);
+    layout.push(`Make it feel like one playable local screen, not a whole realm, not a whole town, and not a distant map overview.`);
+
+    if (buildingMode === "none") {
+      layout.push(`Use natural boundaries only: trees, bushes, rocks, flowers, grass, water, fences, cliffs, or paths.`);
+    } else {
+      layout.push(`Building/structure direction: ${buildingMode}; building count target: ${buildingCount}.`);
+      if (buildings) layout.push(`Allowed hubs/landmarks for this structured screen: ${buildings}.`);
+    }
+
+    style.push(`Clean colorful 2D/2.5D children's browser RPG background.`);
+    style.push(`Player-scale environment with readable sprite-RPG/tilemap-inspired shapes.`);
+    style.push(`Questing Academy warmth: cream sunlight, pastel greens, soft lavender accents, rounded cozy forms, cheerful kid-safe fantasy.`);
+    style.push(`Crisp readable edges, game-ready background, no blur, no stretched look, no low-resolution texture.`);
+
+    negative.push(`No text, labels, UI, logos, watermark, fake writing, signs, symbols, corner marks.`);
+    negative.push(`No characters, battle scene, object sheet, cards, UI mockup, poster, character portrait.`);
+    negative.push(`No aerial overview, world map, full town, full city, decorative board-game map, cinematic concept art, miniature model-map look.`);
+    if (buildingMode === "none") negative.push(`No buildings, houses, rooftops, town hubs, shops, hatcheries, academies, landmarks, doors, windows, or structures.`);
+    negative.push(`No photorealism, realistic violence, horror, weapons, dark scary mood.`);
+  } else if (outputMode === "Walking Map") {
+    positive.push(`Create a crisp 1920x1080 Questing Academy playable walking-region background for ${name}.`);
+    positive.push(`Realm name: ${name}; biome: ${biome}; tone: ${tone}; fantasy level: ${fantasyLevel}.`);
+    positive.push(`Visual reference style: ${visualReferenceStyle}.`);
+    positive.push(`Camera: ${mapCamera}; camera distance: ${cameraDistance}; map scale: ${mapScale}.`);
+    positive.push(`Broader explorable walking terrain with readable zones, clear navigation flow, and open paths.`);
+    if (buildings) positive.push(`Suggested hubs/landmarks: ${buildings}.`);
+    layout.push(`Entrances/exits: ${exits}.`);
+    layout.push(`Map notes: ${mapNotes}.`);
+    layout.push(`In-map walking notes: ${inMapNotes}.`);
+    style.push(`Clean colorful 2D/2.5D RPG background for kids, Questing Academy warmth, pastel greens, lavender accents, crisp game art.`);
+    negative.push(`No text, labels, UI, logos, watermark, characters, battle scene, object sheet, photorealism, horror, weapons, dark scary mood.`);
+  } else {
+    positive.push(`Create a crisp 1920x1080 Questing Academy realm key art scene for ${name}.`);
+    positive.push(`Realm name: ${name}; prefix/type: ${prefix} ${type}; biome: ${biome}; tone: ${tone}; fantasy level: ${fantasyLevel}.`);
+    positive.push(`Realm description: ${description}.`);
+    positive.push(`Visual reference style: scenic cozy realm key art.`);
+    layout.push(`Wide scenic world identity image for map cards and navigation.`);
+    if (buildings) layout.push(`Landmark inspiration: ${buildings}.`);
+    style.push(`Beautiful cozy fantasy realm overview, warm safe mood, pastel color, readable silhouettes, crisp high-resolution game art.`);
+    negative.push(`No text, labels, UI, logos, watermark, characters, battle scene, object sheet, photorealism, horror, weapons, dark scary mood.`);
+  }
 
   return [
-    `Create a Questing Academy realm concept image for ${name}.`,
-    `Biome: ${biome}. Mood/tone: ${tone}.`,
-    `Learning audience: grades ${grades}. Supported subjects: ${subjects}.`,
-    `Buildings and hubs to suggest visually: ${buildings}.`,
-    `Realm description: ${description}.`,
-    `Map/layout notes: ${mapNotes}.`,
-    "Style rules: cute chibi educational fantasy RPG realm concept art, wide establishing view, cozy readable map-like environment, soft rounded shapes, whimsical architecture, clear central pathing, pastel colors, storybook watercolor, child-safe for ages 5-12, simple inviting composition, no UI labels.",
-    "Show the environment and key hubs clearly, not a character portrait. Keep it friendly, magical, bright, and safe.",
-    "Negative rules: no text, no watermark, no realistic violence, no horror, no weapons, no dark scary mood, no photorealism.",
-  ].join(" ");
+    "POSITIVE PROMPT:",
+    ...positive.map((line) => `- ${line}`),
+    "",
+    "LAYOUT REQUIREMENTS:",
+    ...layout.map((line) => `- ${line}`),
+    "",
+    "STYLE REQUIREMENTS:",
+    ...style.map((line) => `- ${line}`),
+    "",
+    "STRICT NEGATIVE PROMPT:",
+    ...negative.map((line) => `- ${line}`),
+  ].join("\n");
 };
 
 const RealmsTab: React.FC = () => {
   const items = useStudio((s) => s.realms);
   const addItem = useStudio((s) => s.addItem);
-  const [draft, setDraft] = useState<Partial<StudioRealm>>({ subjects: ["math"], grades: ["K","1","2"], buildings: ["town-hub","hatchery"] });
+  const [draft, setDraft] = useState<Partial<StudioRealm> & Record<string, any>>({ subjects: ["math"], grades: ["K","1","2"], buildings: ["town-hub","hatchery"], realmPrefix: "Meadowfall", realmType: "meadow", outputMode: "Playable RPG Screen", visualReferenceStyle: "cozy browser RPG", fantasyLevel: "magical", screenFormat: "outdoor route", cameraDistance: "close", boundaryStyle: "trees", buildingMode: "none", buildingCount: "0", mapScale: "single-screen chunk", mapCamera: "fixed 2D browser RPG screen", gridCell: "B2", zonePurpose: "forest transition path", entryExits: "north, east", zoneContents: "wide walkable path, open grass center, trees and flowers only around the edges, one NPC spot, one pet spawn patch", inMapNotes: "Top-down walking terrain with clear paths, open plaza space, NPC interaction zones, pet spawn areas, and readable landmarks." });
   const [generatedPreview, setGeneratedPreview] = useState<RealmGeneratedPreview | null>(null);
   const [savedPreview, setSavedPreview] = useState<RealmGeneratedPreview | null>(null);
   const update = <K extends keyof StudioRealm>(k: K, v: StudioRealm[K]) => setDraft((d) => ({ ...d, [k]: v }));
 
   const randomize = () => {
+    const prefix = pickRealm(REALM_PREFIXES);
+    const realmType = pickRealm(REALM_TYPES);
+    const buildingCount = pickRealm(REALM_BUILDING_COUNTS);
+    const exits = Array.from(new Set(Array.from({ length: 4 }, () => pickRealm(REALM_EXIT_OPTIONS)))).join(", ");
     setGeneratedPreview(null);
     setSavedPreview(null);
     setDraft((d) => ({
       ...d,
-      name: randomRealmName(),
-      biome: randomBiome(),
+      realmPrefix: prefix,
+      realmType,
+      buildingCount,
+      outputMode: "Playable RPG Screen",
+      screenFormat: pickRealm(REALM_SCREEN_FORMATS),
+      cameraDistance: "close",
+      boundaryStyle: pickRealm(REALM_BOUNDARY_STYLES),
+      buildingMode: "none",
+      gridCell: `${pickRealm(["A","B","C","D"])}${pickRealm(["1","2","3","4"])}`,
+      zonePurpose: pickRealm(["forest transition path", "sunny grass route", "river edge path", "flower clearing", "rocky trail bend", "beach route", "cave mouth route", "woodland path intersection"]),
+      mapScale: pickRealm(REALM_MAP_SCALES),
+      mapCamera: "fixed 2D browser RPG screen",
+      entryExits: exits,
+      zoneContents: "one player-scale screen with large walkable ground, edge boundaries, readable exits, room for NPCs and pets",
+      name: makeRealmName(prefix, realmType),
+      biome: `${realmType} ${randomBiome()}`,
       tone: SCENE_MOODS[Math.floor(Math.random() * SCENE_MOODS.length)],
-      description: `A ${randomBiome()} for ${["K-2","2-5","3-7"][Math.floor(Math.random()*3)]} learners.`,
-      buildings: ["town-hub","hatchery","learning-academy","shop","quest-board"].slice(0, 3 + Math.floor(Math.random()*3)) as RealmBuilding[],
-      mapNotes: "Soft central plaza with paths to all hubs.",
+      description: `A cozy ${realmType} realm for ${["K-2","2-5","3-7"][Math.floor(Math.random()*3)]} learners.`,
+      buildings: ["town-hub","hatchery","learning-academy","shop","quest-board","guild-hall","companion-habitat","boss-gate"].slice(0, Math.min(parseCount(buildingCount), 8)) as RealmBuilding[],
+      mapNotes: "One playable screen with clear exits and edge boundaries.",
+      inMapNotes: "Playable route screen with wide walking paths, natural boundaries, room for NPCs/pets, and no UI labels.",
     }));
   };
 
@@ -1716,23 +2376,40 @@ const RealmsTab: React.FC = () => {
 
   const submit = () => {
     const m = mockRealmConcept(draft.description);
-    const item: StudioRealm = {
-      ...m,
-      name: draft.name?.trim() || m.name,
-      biome: draft.biome ?? m.biome,
-      tone: draft.tone,
-      description: draft.description ?? m.description,
-      buildings: draft.buildings ?? [],
-      mapNotes: draft.mapNotes,
-      battleBackgroundSet: draft.battleBackgroundSet,
-      stylePresetId: draft.stylePresetId,
-      grades: draft.grades ?? m.grades,
-      subjects: draft.subjects ?? m.subjects,
-      previewUrl: savedPreview?.url,
-      promptUsed: savedPreview?.prompt,
-      imageProvider: savedPreview?.provider,
-    };
-    addItem("realms", item);
+    const item = {
+  ...m,
+  name: draft.name?.trim() || m.name,
+  biome: draft.biome ?? m.biome,
+  tone: draft.tone,
+  description: draft.description ?? m.description,
+  buildings: draft.buildings ?? [],
+  mapNotes: draft.mapNotes,
+  battleBackgroundSet: draft.battleBackgroundSet,
+  stylePresetId: draft.stylePresetId,
+  realmPrefix: (draft as any).realmPrefix,
+  realmType: (draft as any).realmType,
+  buildingCount: (draft as any).buildingCount,
+  outputMode: (draft as any).outputMode,
+  screenFormat: (draft as any).screenFormat,
+  cameraDistance: (draft as any).cameraDistance,
+  boundaryStyle: (draft as any).boundaryStyle,
+  buildingMode: (draft as any).buildingMode,
+  entryExits: (draft as any).entryExits,
+  gridCell: (draft as any).gridCell,
+  mapScale: (draft as any).mapScale,
+  mapCamera: (draft as any).mapCamera,
+  zonePurpose: (draft as any).zonePurpose,
+  zoneContents: (draft as any).zoneContents,
+  inMapNotes: (draft as any).inMapNotes,
+  visualReferenceStyle: (draft as any).visualReferenceStyle,
+  fantasyLevel: (draft as any).fantasyLevel,
+  grades: draft.grades ?? m.grades,
+  subjects: draft.subjects ?? m.subjects,
+  previewUrl: savedPreview?.url,
+  promptUsed: savedPreview?.prompt,
+  imageProvider: savedPreview?.provider,
+} as StudioRealm;
+addItem("realms", item);
     setGeneratedPreview(null);
     setSavedPreview(null);
   };
@@ -1752,9 +2429,19 @@ const RealmsTab: React.FC = () => {
             <button type="button" data-testid="realms-randomize" onClick={randomize} className="btn-outline !text-sm !py-2 !px-4"><Sparkles size={14} strokeWidth={3} /> Randomize</button>
           </div>
           <div className="grid sm:grid-cols-2 gap-3">
-            <Field label="Realm name"><TextField testid="realms-input-name" value={draft.name ?? ""} onChange={(v) => update("name", v)} placeholder="e.g. Frostpine Hollow" onRandomize={() => update("name", randomRealmName())} /></Field>
-            <Field label="Biome"><TextField testid="realms-input-biome" value={draft.biome ?? ""} onChange={(v) => update("biome", v)} placeholder="snowy pine forest" onRandomize={() => update("biome", randomBiome())} /></Field>
+            <Field label="Realm prefix"><SelectField testid="realms-input-prefix" value={draft.realmPrefix ?? ""} options={REALM_PREFIXES} onChange={(v) => setDraft((d) => ({ ...d, realmPrefix: v, name: makeRealmName(v, d.realmType) }))} placeholder="—" /></Field>
+            <Field label="Realm type"><SelectField testid="realms-input-type" value={draft.realmType ?? ""} options={REALM_TYPES} onChange={(v) => setDraft((d) => ({ ...d, realmType: v, name: makeRealmName(d.realmPrefix, v), biome: d.biome || `${v} fantasy biome` }))} placeholder="—" /></Field>
+            <Field label="Output type"><SelectField testid="realms-input-output-mode" value={draft.outputMode ?? "Playable RPG Screen"} options={REALM_OUTPUT_MODES} onChange={(v) => setDraft((d) => ({ ...d, outputMode: v }))} /></Field>
+            <Field label="Visual reference style"><SelectField testid="realms-input-visual-reference" value={draft.visualReferenceStyle ?? "cozy browser RPG"} options={REALM_VISUAL_REFERENCE_STYLES} onChange={(v) => setDraft((d) => ({ ...d, visualReferenceStyle: v }))} /></Field>
+            <Field label="Screen format"><SelectField testid="realms-input-screen-format" value={draft.screenFormat ?? "outdoor route"} options={REALM_SCREEN_FORMATS} onChange={(v) => setDraft((d) => ({ ...d, screenFormat: v }))} /></Field>
+            <Field label="Camera distance"><SelectField testid="realms-input-camera-distance" value={draft.cameraDistance ?? "close"} options={REALM_CAMERA_DISTANCES} onChange={(v) => setDraft((d) => ({ ...d, cameraDistance: v }))} /></Field>
+            <Field label="Boundary style"><SelectField testid="realms-input-boundary-style" value={draft.boundaryStyle ?? "trees"} options={REALM_BOUNDARY_STYLES} onChange={(v) => setDraft((d) => ({ ...d, boundaryStyle: v }))} /></Field>
+            <Field label="Building mode"><SelectField testid="realms-input-building-mode" value={draft.buildingMode ?? "none"} options={REALM_BUILDING_MODES} onChange={(v) => setDraft((d) => ({ ...d, buildingMode: v }))} /></Field>
+            <Field label="Realm name"><TextField testid="realms-input-name" value={draft.name ?? ""} onChange={(v) => update("name", v)} placeholder="e.g. Frostpine Hollow" onRandomize={() => setDraft((d) => ({ ...d, name: makeRealmName(d.realmPrefix, d.realmType) }))} /></Field>
+            <Field label="Biome"><TextField testid="realms-input-biome" value={draft.biome ?? ""} onChange={(v) => update("biome", v)} placeholder="snowy pine forest" onRandomize={() => update("biome", `${draft.realmType || "cozy"} ${randomBiome()}`)} /></Field>
+            <Field label="Number of buildings"><SelectField testid="realms-input-building-count" value={draft.buildingCount ?? ""} options={REALM_BUILDING_COUNTS} onChange={(v) => setDraft((d) => ({ ...d, buildingCount: v, buildings: ["town-hub","hatchery","learning-academy","shop","quest-board","guild-hall","companion-habitat","boss-gate"].slice(0, Math.min(parseCount(v), 8)) as RealmBuilding[] }))} placeholder="—" /></Field>
             <Field label="Tone"><SelectField testid="realms-input-tone" value={draft.tone ?? ""} options={SCENE_MOODS} onChange={(v) => update("tone", v as SceneMood)} placeholder="—" /></Field>
+            <Field label="Fantasy level"><SelectField testid="realms-input-fantasy-level" value={draft.fantasyLevel ?? "magical"} options={REALM_FANTASY_LEVELS} onChange={(v) => setDraft((d) => ({ ...d, fantasyLevel: v }))} /></Field>
             <Field label="Style preset"><StylePresetPicker testid="realms-style-preset" value={draft.stylePresetId} onChange={(id) => update("stylePresetId", id)} /></Field>
             <Field label="Buildings / hubs" full>
               <MultiSelectChips
@@ -1764,21 +2451,29 @@ const RealmsTab: React.FC = () => {
                 options={REALM_BUILDINGS.map((b) => ({ id: b, label: b.replace(/-/g, " ") }))}
               />
             </Field>
+            <Field label="Map scale"><SelectField testid="realms-input-map-scale" value={draft.mapScale ?? "single-screen chunk"} options={REALM_MAP_SCALES} onChange={(v) => setDraft((d) => ({ ...d, mapScale: v }))} /></Field>
+            <Field label="Map camera"><SelectField testid="realms-input-map-camera" value={draft.mapCamera ?? "orthographic 3/4 game screen"} options={REALM_CAMERA_OPTIONS} onChange={(v) => setDraft((d) => ({ ...d, mapCamera: v }))} /></Field>
+            <Field label="Grid cell"><TextField testid="realms-input-grid-cell" value={draft.gridCell ?? ""} onChange={(v) => setDraft((d) => ({ ...d, gridCell: v }))} placeholder="B2" /></Field>
+            <Field label="Zone purpose"><TextField testid="realms-input-zone-purpose" value={draft.zonePurpose ?? ""} onChange={(v) => setDraft((d) => ({ ...d, zonePurpose: v }))} placeholder="academy courtyard / shop lane / cave entrance" /></Field>
+            <Field label="Entry / exits" full><TextField testid="realms-input-entry-exits" value={draft.entryExits ?? ""} onChange={(v) => setDraft((d) => ({ ...d, entryExits: v }))} placeholder="north, east, south-west path" /></Field>
+            <Field label="Zone contents / placement" full><TextArea testid="realms-input-zone-contents" value={draft.zoneContents ?? ""} onChange={(v) => setDraft((d) => ({ ...d, zoneContents: v }))} placeholder="two buildings on B2, clear path between them, one NPC spot near fountain" /></Field>
             <Field label="Map notes" full><TextArea testid="realms-input-map" value={draft.mapNotes ?? ""} onChange={(v) => update("mapNotes", v)} placeholder="Layout, key landmarks" /></Field>
+            <Field label="In-map walking terrain" full><TextArea testid="realms-input-in-map" value={draft.inMapNotes ?? ""} onChange={(v) => setDraft((d) => ({ ...d, inMapNotes: v }))} placeholder="Top-down playable terrain, clear paths, NPC/pet zones, interactable landmarks." /></Field>
             <Field label="Description" full><TextArea testid="realms-input-description" value={draft.description ?? ""} onChange={(v) => update("description", v)} placeholder="What kids feel when they arrive." /></Field>
           </div>
 
           <ImagePreviewWorkflow
             testid="realms-image-generator"
-            title="Generated realm image preview"
-            helper="Generate from this realm draft, then save or discard before sending it to review."
+            title={`Generated realm ${draft.outputMode === "Realm Key Art" ? "key art" : draft.outputMode === "Playable RPG Screen" ? "playable RPG screen" : "walking map"} preview`}
+            helper={draft.outputMode === "Realm Key Art" ? "Generate scenic realm key art for navigation/world identity, then save or discard before sending it to review." : draft.outputMode === "Playable RPG Screen" ? "Generate one player-scale RPG screen, then save, export, or discard before sending it to review." : draft.outputMode === "Map Chunk / Room" ? "Generate one playable grid chunk/room, then save, export, or discard before sending it to review." : "Generate broader playable walking terrain, then save or discard before sending it to review."}
             generatedPreview={generatedPreview}
             savedPreview={savedPreview}
             onGenerate={generateImagePreview}
             onSave={saveGeneratedPreview}
             onDiscard={discardGeneratedPreview}
             disabled={false}
-            imageClassName="aspect-[4/3]"
+            imageClassName="aspect-video"
+            exportFilename={`realm-${draft.name || makeRealmName(draft.realmPrefix, draft.realmType)}-${draft.outputMode || "map"}-${draft.gridCell || "chunk"}`}
           />
 
           <button type="button" data-testid="realms-generate-btn" onClick={submit} className="btn-primary mt-4 !text-base !py-3 !px-6">
@@ -1793,6 +2488,7 @@ const RealmsTab: React.FC = () => {
           )}
           <p className="h-display text-lg">{i.name}</p>
           <p className="text-[10px] font-extrabold uppercase text-ink-muted">{i.biome} {i.tone && `· ${i.tone}`}</p>
+          <p className="text-[10px] font-extrabold text-primary mt-1">{((i as any).outputMode || "Map Chunk / Room")}{(i as any).gridCell ? ` · ${(i as any).gridCell}` : ""}{(i as any).zonePurpose ? ` · ${(i as any).zonePurpose}` : ""}</p>
           {i.previewUrl && <p className="text-[10px] font-extrabold text-sage mt-1">Generated image attached · {i.imageProvider ?? "prototype"}</p>}
           <p className="text-xs text-ink-muted mt-1 line-clamp-2">{i.description}</p>
           {i.buildings && i.buildings.length > 0 && (
@@ -1924,6 +2620,7 @@ const BattleBgsTab: React.FC = () => {
             onDiscard={discardGeneratedPreview}
             disabled={!draft.realmId && !draft.realm}
             imageClassName="aspect-video"
+            exportFilename={`battle-bg-${selectedRealm?.name || draft.realm || "realm"}-${draft.environment || "background"}`}
           />
 
           <button type="button" data-testid="battleBgs-generate-btn" onClick={submit} disabled={!draft.realmId} className="btn-primary mt-4 !text-base !py-3 !px-6 disabled:opacity-40">
