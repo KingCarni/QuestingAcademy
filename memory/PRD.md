@@ -1,4 +1,4 @@
-# Questing Academy — Frontend MVP PRD (v0.7)
+# Questing Academy — Frontend MVP PRD (v0.8)
 
 ## Concept
 Cute chibi-style educational RPG for Grades K-7. Avatar creation, companion collection, math + reading battles, egg hatching, Learning Academy training, parent progress dashboard, a full internal **TeachMe Content Studio**, and a Prodigy-style **RPG Adventure shell** that wraps the game in a magical map / town / quest world.
@@ -16,19 +16,27 @@ Cute chibi-style educational RPG for Grades K-7. Avatar creation, companion coll
 - Staff: `/admin`, `/admin/studio`, `/admin/approvals`
 
 ## Versions
-- v0.1 MVP · v0.2 Senses Pack + K-7 · v0.3 Pack C + Admin · v0.4 Content Studio · v0.5 TEA-74 Studio Refinement · **v0.6 TEA-76/77/78 RPG Foundation**
+- v0.1 MVP · v0.2 Senses Pack + K-7 · v0.3 Pack C + Admin · v0.4 Content Studio · v0.5 TEA-74 Studio Refinement · v0.6 RPG Foundation · v0.7 World Comes Alive · **v0.8 TEA-99 Scene Composer**
 
-### v0.6 — RPG Foundation (current, 2026-05-31)
-- 🏰 **AdventureLayout** — shared painted pastel background + Prodigy-style fixed bottom dock (Hub/Map/Pets/Quests/Practice)
-- 🏠 **/adventure (AdventureHub)** — hero banner with chibi avatar greeting, "Start Adventure" CTA, today's-buddy card, quick-travel tiles
-- 🗺️ **/adventure/realms (RealmMap)** — painted top-down world canvas with floating realm islands, dashed adventure trail (SVG), animated hover lift, locked "coming soon" islands for pending realms; accessibility-friendly legend list below
-- 🏘️ **/adventure/town/:realmId (TownHub)** — painted panorama header, building pin grid sourced from `studioStore.realm.buildings`, **hover tooltips** with description on each pin, redirect on unknown realmId
-- 🐾 **/adventure/companions (CompanionsPanel)** — active companion hero + owned-team grid; "Take with me" swaps active companion
-- 📜 **/adventure/quests (QuestsPreview)** — quest cards sourced from `studioStore.quests` (approved/published only)
-- 🔁 **Landing pivot** — onboarding now lands at `/adventure` after starter pick; all TopBar Back buttons and Admin/Parent "Open game" links redirected accordingly
+### v0.8 — TEA-99 Scene Composer (current, 2026-06-02)
+- 🖼️ New **Scene Composer** tab inside Content Studio (between Scenes and NPCs)
+- Asset picker reuses existing Asset Library (`useStudio.assets`); layers reference assets by id only (no duplication, no base64)
+- 720×480 canvas, click an asset → adds draggable layer, pointer-event drag clamped to bounds, selection ring
+- Scale slider 0.3×–2.5× + ± buttons + live readout · remove layer · clear canvas · click background to deselect
+- Component-local state only — no persistence, no export, no z-order/opacity/grouping/markers/walkable zones
+- Self-contained inside `frontend/src/pages/ContentStudio.tsx`
 
-### v0.5 — TEA-74 (previous)
-- Studio refinement: grouped Questions, color/palette pickers, randomizers, reusable style presets, full editable stats, etc. (See v0.5 history above.)
+### v0.7 — World Comes Alive (2026-05-31)
+- 🚶 Walking hero (cozy stroll ~900ms) on Realm Map + Town with point-and-click navigation
+- 💬 NpcDialogue overlay (`components/adventure/NpcDialogue.tsx`) triggered by 💬 Talk sub-icons on town pins with matching NPC role; TTS Speak button
+- 📜 Quest engine v2 (`gameStore.questRun` + `startQuest`/`abandonQuest`/`tickQuestOnCorrect`); Battle banner with live progress, confetti+toast on completion, Daily Mission card on Adventure Hub
+- 🎨 Realm-specific battle backgrounds from `studioStore.battleBgs` keyed by `activeRealmId`; TopBar reflects realm name
+
+### v0.6 — RPG Foundation (2026-05-31)
+- AdventureLayout (painted bg + bottom dock), /adventure hub, painted top-down realm map with floating islands, town hub with hover tooltips, companions panel, quest preview, /hub → /adventure redirect
+
+### v0.5 — TEA-74
+- Studio refinement: grouped Questions, color/palette pickers, randomizers, reusable style presets, full editable stats
 
 ## Architecture additions (v0.6)
 - `components/adventure/AdventureLayout.tsx` — chrome + dock
@@ -80,4 +88,6 @@ h me" swaps active companion
 - **P2** Per-collection tab file extraction (ContentStudio.tsx ~1300 lines)
 - **P2** Persistent Studio PIN session
 - **P2** Live diff preview before publishing
+- **P2** `data-testid="admin-open-game"` and `parent-open-game` rename for cleaner assertions (testing agent suggestion)
+before publishing
 - **P2** `data-testid="admin-open-game"` and `parent-open-game` rename for cleaner assertions (testing agent suggestion)
