@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { TopBar } from "../components/TopBar";
 import { Card } from "../components/Card";
@@ -34,10 +34,23 @@ import {
   NPC_TEACHING_STYLES, NPC_HUMOR_LEVELS, NPC_FORMALITIES, NPC_ENCOURAGEMENT,
   TIMES_OF_DAY, SCENE_MOODS,
 } from "../lib/studioTypes";
-import { ShieldCheck, Library, Lock, Send, Eye, ChevronDown, ChevronRight, Wand2, Sparkles, Download, Archive } from "lucide-react";
+import { ShieldCheck, Library, Lock, Send, Eye, ChevronDown, ChevronRight, Wand2, Sparkles, Download, Archive, Trash2 } from "lucide-react";
 import { cn } from "../lib/cn";
 
 const STUDIO_PIN = "2580";
+const MAX_STORED_IMAGE_DATA_URL_LENGTH = 650_000;
+const MAX_INLINE_IMAGE_DATA_URL_LENGTH = 180_000;
+const isImageDataUrl = (value?: string): boolean => !!value && value.startsWith("data:image/");
+const shouldPersistImageUrl = (value?: string): boolean => !!value && (!isImageDataUrl(value) || value.length <= MAX_INLINE_IMAGE_DATA_URL_LENGTH);
+const getPersistableImageUrl = (value?: string): string | undefined => shouldPersistImageUrl(value) ? value : undefined;
+
+type StudioStorageImageRef = { url?: string; storage?: "inline" | "external" | "session-only"; note?: string };
+const createImageRef = (url?: string): StudioStorageImageRef | undefined => {
+  if (!url) return undefined;
+  if (shouldPersistImageUrl(url)) return { url, storage: isImageDataUrl(url) ? "inline" : "external" };
+  return { storage: "session-only", note: "Large generated image data was not persisted to localStorage. Export or regenerate this asset when needed." };
+};
+const isOversizedDataUrl = (value?: string): boolean => !!value && value.startsWith("data:image/") && value.length > MAX_STORED_IMAGE_DATA_URL_LENGTH;
 const slugifyForDownload = (value: string): string =>
   (value || "questing-academy-image")
     .toLowerCase()
@@ -89,32 +102,107 @@ const exportTransparentPngFromUrl = async (url: string, filenameBase: string) =>
 
     const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const data = image.data;
-    const sample = (x: number, y: number) => {
-      const idx = (y * canvas.width + x) * 4;
+    const width = canvas.width;
+    const height = canvas.height;
+    const total = width * height;
+
+    const samplePixel = (x: number, y: number) => {
+      const idx = (y * width + x) * 4;
       return [data[idx], data[idx + 1], data[idx + 2]] as const;
     };
-    const corners = [
-      sample(0, 0),
-      sample(canvas.width - 1, 0),
-      sample(0, canvas.height - 1),
-      sample(canvas.width - 1, canvas.height - 1),
-    ];
-    const bg = corners.reduce(
-      (acc, c) => [acc[0] + c[0] / corners.length, acc[1] + c[1] / corners.length, acc[2] + c[2] / corners.length],
+
+    const edgeSamples: (readonly [number, number, number])[] = [];
+    const sampleEvery = Math.max(1, Math.floor(Math.min(width, height) / 24));
+    for (let x = 0; x < width; x += sampleEvery) {
+      edgeSamples.push(samplePixel(x, 0), samplePixel(x, height - 1));
+    }
+    for (let y = 0; y < height; y += sampleEvery) {
+      edgeSamples.push(samplePixel(0, y), samplePixel(width - 1, y));
+    }
+
+    const bg = edgeSamples.reduce(
+      (acc, c) => [acc[0] + c[0] / edgeSamples.length, acc[1] + c[1] / edgeSamples.length, acc[2] + c[2] / edgeSamples.length],
       [0, 0, 0]
     );
-    const distance = (r: number, g: number, b: number) => Math.sqrt((r - bg[0]) ** 2 + (g - bg[1]) ** 2 + (b - bg[2]) ** 2);
-    const hard = 42;
-    const soft = 118;
 
-    for (let i = 0; i < data.length; i += 4) {
-      const d = distance(data[i], data[i + 1], data[i + 2]);
-      if (d < hard) {
-        data[i + 3] = 0;
-      } else if (d < soft) {
-        const keep = Math.max(0, Math.min(1, (d - hard) / (soft - hard)));
-        data[i + 3] = Math.round(data[i + 3] * keep);
+    const distanceFromBg = (idx: number) => {
+      const r = data[idx];
+      const g = data[idx + 1];
+      const b = data[idx + 2];
+      return Math.sqrt((r - bg[0]) ** 2 + (g - bg[1]) ** 2 + (b - bg[2]) ** 2);
+    };
+
+    // Only remove pixels that are connected to the outside background.
+    // This preserves white/bright pixels inside the character/object.
+    const hard = 34;
+    const soft = 96;
+    const visited = new Uint8Array(total);
+    const queue = new Int32Array(total);
+    let head = 0;
+    let tail = 0;
+
+    const tryPush = (pixelIndex: number) => {
+      if (pixelIndex < 0 || pixelIndex >= total || visited[pixelIndex]) return;
+      const idx = pixelIndex * 4;
+      if (data[idx + 3] === 0 || distanceFromBg(idx) < soft) {
+        visited[pixelIndex] = 1;
+        queue[tail++] = pixelIndex;
       }
+    };
+
+    for (let x = 0; x < width; x++) {
+      tryPush(x);
+      tryPush((height - 1) * width + x);
+    }
+    for (let y = 0; y < height; y++) {
+      tryPush(y * width);
+      tryPush(y * width + width - 1);
+    }
+
+    while (head < tail) {
+      const p = queue[head++];
+      const x = p % width;
+      const y = Math.floor(p / width);
+      if (x > 0) tryPush(p - 1);
+      if (x < width - 1) tryPush(p + 1);
+      if (y > 0) tryPush(p - width);
+      if (y < height - 1) tryPush(p + width);
+    }
+
+    const alpha = new Uint8ClampedArray(total);
+    for (let p = 0; p < total; p++) alpha[p] = data[p * 4 + 3];
+
+    for (let p = 0; p < total; p++) {
+      if (!visited[p]) continue;
+      const idx = p * 4;
+      const d = distanceFromBg(idx);
+      alpha[p] = d < hard ? 0 : Math.round(alpha[p] * Math.max(0, Math.min(1, (d - hard) / (soft - hard))));
+    }
+
+    // Feather the cut edge by slightly softening removed pixels next to kept pixels.
+    for (let p = 0; p < total; p++) {
+      if (!visited[p]) continue;
+      const x = p % width;
+      const y = Math.floor(p / width);
+      let touchesKept = false;
+      for (let dy = -1; dy <= 1 && !touchesKept; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          if (dx === 0 && dy === 0) continue;
+          const nx = x + dx;
+          const ny = y + dy;
+          if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
+          const np = ny * width + nx;
+          if (!visited[np] && data[np * 4 + 3] > 0) {
+            touchesKept = true;
+            break;
+          }
+        }
+      }
+      if (touchesKept) alpha[p] = Math.max(alpha[p], 24);
+    }
+
+    for (let p = 0; p < total; p++) {
+      data[p * 4 + 3] = alpha[p];
     }
 
     ctx.putImageData(image, 0, 0);
@@ -135,9 +223,104 @@ const exportTransparentPngFromUrl = async (url: string, filenameBase: string) =>
   }
 };
 
+
+const createTransparentPngDataUrlFromUrl = async (url: string): Promise<string> => {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Image download failed: ${response.status}`);
+  const blob = await response.blob();
+  const bitmap = await createImageBitmap(blob);
+  const canvas = document.createElement("canvas");
+  canvas.width = bitmap.width;
+  canvas.height = bitmap.height;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) throw new Error("Canvas is not available");
+  ctx.drawImage(bitmap, 0, 0);
+
+  const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const data = image.data;
+  const width = canvas.width;
+  const height = canvas.height;
+  const total = width * height;
+  const samplePixel = (x: number, y: number) => {
+    const idx = (y * width + x) * 4;
+    return [data[idx], data[idx + 1], data[idx + 2]] as const;
+  };
+  const edgeSamples: (readonly [number, number, number])[] = [];
+  const sampleEvery = Math.max(1, Math.floor(Math.min(width, height) / 24));
+  for (let x = 0; x < width; x += sampleEvery) edgeSamples.push(samplePixel(x, 0), samplePixel(x, height - 1));
+  for (let y = 0; y < height; y += sampleEvery) edgeSamples.push(samplePixel(0, y), samplePixel(width - 1, y));
+  const bg = edgeSamples.reduce((acc, c) => [acc[0] + c[0] / edgeSamples.length, acc[1] + c[1] / edgeSamples.length, acc[2] + c[2] / edgeSamples.length], [0, 0, 0]);
+  const distanceFromBg = (idx: number) => {
+    const r = data[idx]; const g = data[idx + 1]; const b = data[idx + 2];
+    return Math.sqrt((r - bg[0]) ** 2 + (g - bg[1]) ** 2 + (b - bg[2]) ** 2);
+  };
+  const hard = 34;
+  const soft = 96;
+  const visited = new Uint8Array(total);
+  const queue = new Int32Array(total);
+  let head = 0;
+  let tail = 0;
+  const tryPush = (pixelIndex: number) => {
+    if (pixelIndex < 0 || pixelIndex >= total || visited[pixelIndex]) return;
+    const idx = pixelIndex * 4;
+    if (data[idx + 3] === 0 || distanceFromBg(idx) < soft) {
+      visited[pixelIndex] = 1;
+      queue[tail++] = pixelIndex;
+    }
+  };
+  for (let x = 0; x < width; x++) { tryPush(x); tryPush((height - 1) * width + x); }
+  for (let y = 0; y < height; y++) { tryPush(y * width); tryPush(y * width + width - 1); }
+  while (head < tail) {
+    const px = queue[head++];
+    const x = px % width;
+    const y = Math.floor(px / width);
+    if (x > 0) tryPush(px - 1);
+    if (x < width - 1) tryPush(px + 1);
+    if (y > 0) tryPush(px - width);
+    if (y < height - 1) tryPush(px + width);
+  }
+  const alpha = new Uint8ClampedArray(total);
+  for (let px = 0; px < total; px++) alpha[px] = data[px * 4 + 3];
+  for (let px = 0; px < total; px++) {
+    if (!visited[px]) continue;
+    const idx = px * 4;
+    const d = distanceFromBg(idx);
+    alpha[px] = d < hard ? 0 : Math.round(alpha[px] * Math.max(0, Math.min(1, (d - hard) / (soft - hard))));
+  }
+  for (let px = 0; px < total; px++) data[px * 4 + 3] = alpha[px];
+  ctx.putImageData(image, 0, 0);
+  return canvas.toDataURL("image/png");
+};
+
+
+type VisualReferenceInput = {
+  kind: string;
+  label: string;
+  url: string;
+};
+
+const mockNanoBananaGenerateImageWithReferences = (
+  prompt: string,
+  palette?: { from?: string; to?: string },
+  visualReferences: VisualReferenceInput[] = []
+): string => {
+  const referenceBlock = visualReferences.length
+    ? `\n\nSTRUCTURED VISUAL REFERENCES PASSED SEPARATELY:\n${visualReferences.map((r, idx) => `${idx + 1}. ${r.kind}: ${r.label} (${r.url})`).join("\n")}`
+    : "";
+
+  const safePalette = palette
+    ? {
+        from: palette.from || "#9D8DF1",
+        to: palette.to || "#F4C753",
+      }
+    : undefined;
+
+  return mockNanoBananaGenerateImage(`${prompt}${referenceBlock}`, safePalette);
+};
+
 type TabKey =
   | "questions" | "avatars" | "companions" | "evolutions" | "arts" | "assets"
-  | "realms" | "battleBgs" | "scenes" | "npcs" | "quests" | "events" | "queue";
+  | "realms" | "battleBgs" | "scenes" | "npcs" | "quests" | "events" | "queue" | "assetLibrary";
 
 const TABS: { key: TabKey; label: string; emoji: string }[] = [
   { key: "questions",  label: "Questions",     emoji: "📝" },
@@ -146,6 +329,7 @@ const TABS: { key: TabKey; label: string; emoji: string }[] = [
   { key: "evolutions", label: "Evolutions",    emoji: "🌱" },
   { key: "arts",       label: "Companion Art", emoji: "🎨" },
   { key: "assets",     label: "Assets",        emoji: "🎒" },
+  { key: "assetLibrary", label: "Asset Library", emoji: "🗂️" },
   { key: "realms",     label: "Realms",        emoji: "🗺️" },
   { key: "battleBgs",  label: "Battle BGs",    emoji: "⚔️" },
   { key: "scenes",     label: "Scenes",        emoji: "🏠" },
@@ -233,6 +417,7 @@ const ContentStudio: React.FC = () => {
         {tab === "evolutions" && <EvolutionsTab />}
         {tab === "arts"       && <ArtsTab />}
         {tab === "assets"     && <AssetsTab />}
+        {tab === "assetLibrary" && <AssetLibraryTab />}
         {tab === "realms"     && <RealmsTab />}
         {tab === "battleBgs"  && <BattleBgsTab />}
         {tab === "scenes"     && <ScenesTab />}
@@ -496,6 +681,15 @@ const getEditableStudioFields = (collection: StudioCollectionKey, item: any): { 
     { key: "name", label: "Name" },
     { key: "customRole", label: "Custom role" },
     { key: "realm", label: "Realm display name" },
+    { key: "hairColor", label: "Hair color" },
+    { key: "hairStyle", label: "Hair style" },
+    { key: "eyeColor", label: "Eye color" },
+    { key: "outfitColors", label: "Outfit colors" },
+    { key: "outfitDetails", label: "Outfit details", multiline: true },
+    { key: "accessories", label: "Accessories" },
+    { key: "speciesDetails", label: "Species details" },
+    { key: "mustPreserve", label: "Must preserve / identity lock", multiline: true },
+    { key: "visualNotes", label: "Visual notes", multiline: true },
     { key: "dialogue", label: "Sample dialogue", multiline: true },
     { key: "safetyNotes", label: "Safety notes", multiline: true },
     { key: "promptUsed", label: "Prompt used", multiline: true },
@@ -521,14 +715,39 @@ const setNestedValue = (target: any, key: string, value: any) => {
   cursor[parts[parts.length - 1]] = value;
 };
 
+
+
+const getManualCompositionDisplayUrl = (item: any, fallbackUrl?: string): string => {
+  if (item?.manualComposition?.backgroundUrl) return item.manualComposition.backgroundUrl;
+  return fallbackUrl || item?.previewUrl || "";
+};
+
+const exportSavedManualComposition = async (item: any, filenameBase: string) => {
+  const mc = item?.manualComposition;
+  if (!mc?.layers?.length) {
+    alert("No saved manual composition layers found on this card.");
+    return;
+  }
+  await exportManualCompositionPng(
+    mc.backgroundUrl || "",
+    mc.layers,
+    filenameBase,
+    mc.canvasRatio || item.canvasRatio || "16:9",
+    !!mc.transparentBackground
+  );
+};
+
 const StudioViewEditButton: React.FC<StudioViewEditButtonProps> = ({ collection, item, title, imageUrl }) => {
   const exportFilename = `${collection}-${getStudioItemTitle(item)}-${item.outputMode || item.zonePurpose || item.id || "image"}`;
+  const hasManualComposition = collection === "arts" && !!item?.manualComposition?.layers?.length;
+  const displayImageUrl = hasManualComposition ? getManualCompositionDisplayUrl(item, imageUrl) : imageUrl;
   const updateItem = useStudio((s) => s.updateItem);
   const setStatus = useStudio((s) => s.setStatus);
+  const removeItem = useStudio((s) => s.removeItem);
   const [open, setOpen] = useState(false);
   const [edit, setEdit] = useState(false);
   const [fullscreenImage, setFullscreenImage] = useState(false);
-  const editableFields = useMemo(() => getEditableStudioFields(collection, item), [collection, item]);
+  const editableFields = useMemo(() => getEditableStudioFields(collection, item), [collection, item.id]);
   const [form, setForm] = useState<Record<string, string>>({});
 
   const resetForm = () => {
@@ -548,6 +767,13 @@ const StudioViewEditButton: React.FC<StudioViewEditButtonProps> = ({ collection,
 
   const archiveCard = () => {
     setStatus(collection, item.id, "archived");
+    setOpen(false);
+  };
+
+  const deleteCard = () => {
+    const ok = window.confirm(`Delete ${getStudioItemTitle(item)} permanently from ${collection}? This cannot be undone.`);
+    if (!ok) return;
+    removeItem(collection, item.id);
     setOpen(false);
   };
 
@@ -590,22 +816,45 @@ const StudioViewEditButton: React.FC<StudioViewEditButtonProps> = ({ collection,
               <button type="button" onClick={() => setOpen(false)} className="btn-ghost !text-sm !py-2 !px-4">Close</button>
             </div>
 
-            {imageUrl && (
+            {displayImageUrl && (
               <div className="mt-4">
                 <button type="button" onClick={() => setFullscreenImage(true)} className="group block w-full text-left">
-                  <img src={imageUrl} alt={`${displayTitle} full preview`} className="w-full max-h-[420px] object-cover rounded-2xl border-4 border-white shadow-lg transition group-hover:brightness-95" />
+                  <img src={displayImageUrl} alt={`${displayTitle} full preview`} className="w-full max-h-[420px] object-cover rounded-2xl border-4 border-white shadow-lg transition group-hover:brightness-95" />
                 </button>
                 <div className="flex flex-wrap gap-2 mt-2">
                   <button type="button" onClick={() => setFullscreenImage(true)} className="btn-outline !text-xs !py-1.5 !px-3">
                     <Eye size={13} strokeWidth={3} /> View image fullscreen
                   </button>
-                  <button type="button" onClick={() => downloadImageFromUrl(imageUrl, exportFilename)} className="btn-outline !text-xs !py-1.5 !px-3">
+                  <button type="button" onClick={() => downloadImageFromUrl(displayImageUrl, exportFilename)} className="btn-outline !text-xs !py-1.5 !px-3">
                     <Download size={13} strokeWidth={3} /> Export image
                   </button>
-                  {/^(assets|companions|arts|avatars|evolutions|npcs)$/.test(collection) && (
-                    <button type="button" onClick={() => exportTransparentPngFromUrl(imageUrl, exportFilename)} className="btn-outline !text-xs !py-1.5 !px-3">
-                      <Download size={13} strokeWidth={3} /> Export transparent PNG
+                  {hasManualComposition && (
+                    <button type="button" onClick={() => exportSavedManualComposition(item, exportFilename)} className="btn-outline !text-xs !py-1.5 !px-3">
+                      <Download size={13} strokeWidth={3} /> Export saved composition PNG
                     </button>
+                  )}
+                  {/^(assets|companions|arts|avatars|evolutions|npcs)$/.test(collection) && (
+                    <>
+                      <button type="button" onClick={() => exportTransparentPngFromUrl(displayImageUrl, exportFilename)} className="btn-outline !text-xs !py-1.5 !px-3">
+                        <Download size={13} strokeWidth={3} /> Export transparent PNG
+                      </button>
+                      <button type="button" onClick={async () => {
+                        try {
+                          const transparentPreviewUrl = await createTransparentPngDataUrlFromUrl(displayImageUrl);
+                          if (isOversizedDataUrl(transparentPreviewUrl)) {
+                            alert("Transparent variant is too large for browser storage. Export the transparent PNG and import/use it locally instead.");
+                            return;
+                          }
+                          updateItem(collection, item.id, { transparentPreviewUrl, updatedAt: new Date().toISOString() } as any);
+                          alert("Transparent variant saved to this card.");
+                        } catch (err) {
+                          console.error(err);
+                          alert("Could not save transparent variant. Try exporting transparent PNG first.");
+                        }
+                      }} className="btn-outline !text-xs !py-1.5 !px-3">
+                        <Download size={13} strokeWidth={3} /> Save transparent variant
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
@@ -674,6 +923,7 @@ const StudioViewEditButton: React.FC<StudioViewEditButtonProps> = ({ collection,
                 <>
                   <button type="button" onClick={startEdit} className="btn-primary !text-sm !py-2 !px-4">Edit fields</button>
                   <button type="button" onClick={archiveCard} className="btn-ghost !text-sm !py-2 !px-4 text-ink-muted"><Archive size={14} strokeWidth={3} /> Archive card</button>
+                  <button type="button" onClick={deleteCard} className="btn-ghost !text-sm !py-2 !px-4 text-danger"><Trash2 size={14} strokeWidth={3} /> Delete card</button>
                 </>
               )}
             </div>
@@ -681,16 +931,16 @@ const StudioViewEditButton: React.FC<StudioViewEditButtonProps> = ({ collection,
         </div>
       )}
 
-      {fullscreenImage && imageUrl && (
+      {fullscreenImage && displayImageUrl && (
         <div className="fixed inset-0 z-[60] bg-black/85 p-4 flex items-center justify-center" role="dialog" aria-modal="true">
           <div className="absolute top-4 right-4 flex gap-2">
-            <button type="button" onClick={() => downloadImageFromUrl(imageUrl, exportFilename)} className="btn-ghost !bg-white !text-ink !text-sm !py-2 !px-4"><Download size={14} strokeWidth={3} /> Export</button>
+            <button type="button" onClick={() => downloadImageFromUrl(displayImageUrl, exportFilename)} className="btn-ghost !bg-white !text-ink !text-sm !py-2 !px-4"><Download size={14} strokeWidth={3} /> Export</button>
             {/^(assets|companions|arts|avatars|evolutions|npcs)$/.test(collection) && (
-              <button type="button" onClick={() => exportTransparentPngFromUrl(imageUrl, exportFilename)} className="btn-ghost !bg-white !text-ink !text-sm !py-2 !px-4"><Download size={14} strokeWidth={3} /> Transparent PNG</button>
+              <button type="button" onClick={() => exportTransparentPngFromUrl(displayImageUrl, exportFilename)} className="btn-ghost !bg-white !text-ink !text-sm !py-2 !px-4"><Download size={14} strokeWidth={3} /> Transparent PNG</button>
             )}
             <button type="button" onClick={() => setFullscreenImage(false)} className="btn-ghost !bg-white !text-ink !text-sm !py-2 !px-4">Close</button>
           </div>
-          <img src={imageUrl} alt={`${displayTitle} fullscreen`} className="max-w-[95vw] max-h-[92vh] object-contain rounded-2xl shadow-2xl" />
+          <img src={displayImageUrl} alt={`${displayTitle} fullscreen`} className="max-w-[95vw] max-h-[92vh] object-contain rounded-2xl shadow-2xl" />
         </div>
       )}
     </>
@@ -1114,7 +1364,7 @@ const buildCompanionImagePrompt = (draft: Partial<StudioCompanion>): string => {
     `Move inspirations: ${moves}.`,
     `Use palette from ${palette.from} to ${palette.to}.`,
     shiny,
-    "Style rules: full body visible, centered in frame, big expressive eyes, rounded soft shapes, cozy storybook watercolor, pastel colors, child-safe for ages 5-12, friendly expression, clean readable silhouette, isolated companion cutout, plain transparent-ready/removable background.",
+    "Style rules: full body visible, centered in frame, big expressive eyes, rounded soft shapes, cozy storybook watercolor, pastel colors, child-safe for ages 5-12, friendly expression, clean readable silhouette, isolated companion cutout, flat pure white removable background, no scenery behind the pet.",
     "Negative rules: no text, no watermark, no cropped character, no realistic animal violence, no horror, no weapons, no dark scary mood, no photorealism.",
   ].join(" ");
 };
@@ -1352,6 +1602,7 @@ const CompanionsTab: React.FC = () => {
           )}
           <StudioViewEditButton collection="companions" item={i} title={i.name} imageUrl={i.previewUrl} />
           <button type="button" onClick={() => useStudio.getState().setStatus("companions", i.id, "archived")} className="btn-ghost !text-xs !py-1.5 !px-3 mt-2 w-full">Archive card</button>
+          <button type="button" onClick={() => useStudio.getState().removeItem("companions", i.id)} className="btn-ghost !text-xs !py-1.5 !px-3 mt-2 w-full text-danger"><Trash2 size={12} strokeWidth={3} /> Delete card</button>
         </div>
       )}
     />
@@ -1746,6 +1997,7 @@ const EvolutionsTab: React.FC = () => {
           {(i as any).evolvedStats && <div className="grid grid-cols-4 gap-1.5 mt-2"><Stat label="HP" v={(i as any).evolvedStats.hp} /><Stat label="ATK" v={(i as any).evolvedStats.attack} /><Stat label="DEF" v={(i as any).evolvedStats.defense} /><Stat label="SPD" v={(i as any).evolvedStats.speed} /></div>}
           <StudioViewEditButton collection="evolutions" item={i} title={i.evolutionName} imageUrl={i.previewUrl} />
           <button type="button" onClick={() => useStudio.getState().setStatus("evolutions", i.id, "archived")} className="btn-ghost !text-xs !py-1.5 !px-3 mt-2 w-full">Archive card</button>
+          <button type="button" onClick={() => useStudio.getState().removeItem("evolutions", i.id)} className="btn-ghost !text-xs !py-1.5 !px-3 mt-2 w-full text-danger"><Trash2 size={12} strokeWidth={3} /> Delete card</button>
         </div>
       )}
     />
@@ -1755,25 +2007,390 @@ const EvolutionsTab: React.FC = () => {
 // ============================================================================
 // COMPANION ART
 // ============================================================================
+type ArtGeneratedPreview = { url: string; prompt: string; provider: string };
+
+const ART_SUBJECT_TYPES = ["pet", "npc", "pet + npc", "two npcs", "scene moment", "realm vignette"] as const;
+const ART_COMPOSITION_TYPES = ["buddy pose", "teaching moment", "quest handoff", "shop interaction", "celebration", "portrait card", "scene vignette"] as const;
+const ART_OUTPUT_MODES = ["manual composition", "transparent character group", "full scene illustration", "square promo art", "banner/key art"] as const;
+const ART_CANVAS_RATIOS = ["16:9", "1:1", "4:5", "3:4"] as const;
+
+type ManualCompositionLayer = {
+  id: string;
+  kind: "pet" | "npc";
+  label: string;
+  url: string;
+  x: number;
+  y: number;
+  scale: number;
+  flip: boolean;
+  shadow: boolean;
+  opacity: number;
+  zIndex: number;
+};
+
+const buildNpcIdentityLock = (n?: StudioNPC): string => {
+  if (!n) return "";
+  const anyNpc = n as any;
+  const lines = [
+    `${n.name} identity lock:`,
+    `- Role/read: ${n.customRole || n.role || "NPC"}; ${anyNpc.speciesType || "human"}; ${anyNpc.ageRead || "adult"}; ${anyNpc.silhouette || "cozy"} silhouette.`,
+    anyNpc.hairColor || anyNpc.hairStyle ? `- Hair: ${anyNpc.hairStyle || "saved hairstyle"}, ${anyNpc.hairColor || "saved hair color"}.` : "",
+    anyNpc.eyeColor ? `- Eyes: ${anyNpc.eyeColor}.` : "",
+    anyNpc.outfitColors || anyNpc.outfitDetails || anyNpc.outfitStyle ? `- Outfit: ${anyNpc.outfitStyle || "saved outfit style"}; colors ${anyNpc.outfitColors || `${anyNpc.primaryColor || "primary"} and ${anyNpc.accentColor || "accent"}`}; details ${anyNpc.outfitDetails || "match saved visual reference"}.` : "",
+    anyNpc.accessories ? `- Accessories: ${anyNpc.accessories}.` : "",
+    anyNpc.speciesDetails ? `- Species/body details: ${anyNpc.speciesDetails}.` : "",
+    anyNpc.mustPreserve ? `- Must preserve: ${anyNpc.mustPreserve}.` : "",
+    anyNpc.visualNotes ? `- Visual notes: ${compactPromptText(anyNpc.visualNotes, "")}.` : "",
+    n.previewUrl ? `- Saved reference image exists and should be treated as source identity.` : "",
+  ];
+  return lines.filter(Boolean).join("\n");
+};
+
+const buildPetIdentityLock = (c?: StudioCompanion): string => {
+  if (!c) return "";
+  const anyPet = c as any;
+  const lines = [
+    `${c.name} pet identity lock:`,
+    `- Affinity/role/read: ${c.affinity} ${c.role} companion; ${c.rarity}.`,
+    `- Palette: ${c.palette?.from || "primary"} to ${c.palette?.to || "accent"}.`,
+    anyPet.bodyShape ? `- Body shape: ${anyPet.bodyShape}.` : "",
+    anyPet.markings ? `- Markings: ${anyPet.markings}.` : "",
+    anyPet.eyeColor || anyPet.eyes ? `- Eyes: ${anyPet.eyeColor || anyPet.eyes}.` : "",
+    anyPet.visualNotes ? `- Visual notes: ${compactPromptText(anyPet.visualNotes, "")}.` : "",
+    anyPet.mustPreserve ? `- Must preserve: ${anyPet.mustPreserve}.` : "",
+    `- Lore visual cue: ${compactPromptText(c.lore, "cute friendly academy pet")}.`,
+    c.previewUrl ? `- Saved reference image exists and should be treated as source identity.` : "",
+  ];
+  return lines.filter(Boolean).join("\n");
+};
+
+const summarizeNpcForArt = (n?: StudioNPC) => n ? buildNpcIdentityLock(n) : "";
+const summarizePetForArt = (c?: StudioCompanion) => c ? buildPetIdentityLock(c) : "";
+const summarizeSceneForArt = (sc?: StudioScene) => sc ? `${sc.name}, ${sc.purpose}, ${sc.realm}. Visual: ${compactPromptText(sc.visualPrompt, "cozy academy scene")}. ${getImageUrl(sc) ? "A saved scene visual reference is available for environment style and setting." : ""}` : "";
+const summarizeRealmForArt = (r?: StudioRealm) => r ? `${r.name}, ${r.biome}, ${r.tone || "cozy"}. ${compactPromptText(r.description || r.mapNotes, "friendly Questing Academy realm")}. ${getImageUrl(r) ? "A saved realm visual reference is available for color/style/world identity." : ""}` : "";
+
+const getImageUrl = (item?: any, preferTransparent = false): string => {
+  if (!item) return "";
+  return (preferTransparent ? item.transparentPreviewUrl : "") || item.previewUrl || item.imageUrl || item.generatedImageUrl || item.url || "";
+};
+
+const hasUsablePreview = (item?: any): boolean => !!getImageUrl(item, false);
+
+const buildCompanionArtPrompt = (draft: Partial<StudioArt> & Record<string, any>, ctx: { companion?: StudioCompanion; npcs: StudioNPC[]; scene?: StudioScene; realm?: StudioRealm }): string => {
+  const title = draft.title?.trim() || "Questing Academy companion art";
+  const subjectType = draft.subjectType || "pet + npc";
+  const compositionType = draft.compositionType || "buddy pose";
+  const outputMode = draft.outputMode || "transparent character group";
+  const primary = draft.primaryColor || "#9D8DF1";
+  const accent = draft.accentColor || "#F4C753";
+  const visual = compactPromptText(draft.prompt, "warm friendly Questing Academy character art");
+  const styleNotes = compactPromptText(draft.styleNotes, "soft pastel storybook game art, cute chibi fantasy RPG");
+  const transparent = outputMode === "transparent character group";
+  return [
+    "Create one polished Questing Academy companion art image.",
+    "REFERENCE PRIORITY: selected source images are the identity source. Preserve each selected NPC/pet hair, face feel, outfit, silhouette, species/body type, age read, and palette. Do not replace them with generic children or new characters.",
+    `Title: ${title}.`,
+    `Primary subject type: ${subjectType}.`,
+    `Composition: ${compositionType}.`,
+    `Output mode: ${outputMode}.`,
+    ctx.companion ? `PET CHARACTER LOCK:\n${summarizePetForArt(ctx.companion)}` : "",
+    ctx.npcs.length ? `NPC CHARACTER LOCKS:\n${ctx.npcs.map(summarizeNpcForArt).join("\n\n")}` : "",
+    ctx.scene ? `Scene setting summary: ${summarizeSceneForArt(ctx.scene)}` : "",
+    ctx.realm ? `Realm flavor summary: ${summarizeRealmForArt(ctx.realm)}` : "",
+    `Color direction: ${primary} with ${accent} accents.`,
+    `Visual direction: ${visual}.`,
+    `Style notes: ${styleNotes}.`,
+    "IDENTITY LOCK RULE: preserve every listed hair color, hair style, eye color, outfit color, outfit detail, accessory, species detail, and silhouette. Do not redesign, replace, age-swap, gender-swap, species-swap, recolor, or change clothing palette unless explicitly requested.",
+    "Compose the selected sources into one clear focal moment, not a reference sheet.",
+    transparent ? "Background: flat pure white removable background for transparent PNG export. No room, shop, landscape, or detailed scene background." : "Background: simple clean game illustration background, no UI.",
+    "Style: cute chibi educational fantasy RPG, soft pastel storybook game art, rounded shapes, warm safe mood, child-safe, polished game asset.",
+    "Negative: no text, no labels, no watermark, no logo, no UI, no concept sheet, no design sheet, no side sketches, no alternate poses, no duplicates, no crowded cast, no horror, no photorealism, no weapons."
+  ].filter(Boolean).join("\n");
+};
+
+const loadImageForCanvas = (url: string): Promise<HTMLImageElement> =>
+  new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = url;
+  });
+
+const getManualCanvasSize = (canvasRatio = "16:9") => {
+  if (canvasRatio === "1:1") return { width: 1024, height: 1024 };
+  if (canvasRatio === "4:5") return { width: 1024, height: 1280 };
+  if (canvasRatio === "3:4") return { width: 1024, height: 1365 };
+  return { width: 1280, height: 720 };
+};
+
+const renderManualCompositionToBlob = async (
+  backgroundUrl: string,
+  layers: ManualCompositionLayer[],
+  canvasRatio = "16:9",
+  transparentBackground = false
+): Promise<Blob> => {
+  const canvas = document.createElement("canvas");
+  const size = getManualCanvasSize(canvasRatio);
+  canvas.width = size.width;
+  canvas.height = size.height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Canvas is not available");
+
+  if (backgroundUrl && !transparentBackground) {
+    const bg = await loadImageForCanvas(backgroundUrl);
+    ctx.drawImage(bg, 0, 0, canvas.width, canvas.height);
+  } else if (!transparentBackground) {
+    ctx.fillStyle = "#FFF8DD";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+
+  const sortedLayers = [...layers].sort((a, b) => (a.zIndex ?? 1) - (b.zIndex ?? 1));
+  for (const layer of sortedLayers) {
+    const img = await loadImageForCanvas(layer.url);
+    const baseHeight = 220 * (layer.scale / 100);
+    const ratio = img.width / Math.max(1, img.height);
+    const drawW = baseHeight * ratio;
+    const drawH = baseHeight;
+    const x = (layer.x / 100) * canvas.width - drawW / 2;
+    const y = (layer.y / 100) * canvas.height - drawH;
+
+    ctx.save();
+    ctx.globalAlpha = layer.opacity == null ? 1 : Math.max(0, Math.min(1, layer.opacity / 100));
+    if (layer.shadow) {
+      ctx.fillStyle = "rgba(0,0,0,0.18)";
+      ctx.beginPath();
+      ctx.ellipse((layer.x / 100) * canvas.width, y + drawH - 4, drawW * 0.34, drawH * 0.08, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    if (layer.flip) {
+      ctx.translate(x + drawW, y);
+      ctx.scale(-1, 1);
+      ctx.drawImage(img, 0, 0, drawW, drawH);
+    } else {
+      ctx.drawImage(img, x, y, drawW, drawH);
+    }
+    ctx.restore();
+  }
+
+  return new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob((out) => out ? resolve(out) : reject(new Error("Composite PNG export failed")), "image/png");
+  });
+};
+
+const blobToDataUrl = (blob: Blob): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+
+const exportManualCompositionPng = async (backgroundUrl: string, layers: ManualCompositionLayer[], filenameBase: string, canvasRatio = "16:9", transparentBackground = false) => {
+  try {
+    const pngBlob = await renderManualCompositionToBlob(backgroundUrl, layers, canvasRatio, transparentBackground);
+    const objectUrl = URL.createObjectURL(pngBlob);
+    const a = document.createElement("a");
+    a.href = objectUrl;
+    a.download = `${slugifyForDownload(filenameBase)}.png`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+  } catch (err) {
+    console.error(err);
+    alert("Composite export failed. This can happen if one of the image URLs blocks canvas export.");
+  }
+};
+
 const ArtsTab: React.FC = () => {
   const items = useStudio((s) => s.arts);
   const companions = useStudio((s) => s.companions);
+  const npcs = useStudio((s) => s.npcs);
+  const scenes = useStudio((s) => s.scenes);
+  const realms = useStudio((s) => s.realms);
+  const battleBgs = useStudio((s) => s.battleBgs);
   const addItem = useStudio((s) => s.addItem);
-  const [draft, setDraft] = useState<Partial<StudioArt>>({ stylePresetId: "sp-cozy-chibi" });
+  const [draft, setDraft] = useState<Partial<StudioArt> & Record<string, any>>({ builderMode: "manual composition", stylePresetId: "sp-cozy-chibi", npcIds: [], subjectType: "pet + npc", compositionType: "buddy pose", outputMode: "manual composition", backgroundMode: "transparent", canvasRatio: "16:9", primaryColor: "#9D8DF1", accentColor: "#F4C753" });
+  const [generatedPreview, setGeneratedPreview] = useState<ArtGeneratedPreview | null>(null);
+  const [savedPreview, setSavedPreview] = useState<ArtGeneratedPreview | null>(null);
+  const [manualLayers, setManualLayers] = useState<ManualCompositionLayer[]>([]);
+  const compositionCanvasRef = useRef<HTMLDivElement | null>(null);
+  const [selectedManualLayerId, setSelectedManualLayerId] = useState<string>("");
+  const [draggingLayerId, setDraggingLayerId] = useState<string>("");
   const update = <K extends keyof StudioArt>(k: K, v: StudioArt[K]) => setDraft((d) => ({ ...d, [k]: v }));
+  const updateAny = (k: string, v: any) => setDraft((d) => ({ ...d, [k]: v }));
 
-  const submit = () => {
-    if (!draft.companionId) return;
-    const c = companions.find((x) => x.id === draft.companionId);
+  const selectedCompanion = companions.find((x) => x.id === draft.companionId);
+  const selectedNpcs = (draft.npcIds ?? []).map((id: string) => npcs.find((n) => n.id === id)).filter(Boolean).slice(0, 2) as StudioNPC[];
+  const selectedScene = scenes.find((x) => x.id === draft.sceneId);
+  const selectedRealm = realms.find((x) => x.id === draft.realmId);
+  const selectedBattleBg = battleBgs.find((x) => x.id === draft.battleBgId);
+  const backgroundSource = draft.backgroundSource || "transparent";
+  const transparentManualBackground = backgroundSource === "transparent" || draft.backgroundMode === "transparent" || draft.backgroundMode === "no background";
+  const backgroundUrl = transparentManualBackground ? "" : backgroundSource === "battleBg" ? getImageUrl(selectedBattleBg) : backgroundSource === "scene" ? getImageUrl(selectedScene) : backgroundSource === "realm" ? getImageUrl(selectedRealm) : "";
+  const hasValidManualComposition = manualLayers.length > 0 && (transparentManualBackground || !!backgroundUrl);
+  const selectedLayerKey = [selectedCompanion?.id || "none", selectedCompanion?.previewUrl || "none", ...selectedNpcs.map((n) => `${n.id}:${n.previewUrl || "none"}`)].join("|");
+
+  const loadedVisualReferences = [
+    getImageUrl(selectedCompanion, true) ? { label: selectedCompanion!.name, url: getImageUrl(selectedCompanion, true), kind: "Pet" } : null,
+    ...selectedNpcs.map((n) => getImageUrl(n, true) ? { label: n.name, url: getImageUrl(n, true), kind: "NPC" } : null),
+    getImageUrl(selectedScene) ? { label: selectedScene!.name, url: getImageUrl(selectedScene), kind: "Scene" } : null,
+    getImageUrl(selectedRealm) ? { label: selectedRealm!.name, url: getImageUrl(selectedRealm), kind: "Realm" } : null,
+    getImageUrl(selectedBattleBg) ? { label: selectedBattleBg!.realm || selectedBattleBg!.environment || "Battle BG", url: getImageUrl(selectedBattleBg), kind: "Battle BG" } : null,
+  ].filter(Boolean) as { label: string; url: string; kind: string }[];
+
+  const getLayerUrl = (item?: any): string => getImageUrl(item, true);
+
+  useEffect(() => {
+    const companionLayerUrl = getLayerUrl(selectedCompanion);
+
+    const sourceLayers: ManualCompositionLayer[] = [
+      companionLayerUrl && selectedCompanion ? {
+        id: `pet-${selectedCompanion.id}`,
+        kind: "pet",
+        label: selectedCompanion.name,
+        url: companionLayerUrl,
+        x: 50,
+        y: 82,
+        scale: 85,
+        flip: false,
+        shadow: true,
+        opacity: 100,
+        zIndex: 20,
+      } : null,
+      ...selectedNpcs.map((n, idx) => {
+        const npcLayerUrl = getLayerUrl(n);
+        return npcLayerUrl ? {
+          id: `npc-${n.id}`,
+          kind: "npc" as const,
+          label: n.name,
+          url: npcLayerUrl,
+          x: selectedNpcs.length === 1 ? 50 : idx === 0 ? 38 : 62,
+          y: 84,
+          scale: 88,
+          flip: idx === 1,
+          shadow: true,
+          opacity: 100,
+          zIndex: 10 + idx,
+        } : null;
+      }),
+    ].filter(Boolean) as ManualCompositionLayer[];
+
+    setManualLayers((current: ManualCompositionLayer[]) => {
+      const byId = new Map(current.map((l) => [l.id, l]));
+      return sourceLayers.map((layer) => ({ ...layer, ...(byId.get(layer.id) || {}) }));
+    });
+  }, [selectedLayerKey]);
+
+  const updateManualLayer = (id: string, patch: Partial<ManualCompositionLayer>) => {
+    setManualLayers((layers: ManualCompositionLayer[]) => layers.map((layer) => layer.id === id ? { ...layer, ...patch } : layer));
+  };
+
+  const moveLayerToPointer = (layerId: string, clientX: number, clientY: number) => {
+    const rect = compositionCanvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const x = Math.max(0, Math.min(100, ((clientX - rect.left) / rect.width) * 100));
+    const y = Math.max(0, Math.min(100, ((clientY - rect.top) / rect.height) * 100));
+    updateManualLayer(layerId, { x: Math.round(x), y: Math.round(y) });
+  };
+
+  const handleLayerPointerDown = (e: React.PointerEvent<HTMLDivElement>, layerId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setSelectedManualLayerId(layerId);
+    setDraggingLayerId(layerId);
+    e.currentTarget.setPointerCapture(e.pointerId);
+    moveLayerToPointer(layerId, e.clientX, e.clientY);
+  };
+
+  const handleLayerPointerMove = (e: React.PointerEvent<HTMLDivElement>, layerId: string) => {
+    if (draggingLayerId !== layerId) return;
+    e.preventDefault();
+    moveLayerToPointer(layerId, e.clientX, e.clientY);
+  };
+
+  const stopLayerDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+    setDraggingLayerId("");
+    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch {}
+  };
+
+  const generateImagePreview = () => {
+    const prompt = buildCompanionArtPrompt(draft, { companion: selectedCompanion, npcs: selectedNpcs, scene: selectedScene, realm: selectedRealm });
+    const visualReferenceUrls = loadedVisualReferences.map((r) => ({ kind: r.kind, label: r.label, url: r.url }));
+    const url = mockNanoBananaGenerateImageWithReferences(prompt, { from: draft.primaryColor || "#9D8DF1", to: draft.accentColor || "#F4C753" }, visualReferenceUrls);
+    const referenceSummary = visualReferenceUrls.length ? `\n\nVISUAL REFERENCES PASSED SEPARATELY:\n${visualReferenceUrls.map((r, idx) => `${idx + 1}. ${r.kind}: ${r.label}`).join("\n")}` : "";
+    setGeneratedPreview({ url, prompt: `${prompt}${referenceSummary}`, provider: "prototype-generator" });
+    setSavedPreview(null);
+  };
+  const saveGeneratedPreview = () => { if (generatedPreview) setSavedPreview(generatedPreview); };
+  const discardGeneratedPreview = () => { setGeneratedPreview(null); setSavedPreview(null); };
+
+  const submit = async () => {
+    const manualMode = draft.builderMode === "manual composition" || draft.outputMode === "manual composition";
     const item = mockCompanionArt(
-      draft.companionId,
-      c?.name || draft.companionName || "Unnamed",
+      draft.companionId || "art-context",
+      selectedCompanion?.name || selectedNpcs.map((n) => n.name).join(" + ") || selectedScene?.name || selectedRealm?.name || "Companion Art",
       draft.prompt || randomVisualPrompt(),
       draft.styleNotes ?? "",
-    );
-    item.title = draft.title;
+    ) as StudioArt & Record<string, any>;
+    item.title = draft.title || item.title || (manualMode ? "Manual Companion Composition" : "Companion Art");
     item.stylePresetId = draft.stylePresetId;
+    if (manualMode) {
+      if (!hasValidManualComposition) return;
+      try {
+        const compositeBlob = await renderManualCompositionToBlob(backgroundUrl, manualLayers, draft.canvasRatio || "16:9", transparentManualBackground);
+        const compositeDataUrl = await blobToDataUrl(compositeBlob);
+        if (isOversizedDataUrl(compositeDataUrl)) {
+          item.previewUrl = getPersistableImageUrl(backgroundUrl) || getPersistableImageUrl(getImageUrl(selectedCompanion, true)) || getPersistableImageUrl(getImageUrl(selectedNpcs[0], true)) || undefined;
+          item.previewImageRef = createImageRef(compositeDataUrl);
+          item.previewStorageNote = "Composite preview was too large for localStorage. Saved lightweight scene metadata only.";
+        } else {
+          item.previewUrl = compositeDataUrl;
+          item.previewImageRef = createImageRef(compositeDataUrl);
+        }
+      } catch (err) {
+        console.error(err);
+        alert("Could not save the composite preview. Try exporting the composite first or use images from the same source.");
+        return;
+      }
+    } else {
+      item.previewUrl = savedPreview?.url || item.previewUrl;
+    }
+    item.promptUsed = manualMode ? "Manual composition builder: saved scene/realm background with selected NPC/pet overlay placement data." : savedPreview?.prompt;
+    item.imageProvider = manualMode ? "manual-composition" : (savedPreview?.provider || item.imageProvider);
+    item.companionName = selectedCompanion?.name || item.companionName || selectedNpcs.map((n) => n.name).join(" + ") || selectedScene?.name || selectedRealm?.name || "Companion Art";
+    item.npcIds = draft.npcIds || [];
+    item.npcs = selectedNpcs.map((n) => n.name);
+    item.companionPreviewUrl = getPersistableImageUrl(getImageUrl(selectedCompanion, true)) || "";
+    item.companionImageRef = createImageRef(getImageUrl(selectedCompanion, true));
+    item.npcPreviewUrls = selectedNpcs.map((n) => ({ id: n.id, name: n.name, url: getPersistableImageUrl(getImageUrl(n, true)) || "", imageRef: createImageRef(getImageUrl(n, true)) })).filter((n) => n.url || n.imageRef);
+    item.sceneId = draft.sceneId || "";
+    item.sceneName = selectedScene?.name || "";
+    item.realmId = draft.realmId || "";
+    item.realmName = selectedRealm?.name || "";
+    item.battleBgId = draft.battleBgId || "";
+    item.battleBgName = selectedBattleBg?.realm || selectedBattleBg?.environment || "";
+    item.subjectType = draft.subjectType;
+    item.compositionType = draft.compositionType;
+    item.outputMode = manualMode ? "manual composition" : draft.outputMode;
+    item.primaryColor = draft.primaryColor;
+    item.accentColor = draft.accentColor;
+    item.canvasRatio = draft.canvasRatio || "16:9";
+    item.manualComposition = manualMode ? {
+      backgroundUrl: getPersistableImageUrl(backgroundUrl) || "",
+      backgroundImageRef: createImageRef(backgroundUrl),
+      transparentBackground: transparentManualBackground,
+      canvasRatio: draft.canvasRatio || "16:9",
+      layers: manualLayers.map((layer) => ({ ...layer, url: getPersistableImageUrl(layer.url) || "", imageRef: createImageRef(layer.url) })),
+      battleBgId: draft.battleBgId || ""
+    } : undefined;
+    item.visualReferenceUrls = loadedVisualReferences.map((r) => ({ kind: r.kind, label: r.label, url: getPersistableImageUrl(r.url) || "", imageRef: createImageRef(r.url) }));
+    item.visualReferenceSummary = loadedVisualReferences.map((r) => `${r.kind}: ${r.label}`).join(" | ");
+    item.identityLocks = [selectedCompanion ? buildPetIdentityLock(selectedCompanion) : "", ...selectedNpcs.map(buildNpcIdentityLock)].filter(Boolean);
     addItem("arts", item);
+    setGeneratedPreview(null);
+    setSavedPreview(null);
   };
 
   return (
@@ -1785,48 +2402,269 @@ const ArtsTab: React.FC = () => {
         <div className="rounded-card border-4 border-primary/20 bg-gradient-to-br from-[#F6F1FF] to-[#FFF8DD] p-5 md:p-6" data-testid="arts-generator">
           <div className="flex items-center gap-3 mb-3">
             <div className="w-10 h-10 rounded-2xl bg-primary text-white grid place-items-center shadow-btn-primary"><Wand2 size={18} strokeWidth={3} /></div>
-            <div><p className="h-display text-xl leading-tight">Generate companion art</p><p className="text-sm text-ink-muted">Mocked Nano Banana — returns a styled placeholder. TODO(api): replace with backend Gemini.</p></div>
+            <div><p className="h-display text-xl leading-tight">Companion Art / Composition Builder</p><p className="text-sm text-ink-muted">Compose approved characters over saved scenes, or use prompt generation when needed.</p></div>
           </div>
           <div className="grid sm:grid-cols-2 gap-3">
-            <Field label="Companion" full>
-              <SearchSelect
-                testid="arts-input-companionId"
-                value={draft.companionId ?? ""}
-                onChange={(id) => { const c = companions.find((x) => x.id === id); update("companionId", id); if (c) update("companionName", c.name); }}
-                options={companions.map((c) => ({ id: c.id, label: c.name, sublabel: `${c.affinity} · ${c.rarity}` }))}
-                placeholder="Search companions…"
-              />
+            <Field label="Builder mode"><SelectField testid="arts-input-builder-mode" value={draft.builderMode ?? "manual composition"} options={["manual composition", "prompt generation"]} onChange={(v) => updateAny("builderMode", v)} /></Field>
+            <Field label="Output mode"><SelectField testid="arts-input-output-mode" value={draft.outputMode ?? "manual composition"} options={ART_OUTPUT_MODES} onChange={(v) => updateAny("outputMode", v)} /></Field>
+            <Field label="Manual background source"><SelectField testid="arts-input-background-source" value={draft.backgroundSource ?? "transparent"} options={["transparent", "scene", "realm", "battleBg"]} onChange={(v) => { updateAny("backgroundSource", v); updateAny("backgroundMode", v === "transparent" ? "transparent" : "scene / realm background"); }} /></Field>
+            <Field label="Subject type"><SelectField testid="arts-input-subject-type" value={draft.subjectType ?? "pet + npc"} options={ART_SUBJECT_TYPES} onChange={(v) => updateAny("subjectType", v)} /></Field>
+            <Field label="Composition"><SelectField testid="arts-input-composition" value={draft.compositionType ?? "buddy pose"} options={ART_COMPOSITION_TYPES} onChange={(v) => updateAny("compositionType", v)} /></Field>
+            <Field label="Canvas ratio"><SelectField testid="arts-input-canvas-ratio" value={draft.canvasRatio ?? "16:9"} options={ART_CANVAS_RATIOS} onChange={(v) => updateAny("canvasRatio", v)} /></Field>
+            <Field label="Title / name"><TextField testid="arts-input-title" value={draft.title ?? ""} onChange={(v) => update("title", v)} placeholder="e.g. Lantern Guide and Bubbee" onRandomize={() => update("title", `${randomAvatarName("hat")} moment`)} /></Field>
+            <Field label="Pet / companion" full>
+              <SearchSelect testid="arts-input-companionId" value={draft.companionId ?? ""} onChange={(id) => { const c = companions.find((x) => x.id === id); update("companionId", id); if (c) update("companionName", c.name); }} options={companions.map((c) => ({ id: c.id, label: c.name, sublabel: `${c.status} · ${c.affinity} · ${c.rarity}` }))} placeholder="Search pets…" />
             </Field>
-            <Field label="Title / name">
-              <TextField testid="arts-input-title" value={draft.title ?? ""} onChange={(v) => update("title", v)} placeholder="e.g. Spriggle hero shot"
-                onRandomize={() => update("title", `${randomAvatarName("hat")} debut`)} />
+            <Field label="NPCs (up to 2)" full>
+              <MultiSelectChips testid="arts-input-npcs" values={draft.npcIds ?? []} onChange={(v) => updateAny("npcIds", v.slice(0, 2))} options={npcs.map((n) => ({ id: n.id, label: n.name }))} />
+              <p className="text-[10px] font-bold text-ink-muted mt-1">Manual mode works best with transparent NPC/pet PNG-style previews.</p>
             </Field>
+            {backgroundSource === "scene" && <Field label="Scene background"><SearchSelect testid="arts-input-scene" value={draft.sceneId ?? ""} onChange={(id) => updateAny("sceneId", id)} options={scenes.filter(hasUsablePreview).map((sc) => ({ id: sc.id, label: sc.name, sublabel: `${sc.purpose} · ${sc.realm} · image` }))} placeholder="Choose image-backed scene…" /></Field>}
+            {backgroundSource === "realm" && <Field label="Realm background"><SearchSelect testid="arts-input-realm" value={draft.realmId ?? ""} onChange={(id) => updateAny("realmId", id)} options={realms.filter(hasUsablePreview).map((r) => ({ id: r.id, label: r.name, sublabel: `${r.biome} · image` }))} placeholder="Choose image-backed realm…" /></Field>}
+            {backgroundSource === "battleBg" && <Field label="Battle BG background"><SearchSelect testid="arts-input-battle-bg" value={draft.battleBgId ?? ""} onChange={(id) => updateAny("battleBgId", id)} options={battleBgs.filter(hasUsablePreview).map((b) => ({ id: b.id, label: b.realm || b.environment || b.id, sublabel: `${b.environment || "battle bg"} · image` }))} placeholder="Choose image-backed battle BG…" /></Field>}
+            <Field label="Primary color"><ColorField testid="arts-input-primary-color" value={draft.primaryColor ?? "#9D8DF1"} onChange={(v) => updateAny("primaryColor", v)} /></Field>
+            <Field label="Accent color"><ColorField testid="arts-input-accent-color" value={draft.accentColor ?? "#F4C753"} onChange={(v) => updateAny("accentColor", v)} /></Field>
             <Field label="Style preset"><StylePresetPicker testid="arts-style-preset" value={draft.stylePresetId} onChange={(id) => update("stylePresetId", id)} /></Field>
-            <Field label="Prompt" full>
-              <TextArea testid="arts-input-prompt" value={draft.prompt ?? ""} onChange={(v) => update("prompt", v)} placeholder="cozy chibi nature companion, soft pastel" onRandomize={() => update("prompt", randomVisualPrompt())} />
-            </Field>
-            <Field label="Style notes" full>
-              <TextArea testid="arts-input-style" value={draft.styleNotes ?? ""} onChange={(v) => update("styleNotes", v)} placeholder="Ghibli x Pokemon, soft round shapes" onRandomize={() => update("styleNotes", "Ghibli x Pokemon, soft round shapes, gentle pastel palette")} />
-            </Field>
+            <Field label="Visual direction" full><TextArea testid="arts-input-prompt" value={draft.prompt ?? ""} onChange={(v) => update("prompt", v)} placeholder="Sage teaching Bubbee how to follow glowing math fireflies" onRandomize={() => update("prompt", randomVisualPrompt())} /></Field>
+            <Field label="Style notes" full><TextArea testid="arts-input-style" value={draft.styleNotes ?? ""} onChange={(v) => update("styleNotes", v)} placeholder="soft round shapes, cozy browser RPG promo art" onRandomize={() => update("styleNotes", "soft round shapes, gentle pastel palette, polished game asset")} /></Field>
           </div>
-          <button type="button" data-testid="arts-generate-btn" onClick={submit} disabled={!draft.companionId} className="btn-primary mt-4 !text-base !py-3 !px-6 disabled:opacity-40">
-            <Wand2 size={16} strokeWidth={3} /> Generate with Nano Banana
+
+          {(draft.builderMode === "manual composition" || draft.outputMode === "manual composition") && (
+            <div className="mt-4 rounded-3xl bg-white/70 border-4 border-white p-4">
+              <p className="h-display text-lg leading-tight">Manual composition builder</p>
+              <p className="text-xs text-ink-muted">Use a saved scene/realm as the background, then position selected NPC/pet images on top.</p>
+              {!backgroundUrl && !transparentManualBackground ? (
+                <div className="mt-3 rounded-2xl bg-bg border-2 border-white p-3 text-xs text-ink-muted">Choose a scene/realm background, or switch Manual background to transparent.</div>
+              ) : (
+                <>
+                  <div ref={compositionCanvasRef} className={cn("relative mt-3 w-full overflow-hidden rounded-3xl border-4 border-white shadow-lg bg-bg select-none touch-none", draft.canvasRatio === "1:1" ? "aspect-square" : draft.canvasRatio === "4:5" ? "aspect-[4/5]" : draft.canvasRatio === "3:4" ? "aspect-[3/4]" : "aspect-video")}>
+                    {backgroundUrl && !transparentManualBackground ? (
+                      <img src={backgroundUrl} alt="Composition background" className="absolute inset-0 w-full h-full object-cover" />
+                    ) : (
+                      <div className="absolute inset-0" style={{ backgroundImage: "linear-gradient(45deg, #eee 25%, transparent 25%), linear-gradient(-45deg, #eee 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #eee 75%), linear-gradient(-45deg, transparent 75%, #eee 75%)", backgroundSize: "24px 24px", backgroundPosition: "0 0, 0 12px, 12px -12px, -12px 0px", backgroundColor: "#fff" }} />
+                    )}
+                    {manualLayers.map((layer) => (
+                      <div key={layer.id} onPointerDown={(e) => handleLayerPointerDown(e, layer.id)} onPointerMove={(e) => handleLayerPointerMove(e, layer.id)} onPointerUp={stopLayerDrag} onPointerCancel={stopLayerDrag} className={cn("absolute cursor-grab active:cursor-grabbing rounded-2xl", selectedManualLayerId === layer.id ? "ring-4 ring-primary/70" : "")} style={{ left: `${layer.x}%`, top: `${layer.y}%`, transform: `translate(-50%, -100%) scaleX(${layer.flip ? -1 : 1})`, width: `${layer.scale * 1.35}px`, filter: layer.shadow ? "drop-shadow(0 14px 10px rgba(0,0,0,0.22))" : undefined, opacity: Math.max(0, Math.min(100, layer.opacity ?? 100)) / 100, zIndex: layer.zIndex }}>
+                        <img src={layer.url} alt={layer.label} className="w-full h-auto object-contain" />
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-3 space-y-3">
+                    {manualLayers.length === 0 ? (
+                      <div className="rounded-2xl bg-bg border-2 border-white p-3 text-xs text-ink-muted">Select NPCs or a pet with saved preview images to add layers.</div>
+                    ) : manualLayers.map((layer) => (
+                      <div key={layer.id} className="rounded-2xl bg-bg border-2 border-white p-3">
+                        <p className="text-xs font-extrabold text-primary mb-2">{layer.kind.toUpperCase()} · {layer.label}</p>
+                        <div className="grid sm:grid-cols-6 gap-3 items-end">
+                          <Field label="X"><NumberField testid={`arts-layer-${layer.id}-x`} value={layer.x} min={0} max={100} onChange={(n) => updateManualLayer(layer.id, { x: n })} /></Field>
+                          <Field label="Y"><NumberField testid={`arts-layer-${layer.id}-y`} value={layer.y} min={0} max={100} onChange={(n) => updateManualLayer(layer.id, { y: n })} /></Field>
+                          <Field label="Scale"><NumberField testid={`arts-layer-${layer.id}-scale`} value={layer.scale} min={20} max={180} onChange={(n) => updateManualLayer(layer.id, { scale: n })} /></Field>
+                          <Field label="Opacity"><NumberField testid={`arts-layer-${layer.id}-opacity`} value={layer.opacity ?? 100} min={0} max={100} onChange={(n) => updateManualLayer(layer.id, { opacity: n })} /></Field>
+                          <Field label="Layer"><NumberField testid={`arts-layer-${layer.id}-z`} value={layer.zIndex ?? 10} min={0} max={99} onChange={(n) => updateManualLayer(layer.id, { zIndex: n })} /></Field>
+                          <div className="flex flex-wrap gap-2">
+                            <label className="inline-flex items-center gap-2 px-3 py-2 rounded-full bg-white border-2 border-white text-xs font-extrabold">
+                              <input type="checkbox" checked={layer.flip} onChange={(e) => updateManualLayer(layer.id, { flip: e.target.checked })} className="accent-primary" /> Flip
+                            </label>
+                            <label className="inline-flex items-center gap-2 px-3 py-2 rounded-full bg-white border-2 border-white text-xs font-extrabold">
+                              <input type="checkbox" checked={layer.shadow} onChange={(e) => updateManualLayer(layer.id, { shadow: e.target.checked })} className="accent-primary" /> Shadow
+                            </label>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex flex-wrap gap-2 mt-3">
+                    <button type="button" onClick={() => exportManualCompositionPng(backgroundUrl, manualLayers, `companion-composition-${draft.title || selectedCompanion?.name || selectedNpcs[0]?.name || "questing-academy"}`, draft.canvasRatio || "16:9", transparentManualBackground)} disabled={!hasValidManualComposition} className="btn-outline !text-sm !py-2 !px-4 disabled:opacity-40"><Download size={14} strokeWidth={3} /> Export composite PNG</button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          <div className="mt-4 rounded-3xl bg-white/70 border-4 border-white p-4">
+            <p className="h-display text-lg leading-tight">Loaded visual references</p>
+            <p className="text-xs text-ink-muted">These saved source images are carried into provenance. Manual mode reuses them directly as layers.</p>
+            {loadedVisualReferences.length ? (
+              <div className="mt-3 flex gap-3 overflow-x-auto pb-1">
+                {loadedVisualReferences.map((ref) => (
+                  <div key={`${ref.kind}-${ref.label}-${ref.url}`} className="w-28 shrink-0">
+                    <img src={ref.url} alt={`${ref.kind} reference ${ref.label}`} className="w-28 h-28 object-cover rounded-2xl border-4 border-white shadow-lg" />
+                    <p className="text-[10px] font-extrabold uppercase text-primary mt-1">{ref.kind}</p>
+                    <p className="text-[10px] font-bold text-ink-muted truncate">{ref.label}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="mt-3 rounded-2xl bg-bg border-2 border-white p-3 text-xs text-ink-muted">No saved source images loaded yet. Select NPCs, pets, scenes, or realms that have generated previews.</div>
+            )}
+          </div>
+
+          <div className="mt-4 rounded-3xl bg-white/70 border-4 border-white p-4">
+            <p className="h-display text-lg leading-tight">Identity lock sent to generator</p>
+            <p className="text-xs text-ink-muted">These details still help prompt generation and provenance, but manual composition preserves exact source art.</p>
+            {(selectedCompanion || selectedNpcs.length) ? (
+              <pre className="mt-3 text-[11px] text-ink-muted bg-bg border-2 border-white rounded-2xl p-3 max-h-52 overflow-auto whitespace-pre-wrap">{[selectedCompanion ? buildPetIdentityLock(selectedCompanion) : "", ...selectedNpcs.map(buildNpcIdentityLock)].filter(Boolean).join("\n\n")}</pre>
+            ) : (
+              <div className="mt-3 rounded-2xl bg-bg border-2 border-white p-3 text-xs text-ink-muted">Select a pet or NPC to see the identity lock.</div>
+            )}
+          </div>
+
+          {draft.builderMode !== "manual composition" && (
+            <ImagePreviewWorkflow
+              testid="arts-image-generator"
+              title="Generated companion art preview"
+              helper="Generate from linked pets/NPCs/scenes/realms, then save, export, or discard before sending it to review."
+              generatedPreview={generatedPreview}
+              savedPreview={savedPreview}
+              onGenerate={generateImagePreview}
+              onSave={saveGeneratedPreview}
+              onDiscard={discardGeneratedPreview}
+              disabled={false}
+              imageClassName={draft.outputMode === "banner/key art" ? "aspect-video" : "aspect-square"}
+              exportFilename={`companion-art-${draft.title || selectedCompanion?.name || selectedNpcs[0]?.name || "questing-academy"}-${draft.outputMode || "art"}`}
+            />
+          )}
+
+          <button type="button" data-testid="arts-generate-btn" onClick={submit} disabled={(draft.builderMode === "manual composition" || draft.outputMode === "manual composition") && !hasValidManualComposition} className="btn-primary mt-4 !text-base !py-3 !px-6 disabled:opacity-40">
+            <Wand2 size={16} strokeWidth={3} /> {(draft.builderMode === "manual composition" || draft.outputMode === "manual composition") ? "Save composition card" : "Send to review"}
           </button>
         </div>
       }
-      renderItem={(i: StudioArt) => (
+      renderItem={(i: StudioArt & Record<string, any>) => (
         <div>
-          {i.previewUrl && (
-            // eslint-disable-next-line jsx-a11y/alt-text
-            <img src={i.previewUrl} className="w-full h-40 object-cover rounded-xl border-2 border-white" />
-          )}
+          {(i.previewUrl || i.manualComposition?.backgroundUrl) && <img src={i.previewUrl || i.manualComposition?.backgroundUrl} alt={`${i.title || i.companionName} companion art`} className="w-full h-40 object-cover rounded-xl border-2 border-white" />}
           <p className="h-display text-lg mt-2 truncate">{i.title || i.companionName}</p>
-          <p className="text-[10px] font-extrabold uppercase text-ink-muted">id {i.companionId}</p>
+          <p className="text-[10px] font-extrabold uppercase text-ink-muted">{i.subjectType || "companion art"}{i.outputMode ? ` · ${i.outputMode}` : ""}</p>
+          {i.npcs?.length > 0 && <p className="text-[10px] font-bold text-primary mt-1">NPCs: {i.npcs.join(" · ")}</p>}
+          {i.sceneName && <p className="text-[10px] font-bold text-primary mt-1">Scene: {i.sceneName}</p>}
+          {i.realmName && <p className="text-[10px] font-bold text-primary mt-1">Realm: {i.realmName}</p>}
+          {i.battleBgName && <p className="text-[10px] font-bold text-primary mt-1">Battle BG: {i.battleBgName}</p>}
+          {i.visualReferenceSummary && <p className="text-[10px] font-bold text-sage mt-1">Visual refs: {i.visualReferenceSummary}</p>}
+          {i.manualComposition?.layers?.length > 0 && <p className="text-[10px] font-bold text-primary mt-1">Manual layers: {i.manualComposition.layers.length} · export rebuilds from layer data</p>}
+          {i.identityLocks?.length > 0 && <p className="text-[10px] font-bold text-primary mt-1">Identity locks: {i.identityLocks.length}</p>}
           <p className="text-xs text-ink-muted line-clamp-2 mt-1">{i.prompt}</p>
           {i.styleNotes && <p className="text-[10px] font-extrabold text-primary mt-1">Style: {i.styleNotes}</p>}
+          <StudioViewEditButton collection="arts" item={i} title={i.title || i.companionName || "Companion art"} imageUrl={i.previewUrl} />
+          <button type="button" onClick={() => useStudio.getState().removeItem("arts", i.id)} className="btn-ghost !text-xs !py-1.5 !px-3 mt-2 w-full text-danger"><Trash2 size={12} strokeWidth={3} /> Delete card</button>
         </div>
       )}
     />
+  );
+};
+
+
+// ============================================================================
+// ASSET LIBRARY — unified catalog for Studio + future Land Editor
+// ============================================================================
+type LibraryAssetType = "npc" | "companion" | "prop" | "background" | "art";
+type AssetConsumerMode = "library" | "companion-art" | "land-editor";
+type LibraryAsset = {
+  id: string;
+  sourceCollection: StudioCollectionKey;
+  sourceId: string;
+  assetType: LibraryAssetType;
+  name: string;
+  thumbnailUrl?: string;
+  transparentUrl?: string;
+  tags: string[];
+  status?: StudioStatus;
+  description?: string;
+  useHint?: string;
+};
+const getLibraryImageUrl = (item: any, preferTransparent = false): string =>
+  (preferTransparent ? item?.transparentPreviewUrl : "") || item?.previewUrl || item?.imageUrl || item?.generatedImageUrl || item?.url || "";
+const pushLibraryAsset = (out: LibraryAsset[], asset: LibraryAsset) => {
+  if (!asset.thumbnailUrl && !asset.transparentUrl) return;
+  out.push(asset);
+};
+const buildStudioAssetLibrary = (state: ReturnType<typeof useStudio.getState>): LibraryAsset[] => {
+  const out: LibraryAsset[] = [];
+  state.npcs.forEach((n: any) => pushLibraryAsset(out, { id: `npcs-${n.id}`, sourceCollection: "npcs", sourceId: n.id, assetType: "npc", name: n.name, thumbnailUrl: getLibraryImageUrl(n), transparentUrl: n.transparentPreviewUrl, status: n.status, description: n.dialogue || n.visualNotes, tags: ["npc", n.role, n.realm, n.status].filter(Boolean) }));
+  state.companions.forEach((c: any) => pushLibraryAsset(out, { id: `companions-${c.id}`, sourceCollection: "companions", sourceId: c.id, assetType: "companion", name: c.name, thumbnailUrl: getLibraryImageUrl(c), transparentUrl: c.transparentPreviewUrl, status: c.status, description: c.lore, tags: ["pet", "companion", c.affinity, c.role, c.rarity, c.status].filter(Boolean) }));
+  state.assets.forEach((a: any) => pushLibraryAsset(out, { id: `assets-${a.id}`, sourceCollection: "assets", sourceId: a.id, assetType: "prop", name: a.name, thumbnailUrl: getLibraryImageUrl(a), transparentUrl: a.transparentPreviewUrl, status: a.status, description: a.description, tags: ["asset", a.kind, a.backgroundMode, a.status].filter(Boolean) }));
+  state.arts.forEach((a: any) => pushLibraryAsset(out, { id: `arts-${a.id}`, sourceCollection: "arts", sourceId: a.id, assetType: "art", name: a.title || a.companionName || "Companion art", thumbnailUrl: getLibraryImageUrl(a) || a.manualComposition?.backgroundUrl, transparentUrl: a.transparentPreviewUrl, status: a.status, description: a.prompt, tags: ["art", a.subjectType, a.outputMode, a.compositionType, a.status].filter(Boolean) }));
+  state.scenes.forEach((sc: any) => pushLibraryAsset(out, { id: `scenes-${sc.id}`, sourceCollection: "scenes", sourceId: sc.id, assetType: "background", name: sc.name, thumbnailUrl: getLibraryImageUrl(sc), status: sc.status, description: sc.visualPrompt, tags: ["scene", sc.purpose, sc.realm, sc.status].filter(Boolean) }));
+  state.realms.forEach((r: any) => pushLibraryAsset(out, { id: `realms-${r.id}`, sourceCollection: "realms", sourceId: r.id, assetType: "background", name: r.name, thumbnailUrl: getLibraryImageUrl(r), status: r.status, description: r.description || r.mapNotes, tags: ["realm", r.biome, r.tone, r.status].filter(Boolean) }));
+  state.battleBgs.forEach((b: any) => pushLibraryAsset(out, { id: `battleBgs-${b.id}`, sourceCollection: "battleBgs", sourceId: b.id, assetType: "background", name: b.realm || b.environment || "Battle background", thumbnailUrl: getLibraryImageUrl(b), status: b.status, description: b.prompt, tags: ["battle-bg", b.environment, b.mood, b.timeOfDay, b.status].filter(Boolean) }));
+  return out;
+};
+const AssetLibraryTab: React.FC = () => {
+  const studio = useStudio();
+  const [consumerMode, setConsumerMode] = useState<AssetConsumerMode>("library");
+  const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([]);
+  const libraryAssets = useMemo(() => buildStudioAssetLibrary(studio), [studio]);
+  const [query, setQuery] = useState("");
+  const [type, setType] = useState<LibraryAssetType | "all">("all");
+  const [transparentOnly, setTransparentOnly] = useState(false);
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return libraryAssets.filter((asset) => {
+      if (type !== "all" && asset.assetType !== type) return false;
+      if (transparentOnly && !asset.transparentUrl) return false;
+      if (!q) return true;
+      return [asset.name, asset.sourceCollection, asset.assetType, asset.description, ...asset.tags].filter(Boolean).join(" ").toLowerCase().includes(q);
+    });
+  }, [libraryAssets, query, type, transparentOnly]);
+  const counts = libraryAssets.reduce((acc, asset) => ({ ...acc, [asset.assetType]: (acc[asset.assetType] || 0) + 1 }), {} as Record<string, number>);
+  const selectedAssets = libraryAssets.filter((asset) => selectedAssetIds.includes(asset.id));
+  const toggleSelectedAsset = (asset: LibraryAsset) => setSelectedAssetIds((ids) => ids.includes(asset.id) ? ids.filter((id) => id !== asset.id) : [...ids, asset.id]);
+  const copyAssetJson = async (asset: LibraryAsset) => {
+    const payload = { sourceCollection: asset.sourceCollection, sourceId: asset.sourceId, assetType: asset.assetType, name: asset.name, url: asset.transparentUrl || asset.thumbnailUrl, transparentUrl: asset.transparentUrl, tags: asset.tags };
+    await navigator.clipboard?.writeText(JSON.stringify(payload, null, 2));
+    alert("Asset reference copied. Use this as lightweight scene/composition metadata.");
+  };
+  return (
+    <div className="space-y-4" data-testid="asset-library-tab">
+      <Card>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="h-display text-2xl">Asset Library</h2>
+            <p className="text-sm text-ink-muted">Unified catalog for Studio assets. This stays metadata-first and storage-safe for the future Land Editor.</p>
+          </div>
+          <span className="chip">{libraryAssets.length} usable image assets</span>
+        </div>
+        <div className="grid md:grid-cols-[1fr,220px,220px,180px] gap-3 mt-4 items-end">
+          <Field label="Search assets"><TextField testid="asset-library-search" value={query} onChange={setQuery} placeholder="Search NPCs, pets, props, scenes…" /></Field>
+          <Field label="Category"><SelectField testid="asset-library-type" value={type} onChange={(v) => setType(v as any)} options={["all", "npc", "companion", "prop", "background", "art"]} /></Field>
+          <Field label="Use mode"><SelectField testid="asset-library-consumer-mode" value={consumerMode} onChange={(v) => setConsumerMode(v as AssetConsumerMode)} options={["library", "companion-art", "land-editor"]} /></Field>
+          <label className="inline-flex items-center gap-2 px-3 py-3 rounded-full bg-white border-2 border-white text-sm font-extrabold">
+            <input type="checkbox" checked={transparentOnly} onChange={(e) => setTransparentOnly(e.target.checked)} className="w-5 h-5 accent-primary" /> Transparent only
+          </label>
+        </div>
+        <div className="flex flex-wrap gap-2 mt-3 text-xs font-extrabold text-ink-muted">
+          <span className="chip">NPCs {counts.npc || 0}</span><span className="chip">Pets {counts.companion || 0}</span><span className="chip">Props {counts.prop || 0}</span><span className="chip">Backgrounds {counts.background || 0}</span><span className="chip">Art {counts.art || 0}</span>
+        </div>
+      </Card>
+      {selectedAssets.length > 0 && <Card><div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="h-display text-xl">Selected asset references</h3><p className="text-sm text-ink-muted">Phase 2 handoff for Companion Art and the upcoming Land Editor. These are lightweight refs, not duplicated images.</p></div><button type="button" onClick={() => setSelectedAssetIds([])} className="btn-ghost !text-sm !py-2 !px-4">Clear selection</button></div><pre className="mt-3 text-[10px] overflow-auto max-h-48 whitespace-pre-wrap bg-bg border-2 border-white rounded-2xl p-3">{JSON.stringify(selectedAssets.map((asset) => ({ sourceCollection: asset.sourceCollection, sourceId: asset.sourceId, assetType: asset.assetType, name: asset.name, url: asset.transparentUrl || asset.thumbnailUrl, tags: asset.tags })), null, 2)}</pre></Card>}
+      <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        {filtered.map((asset) => {
+          const displayUrl = asset.transparentUrl || asset.thumbnailUrl || "";
+          return (
+            <Card key={asset.id} className="!p-3" data-testid={`asset-library-card-${asset.id}`}>
+              <div className="aspect-square rounded-2xl border-4 border-white bg-bg overflow-hidden grid place-items-center">
+                {displayUrl ? <img src={displayUrl} alt={asset.name} className="w-full h-full object-cover" /> : <span className="text-xs text-ink-muted">No image</span>}
+              </div>
+              <div className="mt-3">
+                <div className="flex items-center gap-2 justify-between">
+                  <p className="h-display text-lg truncate">{asset.name}</p>
+                  {asset.status && <StatusChip status={asset.status} />}
+                </div>
+                <p className="text-[10px] font-extrabold uppercase text-ink-muted">{asset.assetType} · {asset.sourceCollection}</p>
+                {asset.transparentUrl && <p className="text-[10px] font-extrabold text-sage mt-1">Transparent variant available</p>}
+                {asset.description && <p className="text-xs text-ink-muted line-clamp-2 mt-1">{asset.description}</p>}
+                <div className="flex flex-wrap gap-1 mt-2">{asset.tags.slice(0, 5).map((tag) => <span key={tag} className="px-2 py-0.5 rounded-full bg-bg text-[10px] font-bold text-ink-muted">{tag}</span>)}</div>
+                <div className="grid grid-cols-1 gap-2 mt-3">
+                  <button type="button" onClick={() => toggleSelectedAsset(asset)} className={cn("btn-outline !text-xs !py-1.5 !px-3 w-full", selectedAssetIds.includes(asset.id) ? "!bg-primary !text-white" : "")}>{selectedAssetIds.includes(asset.id) ? "Selected for " : "Use in "}{consumerMode === "library" ? "builder" : consumerMode}</button>
+                  <button type="button" onClick={() => copyAssetJson(asset)} className="btn-outline !text-xs !py-1.5 !px-3 w-full">Copy asset ref JSON</button>
+                  {displayUrl && <button type="button" onClick={() => downloadImageFromUrl(displayUrl, `asset-library-${asset.name}`)} className="btn-outline !text-xs !py-1.5 !px-3 w-full"><Download size={13} strokeWidth={3} /> Export source image</button>}
+                </div>
+              </div>
+            </Card>
+          );
+        })}
+      </div>
+      {filtered.length === 0 && <Card><p className="text-sm text-ink-muted">No assets match those filters. Generate or save images on NPCs, pets, props, scenes, realms, battle BGs, or art cards first.</p></Card>}
+    </div>
   );
 };
 
@@ -2801,40 +3639,65 @@ type NPCGeneratedPreview = {
   provider: string;
 };
 
-const buildNPCImagePrompt = (draft: Partial<StudioNPC>, realm?: StudioRealm): string => {
+const NPC_SPECIES_TYPES = ["human", "animalfolk", "magical creature", "object mascot", "robot", "spirit"] as const;
+const NPC_AGE_READS = ["child", "teen", "adult", "elder", "ageless"] as const;
+const NPC_SILHOUETTES = ["round", "tall", "tiny", "stout", "elegant", "cozy"] as const;
+const NPC_OUTFIT_STYLES = ["academy robe", "shopkeeper apron", "ranger cloak", "librarian cardigan", "caretaker overalls", "wizard coat", "storybook dress", "cozy sweater"] as const;
+const NPC_POSE_STYLES = ["friendly wave", "hands clasped", "holding book", "shopkeeper welcome", "teacher point", "calm standing pose"] as const;
+const NPC_BACKGROUND_MODES = ["transparent-ready", "plain removable background", "simple light background", "realm-inspired portrait"] as const;
+
+const buildNPCImagePrompt = (draft: Partial<StudioNPC> & Record<string, any>, realm?: StudioRealm): string => {
   const name = draft.name?.trim() || "unnamed academy mentor";
   const role = draft.customRole?.trim() || draft.role || "teacher";
+  const species = draft.speciesType || "human";
+  const ageRead = draft.ageRead || "adult";
+  const silhouette = draft.silhouette || "cozy";
+  const outfitStyle = draft.outfitStyle || "academy robe";
+  const poseStyle = draft.poseStyle || "friendly wave";
+  const primaryColor = draft.primaryColor || "#9D8DF1";
+  const accentColor = draft.accentColor || "#F4C753";
   const realmName = realm?.name || draft.realm || "Questing Academy";
-  const realmContext = realm ? `Realm context: ${realm.name}, biome ${realm.biome}${realm.tone ? `, tone ${realm.tone}` : ""}.` : `Realm context: ${realmName}.`;
-  const dialogue = draft.dialogue || "Welcome, little scholar!";
+  const realmFlavor = realm ? `${realm.name}, ${realm.biome}${realm.tone ? `, ${realm.tone}` : ""}` : realmName;
   const tone = draft.tone || "cheerful";
   const temperament = draft.temperament || "patient";
   const teachingStyle = draft.teachingStyle || "encouraging";
-  const humor = draft.humorLevel || "light";
-  const formality = draft.formality || "casual";
-  const encouragement = draft.encouragementStyle || "praise";
-  const safety = draft.safetyNotes || "Always kind, never urgent. No personal info asks.";
+  const visualNotes = (draft.visualNotes || "friendly, readable, warm, safe, helpful").trim();
+  const backgroundMode = draft.backgroundMode || "transparent-ready";
 
   return [
-    `Create a Questing Academy NPC portrait/concept image for ${name}.`,
-    `NPC role: ${role}.`,
-    realmContext,
-    `Persona: tone ${tone}, temperament ${temperament}, teaching style ${teachingStyle}, humor level ${humor}, formality ${formality}, encouragement style ${encouragement}.`,
-    `Sample dialogue inspiration: ${dialogue}.`,
-    `Safety and behavior notes: ${safety}.`,
-    "Style rules: cute chibi educational fantasy RPG mentor NPC, friendly non-threatening expression, half-body or three-quarter portrait, centered in frame, clear readable silhouette, soft rounded shapes, cozy storybook watercolor, pastel colors, child-safe for ages 5-12, warm academy guide energy, simple light background with subtle realm-inspired details.",
-    "Do not make this an enemy, boss, combat unit, or scary fantasy villain. This should feel like a helpful teacher, guide, shopkeeper, caretaker, or quest giver for children.",
-    "Negative rules: no text, no watermark, no cropped face, no realistic violence, no horror, no weapons, no dark scary mood, no photorealism.",
-  ].join(" ");
+    "Create one single game-ready Questing Academy NPC character asset.",
+    `NPC: ${name}.`,
+    `Role: ${role}.`,
+    `Species/body type: ${species}. Age read: ${ageRead}. Silhouette: ${silhouette}.`,
+    `Outfit: ${outfitStyle}. Pose: ${poseStyle}.`,
+    draft.hairColor || draft.hairStyle ? `Hair identity: ${draft.hairStyle || "saved hairstyle"}, ${draft.hairColor || "saved hair color"}.` : "",
+    draft.eyeColor ? `Eye identity: ${draft.eyeColor}.` : "",
+    draft.outfitColors || draft.outfitDetails ? `Outfit identity: colors ${draft.outfitColors || `${primaryColor} and ${accentColor}`}; details ${draft.outfitDetails || "match saved outfit details"}.` : "",
+    draft.accessories ? `Accessories: ${draft.accessories}.` : "",
+    draft.speciesDetails ? `Species/body details: ${draft.speciesDetails}.` : "",
+    draft.mustPreserve ? `Must preserve identity details: ${draft.mustPreserve}.` : "",
+    `Personality: ${tone}, ${temperament}, ${teachingStyle}.`,
+    `Realm flavor: ${realmFlavor}.`,
+    `Color palette: ${primaryColor} with ${accentColor} accents.`,
+    `Visual notes: ${visualNotes}.`,
+    "Show exactly one NPC only, centered, full body or clean three-quarter body, readable at game size.",
+    "Style: cute chibi educational fantasy RPG, soft pastel storybook game art, rounded shapes, friendly expression, child-safe, polished character asset.",
+    backgroundMode === "realm-inspired portrait"
+      ? "Background: very simple light portrait background with tiny subtle realm color hints, no scene clutter."
+      : "Background: flat pure white removable background for transparent PNG export.",
+    "Negative: no text, no labels, no watermark, no logo, no UI, no character sheet, no concept sheet, no side sketches, no alternate poses, no duplicate characters, no extra characters, no weapons, no combat pose, no villain, no horror, no photorealism."
+  ].filter(Boolean).join("\n");
 };
 
 const NpcsTab: React.FC = () => {
   const items = useStudio((s) => s.npcs);
   const realms = useStudio((s) => s.realms);
   const addItem = useStudio((s) => s.addItem);
-  const [draft, setDraft] = useState<Partial<StudioNPC>>({
+  const [draft, setDraft] = useState<Partial<StudioNPC> & Record<string, any>>({
     role: "teacher", tone: "cheerful", temperament: "patient", teachingStyle: "encouraging",
     humorLevel: "light", formality: "casual", encouragementStyle: "praise",
+    speciesType: "human", ageRead: "adult", silhouette: "cozy", outfitStyle: "academy robe", poseStyle: "friendly wave",
+    primaryColor: "#9D8DF1", accentColor: "#F4C753", backgroundMode: "transparent-ready", transparentIntent: true,
   });
   const [generatedPreview, setGeneratedPreview] = useState<NPCGeneratedPreview | null>(null);
   const [savedPreview, setSavedPreview] = useState<NPCGeneratedPreview | null>(null);
@@ -2880,7 +3743,17 @@ const NpcsTab: React.FC = () => {
       previewUrl: savedPreview?.url,
       promptUsed: savedPreview?.prompt,
       imageProvider: savedPreview?.provider,
-    };
+      speciesType: (draft as any).speciesType,
+      ageRead: (draft as any).ageRead,
+      silhouette: (draft as any).silhouette,
+      outfitStyle: (draft as any).outfitStyle,
+      poseStyle: (draft as any).poseStyle,
+      primaryColor: (draft as any).primaryColor,
+      accentColor: (draft as any).accentColor,
+      backgroundMode: (draft as any).backgroundMode,
+      transparentIntent: (draft as any).transparentIntent,
+      visualNotes: (draft as any).visualNotes,
+    } as StudioNPC;
     addItem("npcs", item);
     setGeneratedPreview(null);
     setSavedPreview(null);
@@ -2901,6 +3774,14 @@ const NpcsTab: React.FC = () => {
             <Field label="Name"><TextField testid="npcs-input-name" value={draft.name ?? ""} onChange={(v) => update("name", v)} placeholder="Linden the Keeper" onRandomize={() => update("name", randomNPCName())} /></Field>
             <Field label="Role"><SelectField testid="npcs-input-role" value={draft.role ?? ""} options={NPC_ROLES} onChange={(v) => update("role", v as NPCRole)} /></Field>
             <Field label="Custom role override" full><TextField testid="npcs-input-customRole" value={draft.customRole ?? ""} onChange={(v) => update("customRole", v)} placeholder="(optional) — e.g. 'librarian-mentor'" /></Field>
+            <Field label="Species/body type"><SelectField testid="npcs-input-species" value={(draft as any).speciesType ?? "human"} options={NPC_SPECIES_TYPES} onChange={(v) => setDraft((d) => ({ ...d, speciesType: v }))} /></Field>
+            <Field label="Age read"><SelectField testid="npcs-input-age-read" value={(draft as any).ageRead ?? "adult"} options={NPC_AGE_READS} onChange={(v) => setDraft((d) => ({ ...d, ageRead: v }))} /></Field>
+            <Field label="Silhouette"><SelectField testid="npcs-input-silhouette" value={(draft as any).silhouette ?? "cozy"} options={NPC_SILHOUETTES} onChange={(v) => setDraft((d) => ({ ...d, silhouette: v }))} /></Field>
+            <Field label="Outfit style"><SelectField testid="npcs-input-outfit-style" value={(draft as any).outfitStyle ?? "academy robe"} options={NPC_OUTFIT_STYLES} onChange={(v) => setDraft((d) => ({ ...d, outfitStyle: v }))} /></Field>
+            <Field label="Pose"><SelectField testid="npcs-input-pose" value={(draft as any).poseStyle ?? "friendly wave"} options={NPC_POSE_STYLES} onChange={(v) => setDraft((d) => ({ ...d, poseStyle: v }))} /></Field>
+            <Field label="Primary color"><ColorField testid="npcs-input-primary-color" value={(draft as any).primaryColor ?? "#9D8DF1"} onChange={(v) => setDraft((d) => ({ ...d, primaryColor: v }))} /></Field>
+            <Field label="Accent color"><ColorField testid="npcs-input-accent-color" value={(draft as any).accentColor ?? "#F4C753"} onChange={(v) => setDraft((d) => ({ ...d, accentColor: v }))} /></Field>
+            <Field label="Background mode"><SelectField testid="npcs-input-background-mode" value={(draft as any).backgroundMode ?? "transparent-ready"} options={NPC_BACKGROUND_MODES} onChange={(v) => setDraft((d) => ({ ...d, backgroundMode: v }))} /></Field>
             <Field label="Realm" full>
               <SearchSelect testid="npcs-input-realm" value={draft.realmId ?? ""}
                 onChange={(id) => { const r = realms.find((x) => x.id === id); update("realmId", id); if (r) update("realm", r.name); }}
@@ -2912,6 +3793,7 @@ const NpcsTab: React.FC = () => {
             <Field label="Humor"><SelectField testid="npcs-input-humor" value={draft.humorLevel ?? ""} options={NPC_HUMOR_LEVELS} onChange={(v) => update("humorLevel", v as NPCHumorLevel)} /></Field>
             <Field label="Formality"><SelectField testid="npcs-input-formality" value={draft.formality ?? ""} options={NPC_FORMALITIES} onChange={(v) => update("formality", v as NPCFormality)} /></Field>
             <Field label="Encouragement"><SelectField testid="npcs-input-encouragement" value={draft.encouragementStyle ?? ""} options={NPC_ENCOURAGEMENT} onChange={(v) => update("encouragementStyle", v as NPCEncouragement)} /></Field>
+            <Field label="Visual notes" full><TextArea testid="npcs-input-visual-notes" value={(draft as any).visualNotes ?? ""} onChange={(v) => setDraft((d) => ({ ...d, visualNotes: v }))} placeholder="Short visual DNA: cozy foxfolk librarian, round glasses, purple robe" /></Field>
             <Field label="Sample line" full><TextArea testid="npcs-input-dialogue" value={draft.dialogue ?? ""} onChange={(v) => update("dialogue", v)} placeholder="Welcome, little scholar!" onRandomize={() => update("dialogue", randomDialogueLine(draft.role ?? "teacher"))} /></Field>
             <Field label="Safety notes" full><TextArea testid="npcs-input-safety" value={draft.safetyNotes ?? ""} onChange={(v) => update("safetyNotes", v)} placeholder="No urgency, no info collection" /></Field>
           </div>
@@ -2927,6 +3809,7 @@ const NpcsTab: React.FC = () => {
             onDiscard={discardGeneratedPreview}
             disabled={false}
             imageClassName="aspect-square"
+            exportFilename={`npc-${draft.name || "academy-npc"}-${(draft as any).role || "role"}`}
           />
 
           <button type="button" data-testid="npcs-generate-btn" onClick={submit} className="btn-primary mt-4 !text-base !py-3 !px-6">
@@ -2941,6 +3824,7 @@ const NpcsTab: React.FC = () => {
           )}
           <p className="h-display text-lg">{i.name}</p>
           <p className="text-[10px] font-extrabold uppercase text-ink-muted">{i.role}{i.customRole && ` · ${i.customRole}`} · {i.realm}</p>
+          {(i as any).speciesType && <p className="text-[10px] font-bold text-primary mt-1">{(i as any).speciesType} · {(i as any).ageRead} · {(i as any).silhouette} · {(i as any).outfitStyle}</p>}
           {i.previewUrl && <p className="text-[10px] font-extrabold text-sage mt-1">Generated image attached · {i.imageProvider ?? "prototype"}</p>}
           <p className="text-sm italic mt-2">“{i.dialogue}”</p>
           <div className="grid grid-cols-2 gap-1 mt-2">
@@ -2953,6 +3837,8 @@ const NpcsTab: React.FC = () => {
           </div>
           <p className="text-[10px] font-extrabold text-sage mt-2">Safety: {i.safetyNotes}</p>
           <StudioViewEditButton collection="npcs" item={i} title={i.name} imageUrl={i.previewUrl} />
+          <button type="button" onClick={() => useStudio.getState().setStatus("npcs", i.id, "archived")} className="btn-ghost !text-xs !py-1.5 !px-3 mt-2 w-full">Archive card</button>
+          <button type="button" onClick={() => useStudio.getState().removeItem("npcs", i.id)} className="btn-ghost !text-xs !py-1.5 !px-3 mt-2 w-full text-danger"><Trash2 size={12} strokeWidth={3} /> Delete card</button>
         </div>
       )}
     />

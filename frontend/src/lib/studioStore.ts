@@ -46,6 +46,86 @@ interface StudioStore extends StudioState {
   isTemplatePlayerReady: (templateId: string) => boolean;
 }
 
+
+const IMAGE_DATA_URL_PREFIX = "data:image/";
+const MAX_PERSISTED_IMAGE_DATA_URL_LENGTH = 650_000;
+const OVERSIZED_IMAGE_PLACEHOLDER = "";
+
+const isImageDataUrl = (value: unknown): value is string =>
+  typeof value === "string" && value.startsWith(IMAGE_DATA_URL_PREFIX);
+
+const isOversizedImageDataUrl = (value: unknown): value is string =>
+  isImageDataUrl(value) && value.length > MAX_PERSISTED_IMAGE_DATA_URL_LENGTH;
+
+const isLikelyImageField = (key: string): boolean =>
+  /(^|_)(previewUrl|transparentPreviewUrl|imageUrl|generatedImageUrl|url|backgroundUrl|companionPreviewUrl)$/i.test(key) ||
+  /(PreviewUrl|ImageUrl|Url|backgroundUrl)$/i.test(key);
+
+const makeImageRef = (url: string) => ({
+  kind: isImageDataUrl(url) ? "data-url" : "url",
+  persisted: !isOversizedImageDataUrl(url),
+  tooLargeForLocalStorage: isOversizedImageDataUrl(url),
+  size: url.length,
+});
+
+const sanitizeForStudioPersistence = (value: unknown, key = ""): unknown => {
+  if (typeof value === "string") {
+    if (!isImageDataUrl(value)) return value;
+    if (!isOversizedImageDataUrl(value)) return value;
+    return isLikelyImageField(key) ? OVERSIZED_IMAGE_PLACEHOLDER : value;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((entry) => sanitizeForStudioPersistence(entry, key));
+  }
+
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [childKey, childValue] of Object.entries(value as Record<string, unknown>)) {
+      if (typeof childValue === "string" && isOversizedImageDataUrl(childValue) && isLikelyImageField(childKey)) {
+        out[childKey] = OVERSIZED_IMAGE_PLACEHOLDER;
+        out[`${childKey}Ref`] = makeImageRef(childValue);
+        out[`${childKey}StorageNote`] = "Oversized embedded image data was not persisted to localStorage. Export or regenerate from metadata instead.";
+        continue;
+      }
+      out[childKey] = sanitizeForStudioPersistence(childValue, childKey);
+    }
+    return out;
+  }
+
+  return value;
+};
+
+const safeStringifyStudioState = (value: string): string => {
+  try {
+    return JSON.stringify(sanitizeForStudioPersistence(JSON.parse(value)));
+  } catch {
+    return value;
+  }
+};
+
+const createStorageSafeLocalStorage = (): Storage => ({
+  get length() { return localStorage.length; },
+  clear: () => localStorage.clear(),
+  key: (index: number) => localStorage.key(index),
+  getItem: (name: string) => localStorage.getItem(name),
+  removeItem: (name: string) => localStorage.removeItem(name),
+  setItem: (name: string, value: string) => {
+    const sanitizedValue = safeStringifyStudioState(value);
+
+    try {
+      localStorage.setItem(name, sanitizedValue);
+    } catch (err) {
+      const isQuota = err instanceof DOMException && (err.name === "QuotaExceededError" || err.name === "NS_ERROR_DOM_QUOTA_REACHED");
+      if (!isQuota) throw err;
+
+      localStorage.removeItem(name);
+      localStorage.setItem(name, sanitizedValue);
+      console.warn("Studio storage quota hit. Oversized embedded image data was removed and metadata was preserved.");
+    }
+  },
+});
+
 // --- seed data --------------------------------------------------------------
 const T = nowISO();
 const seedBase = { createdAt: T, updatedAt: T, origin: "seed" as const };
@@ -197,7 +277,7 @@ export const useStudio = create<StudioStore>()(
     }),
     {
       name: "questing-academy-studio-v2",
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => createStorageSafeLocalStorage()),
     }
   )
 );
