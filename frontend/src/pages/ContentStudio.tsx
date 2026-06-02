@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { TopBar } from "../components/TopBar";
 import { Card } from "../components/Card";
@@ -42,22 +42,23 @@ const STUDIO_PIN = "2580";
 
 type TabKey =
   | "questions" | "avatars" | "companions" | "evolutions" | "arts" | "assets"
-  | "realms" | "battleBgs" | "scenes" | "npcs" | "quests" | "events" | "queue";
+  | "realms" | "battleBgs" | "scenes" | "sceneComposer" | "npcs" | "quests" | "events" | "queue";
 
 const TABS: { key: TabKey; label: string; emoji: string }[] = [
-  { key: "questions",  label: "Questions",     emoji: "📝" },
-  { key: "avatars",    label: "Avatars",       emoji: "🧑" },
-  { key: "companions", label: "Pets",          emoji: "🐾" },
-  { key: "evolutions", label: "Evolutions",    emoji: "🌱" },
-  { key: "arts",       label: "Companion Art", emoji: "🎨" },
-  { key: "assets",     label: "Assets",        emoji: "🎒" },
-  { key: "realms",     label: "Realms",        emoji: "🗺️" },
-  { key: "battleBgs",  label: "Battle BGs",    emoji: "⚔️" },
-  { key: "scenes",     label: "Scenes",        emoji: "🏠" },
-  { key: "npcs",       label: "NPCs",          emoji: "💬" },
-  { key: "quests",     label: "Quests",        emoji: "📜" },
-  { key: "events",     label: "Events",        emoji: "🎉" },
-  { key: "queue",      label: "Publish Queue", emoji: "🚀" },
+  { key: "questions",     label: "Questions",      emoji: "📝" },
+  { key: "avatars",       label: "Avatars",        emoji: "🧑" },
+  { key: "companions",    label: "Pets",           emoji: "🐾" },
+  { key: "evolutions",    label: "Evolutions",     emoji: "🌱" },
+  { key: "arts",          label: "Companion Art",  emoji: "🎨" },
+  { key: "assets",        label: "Assets",         emoji: "🎒" },
+  { key: "realms",        label: "Realms",         emoji: "🗺️" },
+  { key: "battleBgs",     label: "Battle BGs",     emoji: "⚔️" },
+  { key: "scenes",        label: "Scenes",         emoji: "🏠" },
+  { key: "sceneComposer", label: "Scene Composer", emoji: "🖼️" },
+  { key: "npcs",          label: "NPCs",           emoji: "💬" },
+  { key: "quests",        label: "Quests",         emoji: "📜" },
+  { key: "events",        label: "Events",         emoji: "🎉" },
+  { key: "queue",         label: "Publish Queue",  emoji: "🚀" },
 ];
 
 const ContentStudio: React.FC = () => {
@@ -141,6 +142,7 @@ const ContentStudio: React.FC = () => {
         {tab === "realms"     && <RealmsTab />}
         {tab === "battleBgs"  && <BattleBgsTab />}
         {tab === "scenes"     && <ScenesTab />}
+        {tab === "sceneComposer" && <SceneComposerTab />}
         {tab === "npcs"       && <NpcsTab />}
         {tab === "quests"     && <QuestsTab />}
         {tab === "events"     && <EventsTab />}
@@ -829,6 +831,330 @@ const AssetsTab: React.FC = () => {
     />
   );
 };
+
+// ============================================================================
+// SCENE COMPOSER (TEA-99)
+// Lightweight canvas + asset picker. Reuses the existing Asset Library
+// (useStudio.assets / StudioAsset) by reference — layers store only `assetId`
+// and render visuals from the live asset record. No persistence, no export.
+// ============================================================================
+type ComposerLayer = { id: string; assetId: string; x: number; y: number; scale: number };
+
+const COMPOSER_CANVAS_W = 720;
+const COMPOSER_CANVAS_H = 480;
+const COMPOSER_LAYER_BASE = 80; // unscaled visual size in px
+const COMPOSER_MIN_SCALE = 0.3;
+const COMPOSER_MAX_SCALE = 2.5;
+
+const COMPOSER_KIND_GLYPH: Record<string, string> = {
+  icon: "✨",
+  egg: "🥚",
+  badge: "🏅",
+  "ui-pack": "🎛️",
+  "particle-fx": "💫",
+  sticker: "🌟",
+  frame: "🖼️",
+  background: "🌄",
+};
+
+const SceneComposerTab: React.FC = () => {
+  // Reference the existing Asset Library — no duplication.
+  const assets = useStudio((s) => s.assets);
+  const assetsById = useMemo(() => {
+    const m = new Map<string, StudioAsset>();
+    for (const a of assets) m.set(a.id, a);
+    return m;
+  }, [assets]);
+
+  const [layers, setLayers] = useState<ComposerLayer[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+
+  const canvasRef = useRef<HTMLDivElement | null>(null);
+  const dragRef = useRef<{ id: string; offsetX: number; offsetY: number } | null>(null);
+
+  const selected = layers.find((l) => l.id === selectedId) ?? null;
+
+  const filteredAssets = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return assets;
+    return assets.filter(
+      (a) => a.name.toLowerCase().includes(q) || a.kind.toLowerCase().includes(q)
+    );
+  }, [assets, query]);
+
+  const addLayerFromAsset = (assetId: string) => {
+    const id = `lyr-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    setLayers((ls) => [
+      ...ls,
+      { id, assetId, x: COMPOSER_CANVAS_W / 2, y: COMPOSER_CANVAS_H / 2, scale: 1 },
+    ]);
+    setSelectedId(id);
+  };
+
+  const onLayerPointerDown = (e: React.PointerEvent<HTMLDivElement>, layer: ComposerLayer) => {
+    e.stopPropagation();
+    const c = canvasRef.current;
+    if (!c) return;
+    const rect = c.getBoundingClientRect();
+    dragRef.current = {
+      id: layer.id,
+      offsetX: e.clientX - rect.left - layer.x,
+      offsetY: e.clientY - rect.top - layer.y,
+    };
+    setSelectedId(layer.id);
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {
+      // some browsers throw if pointer capture isn't supported on the node
+    }
+  };
+
+  const onLayerPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragRef.current) return;
+    const c = canvasRef.current;
+    if (!c) return;
+    const rect = c.getBoundingClientRect();
+    const x = Math.max(0, Math.min(COMPOSER_CANVAS_W, e.clientX - rect.left - dragRef.current.offsetX));
+    const y = Math.max(0, Math.min(COMPOSER_CANVAS_H, e.clientY - rect.top - dragRef.current.offsetY));
+    const id = dragRef.current.id;
+    setLayers((ls) => ls.map((l) => (l.id === id ? { ...l, x, y } : l)));
+  };
+
+  const onLayerPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragRef.current) return;
+    try {
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch {
+      // ignore
+    }
+    dragRef.current = null;
+  };
+
+  const setSelectedScale = (v: number) => {
+    if (!selected) return;
+    const next = Math.max(COMPOSER_MIN_SCALE, Math.min(COMPOSER_MAX_SCALE, v));
+    setLayers((ls) => ls.map((l) => (l.id === selected.id ? { ...l, scale: next } : l)));
+  };
+
+  const removeSelected = () => {
+    if (!selected) return;
+    setLayers((ls) => ls.filter((l) => l.id !== selected.id));
+    setSelectedId(null);
+  };
+
+  const clearCanvas = () => {
+    setLayers([]);
+    setSelectedId(null);
+  };
+
+  return (
+    <div className="grid lg:grid-cols-[260px_1fr] gap-4" data-testid="composer">
+      {/* Asset picker panel */}
+      <div className="card-base !p-3 lg:max-h-[640px] flex flex-col">
+        <div className="flex items-center gap-2 mb-2">
+          <p className="h-display text-lg leading-none">Assets</p>
+          <span className="chip bg-bg border-white text-ink-muted text-[10px]">{assets.length}</span>
+        </div>
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search assets…"
+          data-testid="composer-asset-search"
+          className="w-full mb-2 px-3 py-2 rounded-xl border-2 border-white bg-bg text-sm font-bold text-ink placeholder:text-ink-muted/70 focus:outline-none focus:border-primary"
+        />
+        <div
+          className="flex-1 overflow-y-auto pr-1 space-y-2"
+          data-testid="composer-asset-list"
+        >
+          {filteredAssets.length === 0 ? (
+            <p className="text-xs text-ink-muted text-center py-6">No assets yet — add some in the Assets tab.</p>
+          ) : (
+            filteredAssets.map((a) => (
+              <button
+                key={a.id}
+                type="button"
+                onClick={() => addLayerFromAsset(a.id)}
+                data-testid={`composer-asset-${a.id}`}
+                className="w-full flex items-center gap-3 p-2 rounded-2xl border-2 border-white bg-white hover:bg-bg text-left transition active:translate-y-px"
+              >
+                <span
+                  className="w-10 h-10 rounded-xl border-2 border-white shrink-0 grid place-items-center text-base"
+                  style={{ background: a.previewColor }}
+                  aria-hidden
+                >
+                  {COMPOSER_KIND_GLYPH[a.kind] ?? "✨"}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block h-display text-sm leading-tight truncate">{a.name}</span>
+                  <span className="block text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">
+                    {a.kind.replace(/-/g, " ")}
+                  </span>
+                </span>
+              </button>
+            ))
+          )}
+        </div>
+      </div>
+
+      {/* Canvas + tools */}
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="h-display text-xl leading-none">Scene Composer</p>
+          <span className="chip bg-primary/10 text-primary border-primary/30 text-[10px]">
+            {layers.length} layer{layers.length === 1 ? "" : "s"}
+          </span>
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              type="button"
+              onClick={clearCanvas}
+              disabled={layers.length === 0}
+              data-testid="composer-clear-btn"
+              className="btn-ghost !text-xs !py-2 !px-3 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Clear canvas
+            </button>
+          </div>
+        </div>
+
+        {/* Selected layer controls */}
+        <div className="card-base !p-3 flex flex-wrap items-center gap-3" data-testid="composer-selection-bar">
+          {selected ? (
+            <>
+              <span className="chip bg-bg border-white text-[10px]">
+                Selected: {assetsById.get(selected.assetId)?.name ?? "Unknown asset"}
+              </span>
+              <label className="flex items-center gap-2 text-xs font-bold">
+                Scale
+                <input
+                  type="range"
+                  min={COMPOSER_MIN_SCALE}
+                  max={COMPOSER_MAX_SCALE}
+                  step={0.05}
+                  value={selected.scale}
+                  onChange={(e) => setSelectedScale(parseFloat(e.target.value))}
+                  data-testid="composer-scale-slider"
+                  className="w-40 accent-primary"
+                />
+                <span className="text-ink-muted tabular-nums" data-testid="composer-scale-value">
+                  {selected.scale.toFixed(2)}×
+                </span>
+              </label>
+              <button
+                type="button"
+                onClick={() => setSelectedScale(selected.scale - 0.1)}
+                data-testid="composer-scale-down"
+                className="btn-ghost !text-xs !py-1.5 !px-3"
+                aria-label="Scale down"
+              >
+                −
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedScale(selected.scale + 0.1)}
+                data-testid="composer-scale-up"
+                className="btn-ghost !text-xs !py-1.5 !px-3"
+                aria-label="Scale up"
+              >
+                +
+              </button>
+              <button
+                type="button"
+                onClick={removeSelected}
+                data-testid="composer-remove-layer"
+                className="btn-outline !text-xs !py-1.5 !px-3 ml-auto"
+              >
+                Remove layer
+              </button>
+            </>
+          ) : (
+            <p className="text-xs text-ink-muted">
+              Click an asset on the left to add it · drag a layer to move · click a layer to scale or remove it.
+            </p>
+          )}
+        </div>
+
+        {/* Canvas */}
+        <div className="overflow-auto">
+          <div
+            ref={canvasRef}
+            data-testid="composer-canvas"
+            onPointerMove={onLayerPointerMove}
+            onPointerUp={onLayerPointerUp}
+            onPointerCancel={onLayerPointerUp}
+            onClick={() => setSelectedId(null)}
+            className="relative rounded-card border-4 border-white shadow-inner mx-auto select-none"
+            style={{
+              width: COMPOSER_CANVAS_W,
+              height: COMPOSER_CANVAS_H,
+              maxWidth: "100%",
+              backgroundColor: "#FAF7F0",
+              backgroundImage:
+                "linear-gradient(45deg, #EDE6D6 25%, transparent 25%)," +
+                "linear-gradient(-45deg, #EDE6D6 25%, transparent 25%)," +
+                "linear-gradient(45deg, transparent 75%, #EDE6D6 75%)," +
+                "linear-gradient(-45deg, transparent 75%, #EDE6D6 75%)",
+              backgroundSize: "24px 24px",
+              backgroundPosition: "0 0, 0 12px, 12px -12px, -12px 0",
+            }}
+          >
+            {layers.length === 0 && (
+              <div className="absolute inset-0 grid place-items-center pointer-events-none">
+                <p className="text-ink-muted text-sm font-bold">Pick an asset → it lands here</p>
+              </div>
+            )}
+
+            {layers.map((layer) => {
+              const asset = assetsById.get(layer.assetId);
+              const isSelected = layer.id === selectedId;
+              const size = COMPOSER_LAYER_BASE;
+              return (
+                <div
+                  key={layer.id}
+                  data-testid={`composer-layer-${layer.id}`}
+                  onPointerDown={(e) => onLayerPointerDown(e, layer)}
+                  onClick={(e) => { e.stopPropagation(); setSelectedId(layer.id); }}
+                  className={`absolute touch-none cursor-grab active:cursor-grabbing transition-shadow ${
+                    isSelected ? "ring-4 ring-primary/60 rounded-2xl shadow-lg" : ""
+                  }`}
+                  style={{
+                    left: layer.x,
+                    top: layer.y,
+                    width: size,
+                    height: size,
+                    transform: `translate(-50%, -50%) scale(${layer.scale})`,
+                    transformOrigin: "center",
+                  }}
+                >
+                  {asset ? (
+                    <div
+                      className="w-full h-full rounded-2xl border-4 border-white grid place-items-center text-3xl shadow-md"
+                      style={{ background: asset.previewColor }}
+                      aria-label={asset.name}
+                    >
+                      <span aria-hidden>{COMPOSER_KIND_GLYPH[asset.kind] ?? "✨"}</span>
+                    </div>
+                  ) : (
+                    <div className="w-full h-full rounded-2xl border-4 border-dashed border-ink-muted/40 bg-white/60 grid place-items-center text-xs font-bold text-ink-muted">
+                      Missing
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <p className="text-[11px] text-ink-muted font-bold">
+          Local-only preview — layers are not saved. (TEA-99 scope)
+        </p>
+      </div>
+    </div>
+  );
+};
+
+
 
 // ============================================================================
 // REALMS
