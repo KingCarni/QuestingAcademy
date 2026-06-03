@@ -320,7 +320,7 @@ const mockNanoBananaGenerateImageWithReferences = (
 
 type TabKey =
   | "questions" | "avatars" | "companions" | "evolutions" | "arts" | "assets"
-  | "realms" | "battleBgs" | "scenes" | "npcs" | "quests" | "events" | "queue" | "assetLibrary";
+  | "realms" | "battleBgs" | "scenes" | "sceneComposer" | "npcs" | "quests" | "events" | "queue" | "assetLibrary";
 
 const TABS: { key: TabKey; label: string; emoji: string }[] = [
   { key: "questions",  label: "Questions",     emoji: "📝" },
@@ -333,6 +333,7 @@ const TABS: { key: TabKey; label: string; emoji: string }[] = [
   { key: "realms",     label: "Realms",        emoji: "🗺️" },
   { key: "battleBgs",  label: "Battle BGs",    emoji: "⚔️" },
   { key: "scenes",     label: "Scenes",        emoji: "🏠" },
+  { key: "sceneComposer", label: "Scene Composer", emoji: "🖼️" },
   { key: "npcs",       label: "NPCs",          emoji: "💬" },
   { key: "quests",     label: "Quests",        emoji: "📜" },
   { key: "events",     label: "Events",        emoji: "🎉" },
@@ -377,7 +378,7 @@ const ContentStudio: React.FC = () => {
   return (
     <div className="min-h-screen pb-16">
       <TopBar back="/admin" title="TeachMe Studio" />
-      <main className="max-w-7xl mx-auto px-4 md:px-8 py-6 space-y-5">
+      <main className={cn("mx-auto px-4 md:px-8 py-6 space-y-5", tab === "sceneComposer" ? "max-w-[1900px]" : "max-w-7xl")}>
         <Card className="!p-5 md:!p-6">
           <div className="flex items-center gap-3 flex-wrap">
             <div className="w-12 h-12 rounded-2xl bg-primary text-white grid place-items-center shadow-btn-primary">
@@ -421,6 +422,7 @@ const ContentStudio: React.FC = () => {
         {tab === "realms"     && <RealmsTab />}
         {tab === "battleBgs"  && <BattleBgsTab />}
         {tab === "scenes"     && <ScenesTab />}
+        {tab === "sceneComposer" && <SceneComposerTab />}
         {tab === "npcs"       && <NpcsTab />}
         {tab === "quests"     && <QuestsTab />}
         {tab === "events"     && <EventsTab />}
@@ -429,7 +431,307 @@ const ContentStudio: React.FC = () => {
     </div>
   );
 };
+type SceneComposerLayer = {
+  id: string;
+  assetId: string;
+  name: string;
+  kind: string;
+  previewColor?: string;
+  previewUrl?: string;
+  x: number;
+  y: number;
+  scale: number;
+};
 
+const SceneComposerTab: React.FC = () => {
+  const assets = useStudio((s) => s.assets);
+  const [query, setQuery] = useState("");
+  const [layers, setLayers] = useState<SceneComposerLayer[]>([]);
+  const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
+  const [draggingLayerId, setDraggingLayerId] = useState<string | null>(null);
+  const canvasRef = useRef<HTMLDivElement | null>(null);
+
+  const filteredAssets = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return assets.filter((asset) => {
+      if (!q) return true;
+      return [
+        asset.name,
+        asset.kind,
+        asset.description,
+        asset.promptUsed,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(q);
+    });
+  }, [assets, query]);
+
+  const selectedLayer = layers.find((layer) => layer.id === selectedLayerId) ?? null;
+
+  const addAssetToCanvas = (asset: StudioAsset) => {
+    const layer: SceneComposerLayer = {
+      id: `scene-layer-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      assetId: asset.id,
+      name: asset.name,
+      kind: asset.kind,
+      previewColor: asset.previewColor,
+      previewUrl: (asset as any).transparentPreviewUrl || asset.previewUrl,
+      x: 50,
+      y: 50,
+      scale: 1,
+    };
+
+    setLayers((current) => [...current, layer]);
+    setSelectedLayerId(layer.id);
+  };
+
+  const updateLayer = (layerId: string, patch: Partial<SceneComposerLayer>) => {
+    setLayers((current) =>
+      current.map((layer) => (layer.id === layerId ? { ...layer, ...patch } : layer))
+    );
+  };
+
+  const removeSelectedLayer = () => {
+    if (!selectedLayerId) return;
+    setLayers((current) => current.filter((layer) => layer.id !== selectedLayerId));
+    setSelectedLayerId(null);
+  };
+
+  const moveLayerFromPointer = (layerId: string, clientX: number, clientY: number) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const nextX = Math.max(0, Math.min(100, ((clientX - rect.left) / rect.width) * 100));
+    const nextY = Math.max(0, Math.min(100, ((clientY - rect.top) / rect.height) * 100));
+
+    updateLayer(layerId, { x: nextX, y: nextY });
+  };
+
+  return (
+    <div className="grid xl:grid-cols-[300px,minmax(900px,1fr),280px] 2xl:grid-cols-[320px,minmax(1200px,1fr),300px] gap-4">
+      <Card className="!p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="h-display text-2xl">Scene Composer</h2>
+            <p className="text-xs text-ink-muted">
+              Checkpoint A: pick assets, place them on a blank canvas, move and scale them.
+            </p>
+          </div>
+          <span className="chip">Local only</span>
+        </div>
+
+        <div className="mt-4">
+          <Field label="Find asset">
+            <TextField
+              testid="scene-composer-search"
+              value={query}
+              onChange={setQuery}
+              placeholder="Search props, trees, buildings..."
+            />
+          </Field>
+        </div>
+
+        <div className="mt-4 space-y-2 max-h-[620px] overflow-auto pr-1">
+          {filteredAssets.length === 0 && (
+            <div className="rounded-2xl bg-bg border-2 border-white p-4 text-sm text-ink-muted">
+              No assets found. Add items in the Assets tab first.
+            </div>
+          )}
+
+          {filteredAssets.map((asset) => {
+            const imageUrl = (asset as any).transparentPreviewUrl || asset.previewUrl;
+
+            return (
+              <button
+                key={asset.id}
+                type="button"
+                onClick={() => addAssetToCanvas(asset)}
+                className="w-full text-left rounded-2xl bg-white border-2 border-white hover:border-primary/40 p-3 shadow-sm transition"
+              >
+                <div className="flex gap-3 items-center">
+                  {imageUrl ? (
+                    <img
+                      src={imageUrl}
+                      alt={asset.name}
+                      className="w-14 h-14 rounded-xl object-cover border-2 border-white shadow-sm bg-bg"
+                    />
+                  ) : (
+                    <div
+                      className="w-14 h-14 rounded-xl border-2 border-white shadow-sm grid place-items-center text-xl"
+                      style={{ background: asset.previewColor || "#EDE7FF" }}
+                    >
+                      🎒
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <p className="font-extrabold text-sm truncate">{asset.name}</p>
+                    <p className="text-[10px] font-extrabold uppercase text-ink-muted">
+                      {asset.kind}
+                    </p>
+                    {asset.description && (
+                      <p className="text-xs text-ink-muted line-clamp-2 mt-0.5">{asset.description}</p>
+                    )}
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </Card>
+
+      <Card className="!p-4 min-h-[760px]">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+          <div>
+            <h3 className="h-display text-xl">Canvas</h3>
+            <p className="text-xs text-ink-muted">Blank 16:9 composition canvas. Layers reset when you leave/reload.</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setLayers([]);
+              setSelectedLayerId(null);
+            }}
+            className="btn-ghost !text-xs !py-1.5 !px-3"
+            disabled={layers.length === 0}
+          >
+            Clear canvas
+          </button>
+        </div>
+
+        <div
+          ref={canvasRef}
+          data-testid="scene-composer-canvas"
+          className="relative w-full aspect-video min-h-[620px] rounded-3xl border-4 border-white bg-gradient-to-br from-[#EAF7FF] to-[#FFF8DD] shadow-inner overflow-hidden"
+          onPointerMove={(event) => {
+            if (!draggingLayerId) return;
+            moveLayerFromPointer(draggingLayerId, event.clientX, event.clientY);
+          }}
+          onPointerUp={() => setDraggingLayerId(null)}
+          onPointerLeave={() => setDraggingLayerId(null)}
+          onClick={() => setSelectedLayerId(null)}
+        >
+          <div className="absolute inset-0 opacity-30 pointer-events-none bg-[linear-gradient(to_right,rgba(255,255,255,.8)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,.8)_1px,transparent_1px)] bg-[size:48px_48px]" />
+
+          {layers.map((layer) => {
+            const selected = layer.id === selectedLayerId;
+
+            return (
+              <div
+                key={layer.id}
+                role="button"
+                tabIndex={0}
+                aria-label={`Scene layer ${layer.name}`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setSelectedLayerId(layer.id);
+                }}
+                onPointerDown={(event) => {
+                  event.stopPropagation();
+                  setSelectedLayerId(layer.id);
+                  setDraggingLayerId(layer.id);
+                  moveLayerFromPointer(layer.id, event.clientX, event.clientY);
+                }}
+                className={cn(
+                  "absolute -translate-x-1/2 -translate-y-1/2 cursor-grab active:cursor-grabbing select-none",
+                  selected ? "ring-4 ring-primary rounded-2xl" : ""
+                )}
+                style={{
+                  left: `${layer.x}%`,
+                  top: `${layer.y}%`,
+                  transform: `translate(-50%, -50%) scale(${layer.scale})`,
+                }}
+              >
+                {layer.previewUrl ? (
+                  <img
+                    src={layer.previewUrl}
+                    alt={layer.name}
+                    draggable={false}
+                    className="w-40 h-40 object-contain drop-shadow-xl pointer-events-none"
+                  />
+                ) : (
+                  <div
+                    className="w-36 h-36 rounded-2xl border-4 border-white shadow-xl grid place-items-center text-4xl pointer-events-none"
+                    style={{ background: layer.previewColor || "#EDE7FF" }}
+                  >
+                    🎒
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {layers.length === 0 && (
+            <div className="absolute inset-0 grid place-items-center text-center p-6 pointer-events-none">
+              <div className="rounded-3xl bg-white/80 border-4 border-white p-5 shadow-lg">
+                <p className="h-display text-2xl">Blank scene canvas</p>
+                <p className="text-sm text-ink-muted mt-1">Choose an asset on the left to start composing.</p>
+              </div>
+            </div>
+          )}
+        </div>
+      </Card>
+
+      <Card className="!p-4">
+        <h3 className="h-display text-xl">Layer tools</h3>
+        {!selectedLayer ? (
+          <p className="text-sm text-ink-muted mt-2">Select a layer on the canvas to adjust it.</p>
+        ) : (
+          <div className="mt-3 space-y-4">
+            <div className="rounded-2xl bg-bg border-2 border-white p-3">
+              <p className="text-[10px] font-extrabold uppercase text-ink-muted">Selected layer</p>
+              <p className="font-extrabold">{selectedLayer.name}</p>
+              <p className="text-xs text-ink-muted">{selectedLayer.kind}</p>
+              <p className="text-[10px] text-ink-muted mt-1">
+                X {selectedLayer.x.toFixed(1)}% · Y {selectedLayer.y.toFixed(1)}%
+              </p>
+            </div>
+
+            <Field label={`Scale ${selectedLayer.scale.toFixed(2)}x`}>
+              <input
+                data-testid="scene-composer-scale"
+                type="range"
+                min="0.3"
+                max="2.5"
+                step="0.05"
+                value={selectedLayer.scale}
+                onChange={(event) => updateLayer(selectedLayer.id, { scale: Number(event.target.value) })}
+                className="w-full"
+              />
+            </Field>
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => updateLayer(selectedLayer.id, { scale: Math.max(0.3, selectedLayer.scale - 0.1) })}
+                className="btn-outline !text-xs !py-1.5 !px-3 flex-1"
+              >
+                − Smaller
+              </button>
+              <button
+                type="button"
+                onClick={() => updateLayer(selectedLayer.id, { scale: Math.min(2.5, selectedLayer.scale + 0.1) })}
+                className="btn-outline !text-xs !py-1.5 !px-3 flex-1"
+              >
+                + Bigger
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={removeSelectedLayer}
+              className="btn-ghost !text-sm !py-2 !px-4 text-danger w-full"
+            >
+              <Trash2 size={14} strokeWidth={3} /> Delete selected layer
+            </button>
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+};
 // ============================================================================
 // QUESTIONS — Subject → Topic → Template (grouped, approval is per-template)
 // ============================================================================
