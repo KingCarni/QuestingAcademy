@@ -12,7 +12,7 @@ import { useStudio } from "../lib/studioStore";
 import { ALL_TEMPLATES, generateQuestion } from "../lib/questionEngine";
 import {
   mockRealmConcept, mockQuestChain,
-  mockBattleBackground, mockCompanionArt, mockNanoBananaGenerateImage, baseMeta, nowISO,
+  mockBattleBackground, mockCompanionArt, baseMeta, nowISO,
 } from "../lib/mockGen";
 import {
   randomAvatarName, randomCompanionName, randomCompanionLore, randomMoveSet,
@@ -38,6 +38,43 @@ import { ShieldCheck, Library, Lock, Send, Eye, ChevronDown, ChevronRight, Wand2
 import { cn } from "../lib/cn";
 
 const STUDIO_PIN = "2580";
+const STUDIO_BACKEND_ORIGIN = "http://localhost:5050";
+
+const normalizeStudioImageUrl = (url?: string): string => {
+  if (!url) return "";
+
+  const trimmed = url.trim();
+
+  if (trimmed.startsWith("data:image/")) return trimmed;
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) return trimmed;
+
+  if (trimmed.startsWith("/api/studio/image")) {
+    return `${STUDIO_BACKEND_ORIGIN}${trimmed}`;
+  }
+
+  if (trimmed.startsWith("api/studio/image")) {
+    return `${STUDIO_BACKEND_ORIGIN}/${trimmed}`;
+  }
+
+  if (trimmed.startsWith("/studio/image")) {
+    return `${STUDIO_BACKEND_ORIGIN}/api${trimmed}`;
+  }
+
+  if (trimmed.startsWith("studio/image")) {
+    return `${STUDIO_BACKEND_ORIGIN}/api/${trimmed}`;
+  }
+
+  if (trimmed.startsWith("/image?")) {
+    return `${STUDIO_BACKEND_ORIGIN}/api/studio${trimmed}`;
+  }
+
+  if (trimmed.startsWith("image?")) {
+    return `${STUDIO_BACKEND_ORIGIN}/api/studio/${trimmed}`;
+  }
+
+  return trimmed;
+};
+
 const MAX_STORED_IMAGE_DATA_URL_LENGTH = 650_000;
 const MAX_INLINE_IMAGE_DATA_URL_LENGTH = 180_000;
 const isImageDataUrl = (value?: string): boolean => !!value && value.startsWith("data:image/");
@@ -299,24 +336,53 @@ type VisualReferenceInput = {
   url: string;
 };
 
-const mockNanoBananaGenerateImageWithReferences = (
+type StudioGenerateImageRequest = {
+  prompt: string;
+  contentType?: string;
+  stylePreset?: string;
+  linkedEntityId?: string;
+  palette?: { from?: string; to?: string };
+  visualReferences?: VisualReferenceInput[];
+};
+
+const generateStudioImagePreview = async (request: StudioGenerateImageRequest): Promise<GeneratedImagePreview> => {
+  const response = await fetch(`${STUDIO_BACKEND_ORIGIN}/api/studio/generate-image`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok || !data?.ok || !data?.imageDataUrl) {
+    throw new Error(data?.error || `Image generation failed (${response.status})`);
+  }
+
+  return {
+    url: data.imageDataUrl,
+    prompt: data.promptUsed || request.prompt,
+    provider: data.provider ? `${data.provider}${data.model ? `:${data.model}` : ""}` : "studio-generate-image",
+  };
+};
+
+const generateStudioImagePreviewWithReferences = async (
   prompt: string,
   palette?: { from?: string; to?: string },
-  visualReferences: VisualReferenceInput[] = []
-): string => {
+  visualReferences: VisualReferenceInput[] = [],
+  contentType = "companion-art"
+): Promise<GeneratedImagePreview> => {
   const referenceBlock = visualReferences.length
-    ? `\n\nSTRUCTURED VISUAL REFERENCES PASSED SEPARATELY:\n${visualReferences.map((r, idx) => `${idx + 1}. ${r.kind}: ${r.label} (${r.url})`).join("\n")}`
+    ? `\n\nVISUAL REFERENCES PASSED SEPARATELY:\n${visualReferences.map((r, idx) => `${idx + 1}. ${r.kind}: ${r.label}`).join("\n")}`
     : "";
 
-  const safePalette = palette
-    ? {
-        from: palette.from || "#9D8DF1",
-        to: palette.to || "#F4C753",
-      }
-    : undefined;
-
-  return mockNanoBananaGenerateImage(`${prompt}${referenceBlock}`, safePalette);
+  return generateStudioImagePreview({
+    prompt: `${prompt}${referenceBlock}`,
+    contentType,
+    palette,
+    visualReferences,
+  });
 };
+
 
 type TabKey =
   | "questions" | "avatars" | "companions" | "evolutions" | "arts" | "assets"
@@ -434,53 +500,118 @@ const ContentStudio: React.FC = () => {
 type SceneComposerLayer = {
   id: string;
   assetId: string;
+  sourceCollection: StudioCollectionKey;
+  sourceId: string;
   name: string;
   kind: string;
+  assetType: LibraryAssetType;
   previewColor?: string;
   previewUrl?: string;
   x: number;
   y: number;
   scale: number;
+  opacity: number;
+  flip: boolean;
+  rotation: number;
+  zIndex: number;
 };
 
+type SceneComposerBackgroundMode = "blank" | "transparent" | "scene" | "realm" | "battleBg";
+
+const getComposerImageUrl = (item?: any, preferTransparent = false): string => {
+  if (!item) return "";
+
+  const url =
+    (preferTransparent ? item.transparentUrl || item.transparentPreviewUrl : "") ||
+    item.thumbnailUrl ||
+    item.previewUrl ||
+    item.imageUrl ||
+    item.generatedImageUrl ||
+    item.url ||
+    item.backgroundUrl ||
+    item.companionPreviewUrl ||
+    item.manualComposition?.backgroundUrl ||
+    "";
+
+  return normalizeStudioImageUrl(url);
+};
+
+const getComposerBackgroundImageUrl = (item?: any): string => getComposerImageUrl(item, false);
+
 const SceneComposerTab: React.FC = () => {
-  const assets = useStudio((s) => s.assets);
+  const studio = useStudio();
+  const scenes = useStudio((s) => s.scenes);
+  const realms = useStudio((s) => s.realms);
+  const battleBgs = useStudio((s) => s.battleBgs);
   const [query, setQuery] = useState("");
+  const [assetTypeFilter, setAssetTypeFilter] = useState<LibraryAssetType | "all">("all");
+  const [backgroundMode, setBackgroundMode] = useState<SceneComposerBackgroundMode>("blank");
+  const [backgroundId, setBackgroundId] = useState("");
   const [layers, setLayers] = useState<SceneComposerLayer[]>([]);
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
   const [draggingLayerId, setDraggingLayerId] = useState<string | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
 
+  const libraryAssets = useMemo(() => buildStudioAssetLibrary(studio), [studio]);
+
   const filteredAssets = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return assets.filter((asset) => {
+    return libraryAssets.filter((asset) => {
+      if (asset.assetType === "background") return false;
+      if (assetTypeFilter !== "all" && asset.assetType !== assetTypeFilter) return false;
       if (!q) return true;
-      return [
-        asset.name,
-        asset.kind,
-        asset.description,
-        asset.promptUsed,
-      ]
+      return [asset.name, asset.sourceCollection, asset.assetType, asset.description, ...asset.tags]
         .filter(Boolean)
         .join(" ")
         .toLowerCase()
         .includes(q);
     });
-  }, [assets, query]);
+  }, [libraryAssets, query, assetTypeFilter]);
 
   const selectedLayer = layers.find((layer) => layer.id === selectedLayerId) ?? null;
 
-  const addAssetToCanvas = (asset: StudioAsset) => {
+  const backgroundOptions = useMemo(() => {
+    if (backgroundMode === "scene") {
+      return scenes
+        .map((sc) => ({ id: sc.id, label: sc.name, sublabel: `${sc.purpose} · ${sc.realm}`, url: getComposerBackgroundImageUrl(sc) }))
+        .filter((x) => !!x.url);
+    }
+    if (backgroundMode === "realm") {
+      return realms
+        .map((r) => ({ id: r.id, label: r.name, sublabel: `${r.biome || "realm"} · ${r.status}`, url: getComposerBackgroundImageUrl(r) }))
+        .filter((x) => !!x.url);
+    }
+    if (backgroundMode === "battleBg") {
+      return battleBgs
+        .map((b) => ({ id: b.id, label: b.realm || b.environment || "Battle background", sublabel: `${b.environment || "battle bg"} · ${b.status}`, url: getComposerBackgroundImageUrl(b) }))
+        .filter((x) => !!x.url);
+    }
+    return [];
+  }, [backgroundMode, scenes, realms, battleBgs]);
+
+  const selectedBackground = backgroundOptions.find((bg) => bg.id === backgroundId) ?? null;
+
+  useEffect(() => {
+    setBackgroundId("");
+  }, [backgroundMode]);
+
+  const addAssetToCanvas = (asset: LibraryAsset) => {
     const layer: SceneComposerLayer = {
       id: `scene-layer-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       assetId: asset.id,
+      sourceCollection: asset.sourceCollection,
+      sourceId: asset.sourceId,
       name: asset.name,
-      kind: asset.kind,
-      previewColor: asset.previewColor,
-      previewUrl: (asset as any).transparentPreviewUrl || asset.previewUrl,
+      kind: asset.sourceCollection,
+      assetType: asset.assetType,
+      previewUrl: getComposerImageUrl(asset, true),
       x: 50,
       y: 50,
       scale: 1,
+      opacity: 100,
+      flip: false,
+      rotation: 0,
+      zIndex: layers.length ? Math.max(...layers.map((l) => l.zIndex)) + 1 : 1,
     };
 
     setLayers((current) => [...current, layer]);
@@ -488,15 +619,38 @@ const SceneComposerTab: React.FC = () => {
   };
 
   const updateLayer = (layerId: string, patch: Partial<SceneComposerLayer>) => {
-    setLayers((current) =>
-      current.map((layer) => (layer.id === layerId ? { ...layer, ...patch } : layer))
-    );
+    setLayers((current) => current.map((layer) => (layer.id === layerId ? { ...layer, ...patch } : layer)));
   };
 
   const removeSelectedLayer = () => {
     if (!selectedLayerId) return;
     setLayers((current) => current.filter((layer) => layer.id !== selectedLayerId));
     setSelectedLayerId(null);
+  };
+
+  const duplicateSelectedLayer = () => {
+    if (!selectedLayer) return;
+    const copy: SceneComposerLayer = {
+      ...selectedLayer,
+      id: `scene-layer-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      name: `${selectedLayer.name} copy`,
+      x: Math.min(100, selectedLayer.x + 4),
+      y: Math.min(100, selectedLayer.y + 4),
+      zIndex: layers.length ? Math.max(...layers.map((l) => l.zIndex)) + 1 : selectedLayer.zIndex + 1,
+    };
+    setLayers((current) => [...current, copy]);
+    setSelectedLayerId(copy.id);
+  };
+
+  const nudgeLayerZ = (direction: "up" | "down") => {
+    if (!selectedLayer) return;
+    const sorted = [...layers].sort((a, b) => a.zIndex - b.zIndex);
+    const idx = sorted.findIndex((layer) => layer.id === selectedLayer.id);
+    const swapIdx = direction === "up" ? idx + 1 : idx - 1;
+    if (idx < 0 || swapIdx < 0 || swapIdx >= sorted.length) return;
+    const other = sorted[swapIdx];
+    updateLayer(selectedLayer.id, { zIndex: other.zIndex });
+    updateLayer(other.id, { zIndex: selectedLayer.zIndex });
   };
 
   const moveLayerFromPointer = (layerId: string, clientX: number, clientY: number) => {
@@ -510,17 +664,41 @@ const SceneComposerTab: React.FC = () => {
     updateLayer(layerId, { x: nextX, y: nextY });
   };
 
+  const sortedLayers = useMemo(() => [...layers].sort((a, b) => a.zIndex - b.zIndex), [layers]);
+
   return (
-    <div className="grid xl:grid-cols-[300px,minmax(900px,1fr),280px] 2xl:grid-cols-[320px,minmax(1200px,1fr),300px] gap-4">
+    <div className="grid xl:grid-cols-[300px,minmax(900px,1fr),300px] 2xl:grid-cols-[330px,minmax(1200px,1fr),330px] gap-4">
       <Card className="!p-4">
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 className="h-display text-2xl">Scene Composer</h2>
             <p className="text-xs text-ink-muted">
-              Checkpoint A: pick assets, place them on a blank canvas, move and scale them.
+              Phase 2: choose backgrounds, use library assets, and manage layers locally.
             </p>
           </div>
           <span className="chip">Local only</span>
+        </div>
+
+        <div className="mt-4 rounded-2xl bg-bg border-2 border-white p-3 space-y-3">
+          <Field label="Background">
+            <SelectField
+              testid="scene-composer-background-mode"
+              value={backgroundMode}
+              onChange={(v) => setBackgroundMode(v as SceneComposerBackgroundMode)}
+              options={["blank", "transparent", "scene", "realm", "battleBg"]}
+            />
+          </Field>
+          {(backgroundMode === "scene" || backgroundMode === "realm" || backgroundMode === "battleBg") && (
+            <Field label="Choose background">
+              <SearchSelect
+                testid="scene-composer-background-id"
+                value={backgroundId}
+                onChange={setBackgroundId}
+                options={backgroundOptions.map((bg) => ({ id: bg.id, label: bg.label, sublabel: bg.sublabel }))}
+                placeholder="Search image-backed backgrounds..."
+              />
+            </Field>
+          )}
         </div>
 
         <div className="mt-4">
@@ -529,21 +707,36 @@ const SceneComposerTab: React.FC = () => {
               testid="scene-composer-search"
               value={query}
               onChange={setQuery}
-              placeholder="Search props, trees, buildings..."
+              placeholder="Search props, pets, NPCs, art..."
             />
           </Field>
         </div>
 
-        <div className="mt-4 space-y-2 max-h-[620px] overflow-auto pr-1">
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {(["all", "npc", "companion", "prop", "art"] as const).map((k) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => setAssetTypeFilter(k)}
+              className={cn(
+                "px-2.5 py-1 rounded-full border-2 text-[10px] font-extrabold capitalize",
+                assetTypeFilter === k ? "bg-primary text-white border-primary" : "bg-white text-ink-muted border-white hover:border-primary/40"
+              )}
+            >
+              {k}
+            </button>
+          ))}
+        </div>
+
+        <div className="mt-4 space-y-2 max-h-[560px] overflow-auto pr-1">
           {filteredAssets.length === 0 && (
             <div className="rounded-2xl bg-bg border-2 border-white p-4 text-sm text-ink-muted">
-              No assets found. Add items in the Assets tab first.
+              No usable library assets found. Generate/save images first, or clear the filters.
             </div>
           )}
 
           {filteredAssets.map((asset) => {
-            const imageUrl = (asset as any).transparentPreviewUrl || asset.previewUrl;
-
+            const imageUrl = getComposerImageUrl(asset, true);
             return (
               <button
                 key={asset.id}
@@ -559,21 +752,15 @@ const SceneComposerTab: React.FC = () => {
                       className="w-14 h-14 rounded-xl object-cover border-2 border-white shadow-sm bg-bg"
                     />
                   ) : (
-                    <div
-                      className="w-14 h-14 rounded-xl border-2 border-white shadow-sm grid place-items-center text-xl"
-                      style={{ background: asset.previewColor || "#EDE7FF" }}
-                    >
-                      🎒
-                    </div>
+                    <div className="w-14 h-14 rounded-xl border-2 border-white shadow-sm grid place-items-center text-xl bg-bg">🎒</div>
                   )}
                   <div className="min-w-0">
                     <p className="font-extrabold text-sm truncate">{asset.name}</p>
                     <p className="text-[10px] font-extrabold uppercase text-ink-muted">
-                      {asset.kind}
+                      {asset.assetType} · {asset.sourceCollection}
                     </p>
-                    {asset.description && (
-                      <p className="text-xs text-ink-muted line-clamp-2 mt-0.5">{asset.description}</p>
-                    )}
+                    {asset.transparentUrl && <p className="text-[10px] font-extrabold text-sage">Transparent available</p>}
+                    {asset.description && <p className="text-xs text-ink-muted line-clamp-2 mt-0.5">{asset.description}</p>}
                   </div>
                 </div>
               </button>
@@ -586,7 +773,9 @@ const SceneComposerTab: React.FC = () => {
         <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
           <div>
             <h3 className="h-display text-xl">Canvas</h3>
-            <p className="text-xs text-ink-muted">Blank 16:9 composition canvas. Layers reset when you leave/reload.</p>
+            <p className="text-xs text-ink-muted">
+              {backgroundMode === "transparent" ? "Transparent composition canvas." : selectedBackground ? `Background: ${selectedBackground.label}` : "Blank 16:9 composition canvas."}
+            </p>
           </div>
           <button
             type="button"
@@ -604,7 +793,10 @@ const SceneComposerTab: React.FC = () => {
         <div
           ref={canvasRef}
           data-testid="scene-composer-canvas"
-          className="relative w-full aspect-video min-h-[620px] rounded-3xl border-4 border-white bg-gradient-to-br from-[#EAF7FF] to-[#FFF8DD] shadow-inner overflow-hidden"
+          className={cn(
+            "relative w-full aspect-video min-h-[620px] rounded-3xl border-4 border-white shadow-inner overflow-hidden select-none touch-none",
+            backgroundMode === "transparent" ? "bg-white" : "bg-gradient-to-br from-[#EAF7FF] to-[#FFF8DD]"
+          )}
           onPointerMove={(event) => {
             if (!draggingLayerId) return;
             moveLayerFromPointer(draggingLayerId, event.clientX, event.clientY);
@@ -613,11 +805,18 @@ const SceneComposerTab: React.FC = () => {
           onPointerLeave={() => setDraggingLayerId(null)}
           onClick={() => setSelectedLayerId(null)}
         >
-          <div className="absolute inset-0 opacity-30 pointer-events-none bg-[linear-gradient(to_right,rgba(255,255,255,.8)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,.8)_1px,transparent_1px)] bg-[size:48px_48px]" />
+          {backgroundMode === "transparent" && (
+            <div className="absolute inset-0" style={{ backgroundImage: "linear-gradient(45deg, #eee 25%, transparent 25%), linear-gradient(-45deg, #eee 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #eee 75%), linear-gradient(-45deg, transparent 75%, #eee 75%)", backgroundSize: "24px 24px", backgroundPosition: "0 0, 0 12px, 12px -12px, -12px 0px", backgroundColor: "#fff" }} />
+          )}
+          {selectedBackground?.url && (
+            <img src={normalizeStudioImageUrl(selectedBackground.url)} alt={selectedBackground.label} className="absolute inset-0 w-full h-full object-cover" />
+          )}
+          {backgroundMode === "blank" && (
+            <div className="absolute inset-0 opacity-30 pointer-events-none bg-[linear-gradient(to_right,rgba(255,255,255,.8)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,.8)_1px,transparent_1px)] bg-[size:48px_48px]" />
+          )}
 
-          {layers.map((layer) => {
+          {sortedLayers.map((layer) => {
             const selected = layer.id === selectedLayerId;
-
             return (
               <div
                 key={layer.id}
@@ -641,33 +840,30 @@ const SceneComposerTab: React.FC = () => {
                 style={{
                   left: `${layer.x}%`,
                   top: `${layer.y}%`,
-                  transform: `translate(-50%, -50%) scale(${layer.scale})`,
+                  zIndex: layer.zIndex,
+                  opacity: Math.max(0, Math.min(100, layer.opacity)) / 100,
+                  transform: `translate(-50%, -50%) scale(${layer.scale}) rotate(${layer.rotation}deg) scaleX(${layer.flip ? -1 : 1})`,
                 }}
               >
                 {layer.previewUrl ? (
                   <img
-                    src={layer.previewUrl}
+                    src={normalizeStudioImageUrl(layer.previewUrl)}
                     alt={layer.name}
                     draggable={false}
                     className="w-40 h-40 object-contain drop-shadow-xl pointer-events-none"
                   />
                 ) : (
-                  <div
-                    className="w-36 h-36 rounded-2xl border-4 border-white shadow-xl grid place-items-center text-4xl pointer-events-none"
-                    style={{ background: layer.previewColor || "#EDE7FF" }}
-                  >
-                    🎒
-                  </div>
+                  <div className="w-36 h-36 rounded-2xl border-4 border-white shadow-xl grid place-items-center text-4xl pointer-events-none bg-bg">🎒</div>
                 )}
               </div>
             );
           })}
 
-          {layers.length === 0 && (
+          {layers.length === 0 && !selectedBackground && backgroundMode !== "transparent" && (
             <div className="absolute inset-0 grid place-items-center text-center p-6 pointer-events-none">
               <div className="rounded-3xl bg-white/80 border-4 border-white p-5 shadow-lg">
                 <p className="h-display text-2xl">Blank scene canvas</p>
-                <p className="text-sm text-ink-muted mt-1">Choose an asset on the left to start composing.</p>
+                <p className="text-sm text-ink-muted mt-1">Choose a background or add assets from the left.</p>
               </div>
             </div>
           )}
@@ -677,53 +873,61 @@ const SceneComposerTab: React.FC = () => {
       <Card className="!p-4">
         <h3 className="h-display text-xl">Layer tools</h3>
         {!selectedLayer ? (
-          <p className="text-sm text-ink-muted mt-2">Select a layer on the canvas to adjust it.</p>
+          <div className="space-y-3">
+            <p className="text-sm text-ink-muted mt-2">Select a layer on the canvas to adjust it.</p>
+            {layers.length > 0 && (
+              <div className="rounded-2xl bg-bg border-2 border-white p-3">
+                <p className="text-[10px] font-extrabold uppercase text-ink-muted mb-2">Layer stack</p>
+                <div className="space-y-1">
+                  {[...layers].sort((a, b) => b.zIndex - a.zIndex).map((layer) => (
+                    <button key={layer.id} type="button" onClick={() => setSelectedLayerId(layer.id)} className="w-full text-left rounded-xl bg-white px-3 py-2 text-xs font-bold hover:ring-2 hover:ring-primary/40">
+                      {layer.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         ) : (
           <div className="mt-3 space-y-4">
             <div className="rounded-2xl bg-bg border-2 border-white p-3">
               <p className="text-[10px] font-extrabold uppercase text-ink-muted">Selected layer</p>
               <p className="font-extrabold">{selectedLayer.name}</p>
-              <p className="text-xs text-ink-muted">{selectedLayer.kind}</p>
+              <p className="text-xs text-ink-muted">{selectedLayer.assetType} · {selectedLayer.sourceCollection}</p>
               <p className="text-[10px] text-ink-muted mt-1">
-                X {selectedLayer.x.toFixed(1)}% · Y {selectedLayer.y.toFixed(1)}%
+                X {selectedLayer.x.toFixed(1)}% · Y {selectedLayer.y.toFixed(1)}% · Z {selectedLayer.zIndex}
               </p>
             </div>
 
             <Field label={`Scale ${selectedLayer.scale.toFixed(2)}x`}>
-              <input
-                data-testid="scene-composer-scale"
-                type="range"
-                min="0.3"
-                max="2.5"
-                step="0.05"
-                value={selectedLayer.scale}
-                onChange={(event) => updateLayer(selectedLayer.id, { scale: Number(event.target.value) })}
-                className="w-full"
-              />
+              <input data-testid="scene-composer-scale" type="range" min="0.3" max="3.5" step="0.05" value={selectedLayer.scale} onChange={(event) => updateLayer(selectedLayer.id, { scale: Number(event.target.value) })} className="w-full" />
+            </Field>
+            <Field label={`Opacity ${selectedLayer.opacity}%`}>
+              <input data-testid="scene-composer-opacity" type="range" min="0" max="100" step="1" value={selectedLayer.opacity} onChange={(event) => updateLayer(selectedLayer.id, { opacity: Number(event.target.value) })} className="w-full" />
+            </Field>
+            <Field label={`Rotation ${selectedLayer.rotation}°`}>
+              <input data-testid="scene-composer-rotation" type="range" min="-180" max="180" step="1" value={selectedLayer.rotation} onChange={(event) => updateLayer(selectedLayer.id, { rotation: Number(event.target.value) })} className="w-full" />
             </Field>
 
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => updateLayer(selectedLayer.id, { scale: Math.max(0.3, selectedLayer.scale - 0.1) })}
-                className="btn-outline !text-xs !py-1.5 !px-3 flex-1"
-              >
-                − Smaller
-              </button>
-              <button
-                type="button"
-                onClick={() => updateLayer(selectedLayer.id, { scale: Math.min(2.5, selectedLayer.scale + 0.1) })}
-                className="btn-outline !text-xs !py-1.5 !px-3 flex-1"
-              >
-                + Bigger
-              </button>
+            <div className="grid grid-cols-2 gap-2">
+              <button type="button" onClick={() => updateLayer(selectedLayer.id, { scale: Math.max(0.3, selectedLayer.scale - 0.1) })} className="btn-outline !text-xs !py-1.5 !px-3">− Smaller</button>
+              <button type="button" onClick={() => updateLayer(selectedLayer.id, { scale: Math.min(3.5, selectedLayer.scale + 0.1) })} className="btn-outline !text-xs !py-1.5 !px-3">+ Bigger</button>
+              <button type="button" onClick={() => updateLayer(selectedLayer.id, { flip: !selectedLayer.flip })} className={cn("btn-outline !text-xs !py-1.5 !px-3", selectedLayer.flip ? "!bg-primary !text-white" : "")}>Flip X</button>
+              <button type="button" onClick={duplicateSelectedLayer} className="btn-outline !text-xs !py-1.5 !px-3">Duplicate</button>
+              <button type="button" onClick={() => nudgeLayerZ("down")} className="btn-outline !text-xs !py-1.5 !px-3">Send back</button>
+              <button type="button" onClick={() => nudgeLayerZ("up")} className="btn-outline !text-xs !py-1.5 !px-3">Bring front</button>
             </div>
 
-            <button
-              type="button"
-              onClick={removeSelectedLayer}
-              className="btn-ghost !text-sm !py-2 !px-4 text-danger w-full"
-            >
+            <div className="rounded-2xl bg-bg border-2 border-white p-3">
+              <p className="text-[10px] font-extrabold uppercase text-ink-muted mb-2">Layer stack</p>
+              <div className="space-y-1">
+                {[...layers].sort((a, b) => b.zIndex - a.zIndex).map((layer) => (
+                  <button key={layer.id} type="button" onClick={() => setSelectedLayerId(layer.id)} className={cn("w-full text-left rounded-xl px-3 py-2 text-xs font-bold", layer.id === selectedLayerId ? "bg-primary text-white" : "bg-white text-ink hover:ring-2 hover:ring-primary/40")}>{layer.name}</button>
+                ))}
+              </div>
+            </div>
+
+            <button type="button" onClick={removeSelectedLayer} className="btn-ghost !text-sm !py-2 !px-4 text-danger w-full">
               <Trash2 size={14} strokeWidth={3} /> Delete selected layer
             </button>
           </div>
@@ -1020,8 +1224,8 @@ const setNestedValue = (target: any, key: string, value: any) => {
 
 
 const getManualCompositionDisplayUrl = (item: any, fallbackUrl?: string): string => {
-  if (item?.manualComposition?.backgroundUrl) return item.manualComposition.backgroundUrl;
-  return fallbackUrl || item?.previewUrl || "";
+  if (item?.manualComposition?.backgroundUrl) return normalizeStudioImageUrl(item.manualComposition.backgroundUrl);
+  return normalizeStudioImageUrl(fallbackUrl || item?.previewUrl || "");
 };
 
 const exportSavedManualComposition = async (item: any, filenameBase: string) => {
@@ -1042,7 +1246,7 @@ const exportSavedManualComposition = async (item: any, filenameBase: string) => 
 const StudioViewEditButton: React.FC<StudioViewEditButtonProps> = ({ collection, item, title, imageUrl }) => {
   const exportFilename = `${collection}-${getStudioItemTitle(item)}-${item.outputMode || item.zonePurpose || item.id || "image"}`;
   const hasManualComposition = collection === "arts" && !!item?.manualComposition?.layers?.length;
-  const displayImageUrl = hasManualComposition ? getManualCompositionDisplayUrl(item, imageUrl) : imageUrl;
+  const displayImageUrl = normalizeStudioImageUrl(hasManualComposition ? getManualCompositionDisplayUrl(item, imageUrl) : imageUrl);
   const updateItem = useStudio((s) => s.updateItem);
   const setStatus = useStudio((s) => s.setStatus);
   const removeItem = useStudio((s) => s.removeItem);
@@ -1251,6 +1455,28 @@ const StudioViewEditButton: React.FC<StudioViewEditButtonProps> = ({ collection,
 
 
 
+
+const makeDurableImagePreview = async (preview: GeneratedImagePreview): Promise<GeneratedImagePreview> => {
+  if (!preview?.url) return preview;
+  if (preview.url.startsWith("data:image/")) return preview;
+
+  const normalizedUrl = normalizeStudioImageUrl(preview.url);
+  const response = await fetch(normalizedUrl);
+  if (!response.ok) throw new Error(`Image fetch failed: ${response.status}`);
+
+  const blob = await response.blob();
+  if (!blob.type.startsWith("image/")) {
+    throw new Error(`Expected image response, got ${blob.type || "unknown content type"}`);
+  }
+
+  const dataUrl = await blobToDataUrl(blob);
+  if (isOversizedDataUrl(dataUrl)) {
+    throw new Error("Generated image is too large for local browser storage. Export it instead, or move to backend image storage next.");
+  }
+
+  return { ...preview, url: dataUrl, provider: `${preview.provider || "generator"}-inline` };
+};
+
 type GeneratedImagePreview = {
   url: string;
   prompt: string;
@@ -1265,7 +1491,7 @@ const ImagePreviewWorkflow: React.FC<{
   helper: string;
   generatedPreview: GeneratedImagePreview | null;
   savedPreview: GeneratedImagePreview | null;
-  onGenerate: () => void;
+  onGenerate: () => void | Promise<void>;
   onSave: () => void;
   onDiscard: () => void;
   disabled?: boolean;
@@ -1312,10 +1538,15 @@ const ImagePreviewWorkflow: React.FC<{
     setAttempt((n) => n + 1);
   };
 
-  const handleGenerate = () => {
+  const handleGenerate = async () => {
     setStatus("generating");
     setAttempt(0);
-    onGenerate();
+    try {
+      await onGenerate();
+    } catch (err) {
+      console.error(err);
+      setStatus("error");
+    }
   };
 
   const handleDiscard = () => {
@@ -1327,7 +1558,11 @@ const ImagePreviewWorkflow: React.FC<{
   const isBusy = status === "generating" || status === "loading";
   const isReady = status === "ready";
   const canExportTransparent = /assets|companions|arts|avatars|evolutions|npcs/i.test(testid);
-  const cacheBustedUrl = generatedPreview?.url ? `${generatedPreview.url}${generatedPreview.url.includes("?") ? "&" : "?"}qaRetry=${attempt}` : "";
+  const cacheBustedUrl = generatedPreview?.url
+    ? generatedPreview.url.startsWith("data:image/")
+      ? generatedPreview.url
+      : `${generatedPreview.url}${generatedPreview.url.includes("?") ? "&" : "?"}qaRetry=${attempt}`
+    : "";
 
   return (
     <div className="mt-4 rounded-3xl bg-white/70 border-4 border-white p-4" data-testid={testid}>
@@ -1443,16 +1678,32 @@ const AvatarsTab: React.FC = () => {
     addPalette({ id: "pal-user-" + Date.now(), name: `Saved ${hex}`, colors: [hex], createdAt: new Date().toISOString() });
   };
 
-  const generateImagePreview = () => {
+  const generateImagePreview = async () => {
     const prompt = buildAvatarImagePrompt(draft);
-    const url = mockNanoBananaGenerateImage(prompt, { from: draft.previewColor ?? "#9D8DF1", to: "#FFF8DD" });
-    setGeneratedPreview({ url, prompt, provider: "prototype-generator" });
     setSavedPreview(null);
+    try {
+      const preview = await generateStudioImagePreview({
+        prompt,
+        contentType: "avatar",
+        palette: { from: draft.previewColor ?? "#9D8DF1", to: "#FFF8DD" },
+      });
+      setGeneratedPreview(preview);
+    } catch (err) {
+      console.error(err);
+      setGeneratedPreview(null);
+      alert(err instanceof Error ? err.message : "Image generation failed.");
+    }
   };
 
-  const saveGeneratedPreview = () => {
+  const saveGeneratedPreview = async () => {
     if (!generatedPreview) return;
-    setSavedPreview(generatedPreview);
+    try {
+      const durablePreview = await makeDurableImagePreview(generatedPreview);
+      setSavedPreview(durablePreview);
+    } catch (err) {
+      console.error(err);
+      alert(err instanceof Error ? err.message : "Could not save generated image to local storage.");
+    }
   };
 
   const discardGeneratedPreview = () => {
@@ -1566,7 +1817,7 @@ const AvatarsTab: React.FC = () => {
       renderItem={(i: StudioAvatar) => (
         <div className="flex gap-3">
           {i.previewUrl ? (
-            <img src={i.previewUrl} alt={`${i.name} avatar asset`} className="w-16 h-16 object-cover rounded-2xl border-4 border-white shrink-0 shadow-lg" />
+            <img src={getImageUrl(i)} alt={`${i.name} avatar asset`} className="w-16 h-16 object-cover rounded-2xl border-4 border-white shrink-0 shadow-lg" />
           ) : (
             <div className="w-16 h-16 rounded-2xl border-4 border-white shrink-0" style={{ background: i.previewColor }} aria-hidden />
           )}
@@ -1578,7 +1829,7 @@ const AvatarsTab: React.FC = () => {
             {i.hair?.style && <p className="text-[10px] font-bold text-primary mt-1">Hair: {i.hair.style}, {i.hair.length}, {i.hair.texture}</p>}
             {i.outfit?.outfitType && <p className="text-[10px] font-bold text-primary mt-1">Outfit: {i.outfit.outfitType} · {i.outfit.theme}</p>}
             {i.accessory?.accessoryType && <p className="text-[10px] font-bold text-primary mt-1">Acc: {i.accessory.accessoryType} @ {i.accessory.placement}</p>}
-            <StudioViewEditButton collection="avatars" item={i} title={i.name} imageUrl={i.previewUrl} />
+            <StudioViewEditButton collection="avatars" item={i} title={i.name} imageUrl={getImageUrl(i)} />
           </div>
         </div>
       )}
@@ -1722,16 +1973,32 @@ const CompanionsTab: React.FC = () => {
     }));
   };
 
-  const generateImagePreview = () => {
+  const generateImagePreview = async () => {
     const prompt = buildCompanionImagePrompt(draft);
-    const url = mockNanoBananaGenerateImage(prompt, draft.palette);
-    setGeneratedPreview({ url, prompt, provider: "prototype-generator" });
     setSavedPreview(null);
+    try {
+      const preview = await generateStudioImagePreview({
+        prompt,
+        contentType: "companion",
+        palette: draft.palette,
+      });
+      setGeneratedPreview(preview);
+    } catch (err) {
+      console.error(err);
+      setGeneratedPreview(null);
+      alert(err instanceof Error ? err.message : "Image generation failed.");
+    }
   };
 
-  const saveGeneratedPreview = () => {
+  const saveGeneratedPreview = async () => {
     if (!generatedPreview) return;
-    setSavedPreview(generatedPreview);
+    try {
+      const durablePreview = await makeDurableImagePreview(generatedPreview);
+      setSavedPreview(durablePreview);
+    } catch (err) {
+      console.error(err);
+      alert(err instanceof Error ? err.message : "Could not save generated image to local storage.");
+    }
   };
 
   const discardGeneratedPreview = () => {
@@ -1881,7 +2148,7 @@ const CompanionsTab: React.FC = () => {
         <div>
           <div className="flex items-start gap-3">
             {i.previewUrl ? (
-              <img src={i.previewUrl} alt={`${i.name} companion art`} className="w-16 h-16 object-cover rounded-2xl border-4 border-white shrink-0 shadow-lg" />
+              <img src={getImageUrl(i)} alt={`${i.name} companion art`} className="w-16 h-16 object-cover rounded-2xl border-4 border-white shrink-0 shadow-lg" />
             ) : (
               <CompanionDot emoji={i.emoji} palette={i.palette} size={64} />
             )}
@@ -1902,7 +2169,7 @@ const CompanionsTab: React.FC = () => {
               <CompanionDot emoji={i.emoji} palette={i.shinyPalette} size={28} />
             </div>
           )}
-          <StudioViewEditButton collection="companions" item={i} title={i.name} imageUrl={i.previewUrl} />
+          <StudioViewEditButton collection="companions" item={i} title={i.name} imageUrl={getImageUrl(i)} />
           <button type="button" onClick={() => useStudio.getState().setStatus("companions", i.id, "archived")} className="btn-ghost !text-xs !py-1.5 !px-3 mt-2 w-full">Archive card</button>
           <button type="button" onClick={() => useStudio.getState().removeItem("companions", i.id)} className="btn-ghost !text-xs !py-1.5 !px-3 mt-2 w-full text-danger"><Trash2 size={12} strokeWidth={3} /> Delete card</button>
         </div>
@@ -2110,20 +2377,37 @@ const EvolutionsTab: React.FC = () => {
     }));
   };
 
-  const generateImagePreview = () => {
+  const generateImagePreview = async () => {
     if (!baseCompanion && !draft.baseCompanionName) return;
     const prompt = buildEvolutionImagePrompt({ ...draft, evolvedStats }, baseCompanion, previousEvolutions);
     const paletteForGeneration = draft.useBasePalette !== false
       ? (baseCompanion?.palette || draft.evolutionPalette)
       : draft.evolutionPalette;
-    const url = mockNanoBananaGenerateImage(prompt, paletteForGeneration);
-    setGeneratedPreview({ url, prompt, provider: "prototype-generator" });
     setSavedPreview(null);
+    try {
+      const preview = await generateStudioImagePreview({
+        prompt,
+        contentType: "evolution",
+        linkedEntityId: draft.baseCompanionId,
+        palette: paletteForGeneration,
+      });
+      setGeneratedPreview(preview);
+    } catch (err) {
+      console.error(err);
+      setGeneratedPreview(null);
+      alert(err instanceof Error ? err.message : "Image generation failed.");
+    }
   };
 
-  const saveGeneratedPreview = () => {
+  const saveGeneratedPreview = async () => {
     if (!generatedPreview) return;
-    setSavedPreview(generatedPreview);
+    try {
+      const durablePreview = await makeDurableImagePreview(generatedPreview);
+      setSavedPreview(durablePreview);
+    } catch (err) {
+      console.error(err);
+      alert(err instanceof Error ? err.message : "Could not save generated image to local storage.");
+    }
   };
 
   const discardGeneratedPreview = () => {
@@ -2231,7 +2515,7 @@ const EvolutionsTab: React.FC = () => {
               <div className="rounded-2xl bg-white/70 border-2 border-white p-3">
                 <p className="text-[10px] font-extrabold uppercase text-primary mb-1">Base form</p>
                 <div className="flex gap-3 items-start">
-                  {baseCompanion.previewUrl ? <img src={baseCompanion.previewUrl} alt={`${baseCompanion.name} base pet`} className="w-16 h-16 object-cover rounded-2xl border-4 border-white shadow-lg" /> : <CompanionDot emoji={baseCompanion.emoji} palette={baseCompanion.palette} size={64} />}
+                  {baseCompanion.previewUrl ? <img src={getImageUrl(baseCompanion)} alt={`${baseCompanion.name} base pet`} className="w-16 h-16 object-cover rounded-2xl border-4 border-white shadow-lg" /> : <CompanionDot emoji={baseCompanion.emoji} palette={baseCompanion.palette} size={64} />}
                   <div className="min-w-0">
                     <p className="h-display text-lg truncate">{baseCompanion.name}</p>
                     <p className="text-[10px] font-extrabold uppercase text-ink-muted">{baseCompanion.affinity} · {baseCompanion.role} · {baseCompanion.rarity}</p>
@@ -2281,7 +2565,7 @@ const EvolutionsTab: React.FC = () => {
       renderItem={(i: StudioEvolution) => (
         <div>
           {i.previewUrl && (
-            <img src={i.previewUrl} alt={`${i.evolutionName} evolution art`} className="w-full h-40 object-cover rounded-xl border-2 border-white mb-2" />
+            <img src={getImageUrl(i)} alt={`${i.evolutionName} evolution art`} className="w-full h-40 object-cover rounded-xl border-2 border-white mb-2" />
           )}
           <p className="h-display text-lg">{i.evolutionName} <span className="text-xs font-extrabold uppercase text-ink-muted">Stage {i.stageNumber}</span></p>
           <p className="text-[10px] font-extrabold uppercase text-ink-muted">Base: {i.baseCompanionName} · Academy: {i.academyInfluence}</p>
@@ -2297,7 +2581,7 @@ const EvolutionsTab: React.FC = () => {
           <p className="text-[10px] font-bold text-primary">Visual: {i.visualNotes}</p>
           <p className="text-[10px] font-bold text-primary">Stats: {i.statGrowthNotes}</p>
           {(i as any).evolvedStats && <div className="grid grid-cols-4 gap-1.5 mt-2"><Stat label="HP" v={(i as any).evolvedStats.hp} /><Stat label="ATK" v={(i as any).evolvedStats.attack} /><Stat label="DEF" v={(i as any).evolvedStats.defense} /><Stat label="SPD" v={(i as any).evolvedStats.speed} /></div>}
-          <StudioViewEditButton collection="evolutions" item={i} title={i.evolutionName} imageUrl={i.previewUrl} />
+          <StudioViewEditButton collection="evolutions" item={i} title={i.evolutionName} imageUrl={getImageUrl(i)} />
           <button type="button" onClick={() => useStudio.getState().setStatus("evolutions", i.id, "archived")} className="btn-ghost !text-xs !py-1.5 !px-3 mt-2 w-full">Archive card</button>
           <button type="button" onClick={() => useStudio.getState().removeItem("evolutions", i.id)} className="btn-ghost !text-xs !py-1.5 !px-3 mt-2 w-full text-danger"><Trash2 size={12} strokeWidth={3} /> Delete card</button>
         </div>
@@ -2373,7 +2657,8 @@ const summarizeRealmForArt = (r?: StudioRealm) => r ? `${r.name}, ${r.biome}, ${
 
 const getImageUrl = (item?: any, preferTransparent = false): string => {
   if (!item) return "";
-  return (preferTransparent ? item.transparentPreviewUrl : "") || item.previewUrl || item.imageUrl || item.generatedImageUrl || item.url || "";
+  const url = (preferTransparent ? item.transparentPreviewUrl : "") || item.previewUrl || item.imageUrl || item.generatedImageUrl || item.url || "";
+  return normalizeStudioImageUrl(url);
 };
 
 const hasUsablePreview = (item?: any): boolean => !!getImageUrl(item, false);
@@ -2617,15 +2902,34 @@ const ArtsTab: React.FC = () => {
     try { e.currentTarget.releasePointerCapture(e.pointerId); } catch {}
   };
 
-  const generateImagePreview = () => {
+  const generateImagePreview = async () => {
     const prompt = buildCompanionArtPrompt(draft, { companion: selectedCompanion, npcs: selectedNpcs, scene: selectedScene, realm: selectedRealm });
     const visualReferenceUrls = loadedVisualReferences.map((r) => ({ kind: r.kind, label: r.label, url: r.url }));
-    const url = mockNanoBananaGenerateImageWithReferences(prompt, { from: draft.primaryColor || "#9D8DF1", to: draft.accentColor || "#F4C753" }, visualReferenceUrls);
-    const referenceSummary = visualReferenceUrls.length ? `\n\nVISUAL REFERENCES PASSED SEPARATELY:\n${visualReferenceUrls.map((r, idx) => `${idx + 1}. ${r.kind}: ${r.label}`).join("\n")}` : "";
-    setGeneratedPreview({ url, prompt: `${prompt}${referenceSummary}`, provider: "prototype-generator" });
     setSavedPreview(null);
+    try {
+      const preview = await generateStudioImagePreviewWithReferences(
+        prompt,
+        { from: draft.primaryColor || "#9D8DF1", to: draft.accentColor || "#F4C753" },
+        visualReferenceUrls,
+        "companion-art"
+      );
+      setGeneratedPreview(preview);
+    } catch (err) {
+      console.error(err);
+      setGeneratedPreview(null);
+      alert(err instanceof Error ? err.message : "Image generation failed.");
+    }
   };
-  const saveGeneratedPreview = () => { if (generatedPreview) setSavedPreview(generatedPreview); };
+  const saveGeneratedPreview = async () => {
+    if (!generatedPreview) return;
+    try {
+      const durablePreview = await makeDurableImagePreview(generatedPreview);
+      setSavedPreview(durablePreview);
+    } catch (err) {
+      console.error(err);
+      alert(err instanceof Error ? err.message : "Could not save generated image to local storage.");
+    }
+  };
   const discardGeneratedPreview = () => { setGeneratedPreview(null); setSavedPreview(null); };
 
   const submit = async () => {
@@ -2834,7 +3138,7 @@ const ArtsTab: React.FC = () => {
       }
       renderItem={(i: StudioArt & Record<string, any>) => (
         <div>
-          {(i.previewUrl || i.manualComposition?.backgroundUrl) && <img src={i.previewUrl || i.manualComposition?.backgroundUrl} alt={`${i.title || i.companionName} companion art`} className="w-full h-40 object-cover rounded-xl border-2 border-white" />}
+          {(i.previewUrl || i.manualComposition?.backgroundUrl) && <img src={getImageUrl(i) || normalizeStudioImageUrl(i.manualComposition?.backgroundUrl)} alt={`${i.title || i.companionName} companion art`} className="w-full h-40 object-cover rounded-xl border-2 border-white" />}
           <p className="h-display text-lg mt-2 truncate">{i.title || i.companionName}</p>
           <p className="text-[10px] font-extrabold uppercase text-ink-muted">{i.subjectType || "companion art"}{i.outputMode ? ` · ${i.outputMode}` : ""}</p>
           {i.npcs?.length > 0 && <p className="text-[10px] font-bold text-primary mt-1">NPCs: {i.npcs.join(" · ")}</p>}
@@ -2846,7 +3150,7 @@ const ArtsTab: React.FC = () => {
           {i.identityLocks?.length > 0 && <p className="text-[10px] font-bold text-primary mt-1">Identity locks: {i.identityLocks.length}</p>}
           <p className="text-xs text-ink-muted line-clamp-2 mt-1">{i.prompt}</p>
           {i.styleNotes && <p className="text-[10px] font-extrabold text-primary mt-1">Style: {i.styleNotes}</p>}
-          <StudioViewEditButton collection="arts" item={i} title={i.title || i.companionName || "Companion art"} imageUrl={i.previewUrl} />
+          <StudioViewEditButton collection="arts" item={i} title={i.title || i.companionName || "Companion art"} imageUrl={getImageUrl(i)} />
           <button type="button" onClick={() => useStudio.getState().removeItem("arts", i.id)} className="btn-ghost !text-xs !py-1.5 !px-3 mt-2 w-full text-danger"><Trash2 size={12} strokeWidth={3} /> Delete card</button>
         </div>
       )}
@@ -2874,17 +3178,17 @@ type LibraryAsset = {
   useHint?: string;
 };
 const getLibraryImageUrl = (item: any, preferTransparent = false): string =>
-  (preferTransparent ? item?.transparentPreviewUrl : "") || item?.previewUrl || item?.imageUrl || item?.generatedImageUrl || item?.url || "";
+  normalizeStudioImageUrl((preferTransparent ? item?.transparentPreviewUrl : "") || item?.previewUrl || item?.imageUrl || item?.generatedImageUrl || item?.url || "");
 const pushLibraryAsset = (out: LibraryAsset[], asset: LibraryAsset) => {
   if (!asset.thumbnailUrl && !asset.transparentUrl) return;
   out.push(asset);
 };
 const buildStudioAssetLibrary = (state: ReturnType<typeof useStudio.getState>): LibraryAsset[] => {
   const out: LibraryAsset[] = [];
-  state.npcs.forEach((n: any) => pushLibraryAsset(out, { id: `npcs-${n.id}`, sourceCollection: "npcs", sourceId: n.id, assetType: "npc", name: n.name, thumbnailUrl: getLibraryImageUrl(n), transparentUrl: n.transparentPreviewUrl, status: n.status, description: n.dialogue || n.visualNotes, tags: ["npc", n.role, n.realm, n.status].filter(Boolean) }));
-  state.companions.forEach((c: any) => pushLibraryAsset(out, { id: `companions-${c.id}`, sourceCollection: "companions", sourceId: c.id, assetType: "companion", name: c.name, thumbnailUrl: getLibraryImageUrl(c), transparentUrl: c.transparentPreviewUrl, status: c.status, description: c.lore, tags: ["pet", "companion", c.affinity, c.role, c.rarity, c.status].filter(Boolean) }));
-  state.assets.forEach((a: any) => pushLibraryAsset(out, { id: `assets-${a.id}`, sourceCollection: "assets", sourceId: a.id, assetType: "prop", name: a.name, thumbnailUrl: getLibraryImageUrl(a), transparentUrl: a.transparentPreviewUrl, status: a.status, description: a.description, tags: ["asset", a.kind, a.backgroundMode, a.status].filter(Boolean) }));
-  state.arts.forEach((a: any) => pushLibraryAsset(out, { id: `arts-${a.id}`, sourceCollection: "arts", sourceId: a.id, assetType: "art", name: a.title || a.companionName || "Companion art", thumbnailUrl: getLibraryImageUrl(a) || a.manualComposition?.backgroundUrl, transparentUrl: a.transparentPreviewUrl, status: a.status, description: a.prompt, tags: ["art", a.subjectType, a.outputMode, a.compositionType, a.status].filter(Boolean) }));
+  state.npcs.forEach((n: any) => pushLibraryAsset(out, { id: `npcs-${n.id}`, sourceCollection: "npcs", sourceId: n.id, assetType: "npc", name: n.name, thumbnailUrl: getLibraryImageUrl(n), transparentUrl: getLibraryImageUrl(n, true), status: n.status, description: n.dialogue || n.visualNotes, tags: ["npc", n.role, n.realm, n.status].filter(Boolean) }));
+  state.companions.forEach((c: any) => pushLibraryAsset(out, { id: `companions-${c.id}`, sourceCollection: "companions", sourceId: c.id, assetType: "companion", name: c.name, thumbnailUrl: getLibraryImageUrl(c), transparentUrl: getLibraryImageUrl(c, true), status: c.status, description: c.lore, tags: ["pet", "companion", c.affinity, c.role, c.rarity, c.status].filter(Boolean) }));
+  state.assets.forEach((a: any) => pushLibraryAsset(out, { id: `assets-${a.id}`, sourceCollection: "assets", sourceId: a.id, assetType: "prop", name: a.name, thumbnailUrl: getLibraryImageUrl(a), transparentUrl: getLibraryImageUrl(a, true), status: a.status, description: a.description, tags: ["asset", a.kind, a.backgroundMode, a.status].filter(Boolean) }));
+  state.arts.forEach((a: any) => pushLibraryAsset(out, { id: `arts-${a.id}`, sourceCollection: "arts", sourceId: a.id, assetType: "art", name: a.title || a.companionName || "Companion art", thumbnailUrl: getLibraryImageUrl(a) || a.manualComposition?.backgroundUrl, transparentUrl: getLibraryImageUrl(a, true), status: a.status, description: a.prompt, tags: ["art", a.subjectType, a.outputMode, a.compositionType, a.status].filter(Boolean) }));
   state.scenes.forEach((sc: any) => pushLibraryAsset(out, { id: `scenes-${sc.id}`, sourceCollection: "scenes", sourceId: sc.id, assetType: "background", name: sc.name, thumbnailUrl: getLibraryImageUrl(sc), status: sc.status, description: sc.visualPrompt, tags: ["scene", sc.purpose, sc.realm, sc.status].filter(Boolean) }));
   state.realms.forEach((r: any) => pushLibraryAsset(out, { id: `realms-${r.id}`, sourceCollection: "realms", sourceId: r.id, assetType: "background", name: r.name, thumbnailUrl: getLibraryImageUrl(r), status: r.status, description: r.description || r.mapNotes, tags: ["realm", r.biome, r.tone, r.status].filter(Boolean) }));
   state.battleBgs.forEach((b: any) => pushLibraryAsset(out, { id: `battleBgs-${b.id}`, sourceCollection: "battleBgs", sourceId: b.id, assetType: "background", name: b.realm || b.environment || "Battle background", thumbnailUrl: getLibraryImageUrl(b), status: b.status, description: b.prompt, tags: ["battle-bg", b.environment, b.mood, b.timeOfDay, b.status].filter(Boolean) }));
@@ -2944,7 +3248,7 @@ const AssetLibraryTab: React.FC = () => {
           return (
             <Card key={asset.id} className="!p-3" data-testid={`asset-library-card-${asset.id}`}>
               <div className="aspect-square rounded-2xl border-4 border-white bg-bg overflow-hidden grid place-items-center">
-                {displayUrl ? <img src={displayUrl} alt={asset.name} className="w-full h-full object-cover" /> : <span className="text-xs text-ink-muted">No image</span>}
+                {displayUrl ? <img src={normalizeStudioImageUrl(displayUrl)} alt={asset.name} className="w-full h-full object-cover" /> : <span className="text-xs text-ink-muted">No image</span>}
               </div>
               <div className="mt-3">
                 <div className="flex items-center gap-2 justify-between">
@@ -3125,18 +3429,34 @@ const AssetsTab: React.FC = () => {
   const handleSavePalette = (hex: string) =>
     addPalette({ id: "pal-user-" + Date.now(), name: `Saved ${hex}`, colors: [hex], createdAt: new Date().toISOString() });
 
-  const generateImagePreview = () => {
+  const generateImagePreview = async () => {
     const prompt = buildAssetImagePrompt(draft);
     const from = draft.egg?.baseColor || draft.previewColor || "#9D8DF1";
     const to = draft.egg?.accentColor || draft.accentColor || "#FFF8DD";
-    const url = mockNanoBananaGenerateImage(prompt, { from: String(from), to: String(to) });
-    setGeneratedPreview({ url, prompt, provider: "prototype-generator" });
     setSavedPreview(null);
+    try {
+      const preview = await generateStudioImagePreview({
+        prompt,
+        contentType: "asset",
+        palette: { from: String(from), to: String(to) },
+      });
+      setGeneratedPreview(preview);
+    } catch (err) {
+      console.error(err);
+      setGeneratedPreview(null);
+      alert(err instanceof Error ? err.message : "Image generation failed.");
+    }
   };
 
-  const saveGeneratedPreview = () => {
+  const saveGeneratedPreview = async () => {
     if (!generatedPreview) return;
-    setSavedPreview(generatedPreview);
+    try {
+      const durablePreview = await makeDurableImagePreview(generatedPreview);
+      setSavedPreview(durablePreview);
+    } catch (err) {
+      console.error(err);
+      alert(err instanceof Error ? err.message : "Could not save generated image to local storage.");
+    }
   };
 
   const discardGeneratedPreview = () => {
@@ -3291,7 +3611,7 @@ const AssetsTab: React.FC = () => {
       renderItem={(i: StudioAsset) => (
         <div className="flex gap-3">
           {i.previewUrl ? (
-            <img src={i.previewUrl} alt={`${i.name} asset art`} className="w-16 h-16 object-cover rounded-2xl border-4 border-white shrink-0 shadow-lg" />
+            <img src={getImageUrl(i)} alt={`${i.name} asset art`} className="w-16 h-16 object-cover rounded-2xl border-4 border-white shrink-0 shadow-lg" />
           ) : (
             <div className="w-16 h-16 rounded-2xl border-4 border-white shrink-0" style={{ background: `linear-gradient(135deg, ${i.previewColor}, ${(i as any).accentColor || "#F4C753"})` }} aria-hidden />
           )}
@@ -3303,7 +3623,7 @@ const AssetsTab: React.FC = () => {
             {i.egg && <p className="text-[10px] font-bold text-primary mt-1">{i.egg.rarity} · shiny {i.egg.shinyChance}% · {i.egg.glowEffect} glow</p>}
             {i.badge && <p className="text-[10px] font-bold text-primary mt-1">{i.badge.badgeType} · {i.badge.iconShape}</p>}
             {i.description && <p className="text-xs text-ink-muted mt-1 line-clamp-2">{i.description}</p>}
-            <StudioViewEditButton collection="assets" item={i} title={i.name} imageUrl={i.previewUrl} />
+            <StudioViewEditButton collection="assets" item={i} title={i.name} imageUrl={getImageUrl(i)} />
           </div>
         </div>
       )}
@@ -3497,16 +3817,31 @@ const RealmsTab: React.FC = () => {
     }));
   };
 
-  const generateImagePreview = () => {
+  const generateImagePreview = async () => {
     const prompt = buildRealmImagePrompt(draft);
-    const url = mockNanoBananaGenerateImage(prompt, { from: "#E8F4E1", to: "#9D8DF1" });
-    setGeneratedPreview({ url, prompt, provider: "prototype-generator" });
     setSavedPreview(null);
+    try {
+      const preview = await generateStudioImagePreview({
+        prompt,
+        contentType: "studio-art",
+      });
+      setGeneratedPreview(preview);
+    } catch (err) {
+      console.error(err);
+      setGeneratedPreview(null);
+      alert(err instanceof Error ? err.message : "Image generation failed.");
+    }
   };
 
-  const saveGeneratedPreview = () => {
+  const saveGeneratedPreview = async () => {
     if (!generatedPreview) return;
-    setSavedPreview(generatedPreview);
+    try {
+      const durablePreview = await makeDurableImagePreview(generatedPreview);
+      setSavedPreview(durablePreview);
+    } catch (err) {
+      console.error(err);
+      alert(err instanceof Error ? err.message : "Could not save generated image to local storage.");
+    }
   };
 
   const discardGeneratedPreview = () => {
@@ -3624,7 +3959,7 @@ addItem("realms", item);
       renderItem={(i: StudioRealm) => (
         <div>
           {i.previewUrl && (
-            <img src={i.previewUrl} alt={`${i.name} realm concept`} className="w-full h-36 object-cover rounded-xl border-2 border-white mb-2" />
+            <img src={getImageUrl(i)} alt={`${i.name} realm concept`} className="w-full h-36 object-cover rounded-xl border-2 border-white mb-2" />
           )}
           <p className="h-display text-lg">{i.name}</p>
           <p className="text-[10px] font-extrabold uppercase text-ink-muted">{i.biome} {i.tone && `· ${i.tone}`}</p>
@@ -3635,7 +3970,7 @@ addItem("realms", item);
             <p className="text-[10px] font-extrabold text-primary mt-2">Hubs: {i.buildings.map((b) => b.replace(/-/g," ")).join(" · ")}</p>
           )}
           {i.mapNotes && <p className="text-[10px] font-bold text-ink-muted">{i.mapNotes}</p>}
-          <StudioViewEditButton collection="realms" item={i} title={i.name} imageUrl={i.previewUrl} />
+          <StudioViewEditButton collection="realms" item={i} title={i.name} imageUrl={getImageUrl(i)} />
         </div>
       )}
     />
@@ -3682,17 +4017,31 @@ const BattleBgsTab: React.FC = () => {
 
   const selectedRealm = realms.find((r) => r.id === draft.realmId);
 
-  const generateImagePreview = () => {
-    if (!selectedRealm && !draft.realm) return;
+  const generateImagePreview = async () => {
     const prompt = buildBattleBgImagePrompt(draft, selectedRealm);
-    const url = mockNanoBananaGenerateImage(prompt, { from: "#7BB7D6", to: "#FFF8DD" });
-    setGeneratedPreview({ url, prompt, provider: "prototype-generator" });
     setSavedPreview(null);
+    try {
+      const preview = await generateStudioImagePreview({
+        prompt,
+        contentType: "studio-art",
+      });
+      setGeneratedPreview(preview);
+    } catch (err) {
+      console.error(err);
+      setGeneratedPreview(null);
+      alert(err instanceof Error ? err.message : "Image generation failed.");
+    }
   };
 
-  const saveGeneratedPreview = () => {
+  const saveGeneratedPreview = async () => {
     if (!generatedPreview) return;
-    setSavedPreview(generatedPreview);
+    try {
+      const durablePreview = await makeDurableImagePreview(generatedPreview);
+      setSavedPreview(durablePreview);
+    } catch (err) {
+      console.error(err);
+      alert(err instanceof Error ? err.message : "Could not save generated image to local storage.");
+    }
   };
 
   const discardGeneratedPreview = () => {
@@ -3771,13 +4120,13 @@ const BattleBgsTab: React.FC = () => {
       renderItem={(i: StudioBattleBg) => (
         <div>
           {i.previewUrl && (
-            <img src={i.previewUrl} alt={`${i.realm} battle background`} className="w-full h-32 object-cover rounded-xl border-2 border-white" />
+            <img src={getImageUrl(i)} alt={`${i.realm} battle background`} className="w-full h-32 object-cover rounded-xl border-2 border-white" />
           )}
           <p className="h-display text-lg mt-2">{i.realm}</p>
           <p className="text-[10px] font-extrabold uppercase text-ink-muted">{i.environment}{i.timeOfDay && ` · ${i.timeOfDay}`}{i.mood && ` · ${i.mood}`}</p>
           {i.previewUrl && <p className="text-[10px] font-extrabold text-sage mt-1">Generated image attached · {i.imageProvider ?? "prototype"}</p>}
           <p className="text-xs text-ink-muted line-clamp-2 mt-1">{i.prompt}</p>
-          <StudioViewEditButton collection="battleBgs" item={i} title={i.realm} imageUrl={i.previewUrl} />
+          <StudioViewEditButton collection="battleBgs" item={i} title={i.realm} imageUrl={getImageUrl(i)} />
         </div>
       )}
     />
@@ -3829,16 +4178,31 @@ const ScenesTab: React.FC = () => {
   const selectedRealm = realms.find((r) => r.id === draft.realmId);
   const linkedNpcItems = (draft.npcIds ?? []).map((id) => npcs.find((n) => n.id === id)).filter(Boolean) as StudioNPC[];
 
-  const generateImagePreview = () => {
+  const generateImagePreview = async () => {
     const prompt = buildSceneImagePrompt(draft, selectedRealm, linkedNpcItems);
-    const url = mockNanoBananaGenerateImage(prompt, { from: "#FFF8DD", to: "#9D8DF1" });
-    setGeneratedPreview({ url, prompt, provider: "prototype-generator" });
     setSavedPreview(null);
+    try {
+      const preview = await generateStudioImagePreview({
+        prompt,
+        contentType: "studio-art",
+      });
+      setGeneratedPreview(preview);
+    } catch (err) {
+      console.error(err);
+      setGeneratedPreview(null);
+      alert(err instanceof Error ? err.message : "Image generation failed.");
+    }
   };
 
-  const saveGeneratedPreview = () => {
+  const saveGeneratedPreview = async () => {
     if (!generatedPreview) return;
-    setSavedPreview(generatedPreview);
+    try {
+      const durablePreview = await makeDurableImagePreview(generatedPreview);
+      setSavedPreview(durablePreview);
+    } catch (err) {
+      console.error(err);
+      alert(err instanceof Error ? err.message : "Could not save generated image to local storage.");
+    }
   };
 
   const discardGeneratedPreview = () => {
@@ -3918,14 +4282,14 @@ const ScenesTab: React.FC = () => {
       renderItem={(i: StudioScene) => (
         <div>
           {i.previewUrl && (
-            <img src={i.previewUrl} alt={`${i.name} scene concept`} className="w-full h-36 object-cover rounded-xl border-2 border-white mb-2" />
+            <img src={getImageUrl(i)} alt={`${i.name} scene concept`} className="w-full h-36 object-cover rounded-xl border-2 border-white mb-2" />
           )}
           <p className="h-display text-lg">{i.name}</p>
           <p className="text-[10px] font-extrabold uppercase text-ink-muted">{i.purpose.replace(/-/g," ")} · {i.realm}</p>
           {i.previewUrl && <p className="text-[10px] font-extrabold text-sage mt-1">Generated image attached · {i.imageProvider ?? "prototype"}</p>}
           <p className="text-xs text-ink-muted line-clamp-2 mt-1">{i.visualPrompt}</p>
           {!!i.npcs.length && <p className="text-[10px] font-extrabold text-primary mt-1">NPCs: {i.npcs.join(", ")}</p>}
-          <StudioViewEditButton collection="scenes" item={i} title={i.name} imageUrl={i.previewUrl} />
+          <StudioViewEditButton collection="scenes" item={i} title={i.name} imageUrl={getImageUrl(i)} />
         </div>
       )}
     />
@@ -4007,16 +4371,31 @@ const NpcsTab: React.FC = () => {
 
   const selectedRealm = realms.find((r) => r.id === draft.realmId);
 
-  const generateImagePreview = () => {
+  const generateImagePreview = async () => {
     const prompt = buildNPCImagePrompt(draft, selectedRealm);
-    const url = mockNanoBananaGenerateImage(prompt, { from: "#FFF8DD", to: "#9D8DF1" });
-    setGeneratedPreview({ url, prompt, provider: "prototype-generator" });
     setSavedPreview(null);
+    try {
+      const preview = await generateStudioImagePreview({
+        prompt,
+        contentType: "studio-art",
+      });
+      setGeneratedPreview(preview);
+    } catch (err) {
+      console.error(err);
+      setGeneratedPreview(null);
+      alert(err instanceof Error ? err.message : "Image generation failed.");
+    }
   };
 
-  const saveGeneratedPreview = () => {
+  const saveGeneratedPreview = async () => {
     if (!generatedPreview) return;
-    setSavedPreview(generatedPreview);
+    try {
+      const durablePreview = await makeDurableImagePreview(generatedPreview);
+      setSavedPreview(durablePreview);
+    } catch (err) {
+      console.error(err);
+      alert(err instanceof Error ? err.message : "Could not save generated image to local storage.");
+    }
   };
 
   const discardGeneratedPreview = () => {
@@ -4122,7 +4501,7 @@ const NpcsTab: React.FC = () => {
       renderItem={(i: StudioNPC) => (
         <div>
           {i.previewUrl && (
-            <img src={i.previewUrl} alt={`${i.name} NPC portrait`} className="w-full h-40 object-cover rounded-xl border-2 border-white mb-2" />
+            <img src={getImageUrl(i)} alt={`${i.name} NPC portrait`} className="w-full h-40 object-cover rounded-xl border-2 border-white mb-2" />
           )}
           <p className="h-display text-lg">{i.name}</p>
           <p className="text-[10px] font-extrabold uppercase text-ink-muted">{i.role}{i.customRole && ` · ${i.customRole}`} · {i.realm}</p>
@@ -4138,7 +4517,7 @@ const NpcsTab: React.FC = () => {
             <p className="text-[10px] font-bold text-ink-muted">Encouragement: <b className="text-primary">{i.encouragementStyle}</b></p>
           </div>
           <p className="text-[10px] font-extrabold text-sage mt-2">Safety: {i.safetyNotes}</p>
-          <StudioViewEditButton collection="npcs" item={i} title={i.name} imageUrl={i.previewUrl} />
+          <StudioViewEditButton collection="npcs" item={i} title={i.name} imageUrl={getImageUrl(i)} />
           <button type="button" onClick={() => useStudio.getState().setStatus("npcs", i.id, "archived")} className="btn-ghost !text-xs !py-1.5 !px-3 mt-2 w-full">Archive card</button>
           <button type="button" onClick={() => useStudio.getState().removeItem("npcs", i.id)} className="btn-ghost !text-xs !py-1.5 !px-3 mt-2 w-full text-danger"><Trash2 size={12} strokeWidth={3} /> Delete card</button>
         </div>
