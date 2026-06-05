@@ -749,7 +749,7 @@ const SceneComposerTab: React.FC = () => {
                     <img
                       src={imageUrl}
                       alt={asset.name}
-                      className="w-14 h-14 rounded-xl object-cover border-2 border-white shadow-sm bg-bg"
+                      className="w-14 h-14 rounded-xl object-contain border-2 border-white shadow-sm bg-bg"
                     />
                   ) : (
                     <div className="w-14 h-14 rounded-xl border-2 border-white shadow-sm grid place-items-center text-xl bg-bg">🎒</div>
@@ -1325,7 +1325,7 @@ const StudioViewEditButton: React.FC<StudioViewEditButtonProps> = ({ collection,
             {displayImageUrl && (
               <div className="mt-4">
                 <button type="button" onClick={() => setFullscreenImage(true)} className="group block w-full text-left">
-                  <img src={displayImageUrl} alt={`${displayTitle} full preview`} className="w-full max-h-[420px] object-cover rounded-2xl border-4 border-white shadow-lg transition group-hover:brightness-95" />
+                  <img src={displayImageUrl} alt={`${displayTitle} full preview`} className="w-full max-h-[420px] object-contain rounded-2xl border-4 border-white shadow-lg transition group-hover:brightness-95 bg-bg" />
                 </button>
                 <div className="flex flex-wrap gap-2 mt-2">
                   <button type="button" onClick={() => setFullscreenImage(true)} className="btn-outline !text-xs !py-1.5 !px-3">
@@ -1817,7 +1817,7 @@ const AvatarsTab: React.FC = () => {
       renderItem={(i: StudioAvatar) => (
         <div className="flex gap-3">
           {i.previewUrl ? (
-            <img src={getImageUrl(i)} alt={`${i.name} avatar asset`} className="w-16 h-16 object-cover rounded-2xl border-4 border-white shrink-0 shadow-lg" />
+            <img src={getImageUrl(i)} alt={`${i.name} avatar asset`} className="w-16 h-16 object-contain rounded-2xl border-4 border-white shrink-0 shadow-lg bg-bg" />
           ) : (
             <div className="w-16 h-16 rounded-2xl border-4 border-white shrink-0" style={{ background: i.previewColor }} aria-hidden />
           )}
@@ -2148,7 +2148,7 @@ const CompanionsTab: React.FC = () => {
         <div>
           <div className="flex items-start gap-3">
             {i.previewUrl ? (
-              <img src={getImageUrl(i)} alt={`${i.name} companion art`} className="w-16 h-16 object-cover rounded-2xl border-4 border-white shrink-0 shadow-lg" />
+              <img src={getImageUrl(i)} alt={`${i.name} companion art`} className="w-16 h-16 object-contain rounded-2xl border-4 border-white shrink-0 shadow-lg bg-bg" />
             ) : (
               <CompanionDot emoji={i.emoji} palette={i.palette} size={64} />
             )}
@@ -2565,7 +2565,7 @@ const EvolutionsTab: React.FC = () => {
       renderItem={(i: StudioEvolution) => (
         <div>
           {i.previewUrl && (
-            <img src={getImageUrl(i)} alt={`${i.evolutionName} evolution art`} className="w-full h-40 object-cover rounded-xl border-2 border-white mb-2" />
+            <img src={getImageUrl(i)} alt={`${i.evolutionName} evolution art`} className="w-full h-40 object-contain rounded-xl border-2 border-white mb-2 bg-bg" />
           )}
           <p className="h-display text-lg">{i.evolutionName} <span className="text-xs font-extrabold uppercase text-ink-muted">Stage {i.stageNumber}</span></p>
           <p className="text-[10px] font-extrabold uppercase text-ink-muted">Base: {i.baseCompanionName} · Academy: {i.academyInfluence}</p>
@@ -3138,7 +3138,7 @@ const ArtsTab: React.FC = () => {
       }
       renderItem={(i: StudioArt & Record<string, any>) => (
         <div>
-          {(i.previewUrl || i.manualComposition?.backgroundUrl) && <img src={getImageUrl(i) || normalizeStudioImageUrl(i.manualComposition?.backgroundUrl)} alt={`${i.title || i.companionName} companion art`} className="w-full h-40 object-cover rounded-xl border-2 border-white" />}
+          {(i.previewUrl || i.manualComposition?.backgroundUrl) && <img src={getImageUrl(i) || normalizeStudioImageUrl(i.manualComposition?.backgroundUrl)} alt={`${i.title || i.companionName} companion art`} className="w-full h-40 object-contain rounded-xl border-2 border-white bg-bg" />}
           <p className="h-display text-lg mt-2 truncate">{i.title || i.companionName}</p>
           <p className="text-[10px] font-extrabold uppercase text-ink-muted">{i.subjectType || "companion art"}{i.outputMode ? ` · ${i.outputMode}` : ""}</p>
           {i.npcs?.length > 0 && <p className="text-[10px] font-bold text-primary mt-1">NPCs: {i.npcs.join(" · ")}</p>}
@@ -3162,7 +3162,7 @@ const ArtsTab: React.FC = () => {
 // ============================================================================
 // ASSET LIBRARY — unified catalog for Studio + future Land Editor
 // ============================================================================
-type LibraryAssetType = "npc" | "companion" | "prop" | "background" | "art";
+type LibraryAssetType = "npc" | "companion" | "prop" | "background" | "art" | "ui" | "avatar" | "quest" | "misc";
 type AssetConsumerMode = "library" | "companion-art" | "land-editor";
 type LibraryAsset = {
   id: string;
@@ -3177,6 +3177,71 @@ type LibraryAsset = {
   description?: string;
   useHint?: string;
 };
+
+type ImportAssetType =
+  | "npc-portrait" | "npc-full-body" | "companion" | "companion-evolution"
+  | "avatar-part" | "avatar-hair" | "avatar-hat" | "avatar-outfit"
+  | "battle-background" | "realm-background" | "scene-environment" | "scene-prop"
+  | "building" | "tree" | "decoration" | "ui-icon" | "badge" | "sticker"
+  | "quest-item" | "inventory-item" | "misc";
+
+type ImportDestinationLibrary =
+  | "NPC Library" | "Companion Library" | "Avatar Library" | "Asset Library"
+  | "Realm Library" | "Battle BG Library" | "Scene Library" | "UI Library" | "Quest Library";
+
+const IMPORT_ASSET_TYPES: ImportAssetType[] = [
+  "npc-portrait", "npc-full-body", "companion", "companion-evolution",
+  "avatar-part", "avatar-hair", "avatar-hat", "avatar-outfit",
+  "battle-background", "realm-background", "scene-environment", "scene-prop",
+  "building", "tree", "decoration", "ui-icon", "badge", "sticker",
+  "quest-item", "inventory-item", "misc",
+];
+
+const IMPORT_DESTINATION_LIBRARIES: ImportDestinationLibrary[] = [
+  "NPC Library", "Companion Library", "Avatar Library", "Asset Library",
+  "Realm Library", "Battle BG Library", "Scene Library", "UI Library", "Quest Library",
+];
+
+const getImportAssetKind = (assetType: ImportAssetType): AssetKind => {
+  if (assetType === "ui-icon") return "icon";
+  if (assetType === "badge") return "badge";
+  if (assetType === "sticker") return "sticker";
+  if (assetType === "quest-item" || assetType === "inventory-item") return "item" as AssetKind;
+  if (assetType === "avatar-part" || assetType === "avatar-hair" || assetType === "avatar-hat" || assetType === "avatar-outfit") return "cosmetic" as AssetKind;
+  if (assetType === "battle-background" || assetType === "realm-background" || assetType === "scene-environment") return "background" as AssetKind;
+  if (assetType === "companion" || assetType === "companion-evolution" || assetType.startsWith("npc")) return "character" as AssetKind;
+  return "prop" as AssetKind;
+};
+
+const getLibraryAssetTypeFromImport = (assetType?: string): LibraryAssetType => {
+  if (!assetType) return "prop";
+  if (assetType.startsWith("npc")) return "npc";
+  if (assetType === "companion") return "companion";
+  if (assetType === "companion-evolution") return "companion";
+  if (assetType.startsWith("avatar")) return "avatar";
+  if (assetType.includes("background") || assetType.includes("scene-environment")) return "background";
+  if (assetType.includes("ui") || assetType === "badge" || assetType === "sticker") return "ui";
+  if (assetType.includes("quest") || assetType.includes("inventory")) return "quest";
+  if (assetType === "misc") return "misc";
+  return "prop";
+};
+
+const getImportRecommendedSpec = (assetType: ImportAssetType): string => {
+  if (assetType === "ui-icon" || assetType === "badge" || assetType === "sticker") return "Recommended: PNG, 512x512, transparent background.";
+  if (assetType === "battle-background") return "Recommended: PNG or WebP, 1920x1080, full background.";
+  if (assetType === "realm-background") return "Recommended: PNG or WebP, 2048x1152, full background.";
+  if (assetType === "scene-environment") return "Recommended: PNG or WebP, 1920x1080, full background.";
+  return "Recommended: PNG, 1024x1024, transparent or flat white removable background.";
+};
+
+const readFileAsDataUrl = (file: File): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+
 const getLibraryImageUrl = (item: any, preferTransparent = false): string =>
   normalizeStudioImageUrl((preferTransparent ? item?.transparentPreviewUrl : "") || item?.previewUrl || item?.imageUrl || item?.generatedImageUrl || item?.url || "");
 const pushLibraryAsset = (out: LibraryAsset[], asset: LibraryAsset) => {
@@ -3187,7 +3252,7 @@ const buildStudioAssetLibrary = (state: ReturnType<typeof useStudio.getState>): 
   const out: LibraryAsset[] = [];
   state.npcs.forEach((n: any) => pushLibraryAsset(out, { id: `npcs-${n.id}`, sourceCollection: "npcs", sourceId: n.id, assetType: "npc", name: n.name, thumbnailUrl: getLibraryImageUrl(n), transparentUrl: getLibraryImageUrl(n, true), status: n.status, description: n.dialogue || n.visualNotes, tags: ["npc", n.role, n.realm, n.status].filter(Boolean) }));
   state.companions.forEach((c: any) => pushLibraryAsset(out, { id: `companions-${c.id}`, sourceCollection: "companions", sourceId: c.id, assetType: "companion", name: c.name, thumbnailUrl: getLibraryImageUrl(c), transparentUrl: getLibraryImageUrl(c, true), status: c.status, description: c.lore, tags: ["pet", "companion", c.affinity, c.role, c.rarity, c.status].filter(Boolean) }));
-  state.assets.forEach((a: any) => pushLibraryAsset(out, { id: `assets-${a.id}`, sourceCollection: "assets", sourceId: a.id, assetType: "prop", name: a.name, thumbnailUrl: getLibraryImageUrl(a), transparentUrl: getLibraryImageUrl(a, true), status: a.status, description: a.description, tags: ["asset", a.kind, a.backgroundMode, a.status].filter(Boolean) }));
+  state.assets.forEach((a: any) => pushLibraryAsset(out, { id: `assets-${a.id}`, sourceCollection: "assets", sourceId: a.id, assetType: getLibraryAssetTypeFromImport(a.importAssetType) || "prop", name: a.name, thumbnailUrl: getLibraryImageUrl(a), transparentUrl: getLibraryImageUrl(a, true), status: a.status, description: a.description, tags: ["asset", a.kind, a.importAssetType, a.destinationLibrary, a.backgroundMode, a.status, ...(Array.isArray(a.importTags) ? a.importTags : [])].filter(Boolean) }));
   state.arts.forEach((a: any) => pushLibraryAsset(out, { id: `arts-${a.id}`, sourceCollection: "arts", sourceId: a.id, assetType: "art", name: a.title || a.companionName || "Companion art", thumbnailUrl: getLibraryImageUrl(a) || a.manualComposition?.backgroundUrl, transparentUrl: getLibraryImageUrl(a, true), status: a.status, description: a.prompt, tags: ["art", a.subjectType, a.outputMode, a.compositionType, a.status].filter(Boolean) }));
   state.scenes.forEach((sc: any) => pushLibraryAsset(out, { id: `scenes-${sc.id}`, sourceCollection: "scenes", sourceId: sc.id, assetType: "background", name: sc.name, thumbnailUrl: getLibraryImageUrl(sc), status: sc.status, description: sc.visualPrompt, tags: ["scene", sc.purpose, sc.realm, sc.status].filter(Boolean) }));
   state.realms.forEach((r: any) => pushLibraryAsset(out, { id: `realms-${r.id}`, sourceCollection: "realms", sourceId: r.id, assetType: "background", name: r.name, thumbnailUrl: getLibraryImageUrl(r), status: r.status, description: r.description || r.mapNotes, tags: ["realm", r.biome, r.tone, r.status].filter(Boolean) }));
@@ -3196,12 +3261,24 @@ const buildStudioAssetLibrary = (state: ReturnType<typeof useStudio.getState>): 
 };
 const AssetLibraryTab: React.FC = () => {
   const studio = useStudio();
+  const addItem = useStudio((s) => s.addItem);
   const [consumerMode, setConsumerMode] = useState<AssetConsumerMode>("library");
   const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([]);
   const libraryAssets = useMemo(() => buildStudioAssetLibrary(studio), [studio]);
   const [query, setQuery] = useState("");
   const [type, setType] = useState<LibraryAssetType | "all">("all");
   const [transparentOnly, setTransparentOnly] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importName, setImportName] = useState("");
+  const [importDescription, setImportDescription] = useState("");
+  const [importTags, setImportTags] = useState("");
+  const [importAssetType, setImportAssetType] = useState<ImportAssetType>("npc-full-body");
+  const [importDestinationLibrary, setImportDestinationLibrary] = useState<ImportDestinationLibrary>("Asset Library");
+  const [importSource, setImportSource] = useState("");
+  const [importFileName, setImportFileName] = useState("");
+  const [importImageDataUrl, setImportImageDataUrl] = useState("");
+  const [importError, setImportError] = useState("");
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return libraryAssets.filter((asset) => {
@@ -3219,28 +3296,135 @@ const AssetLibraryTab: React.FC = () => {
     await navigator.clipboard?.writeText(JSON.stringify(payload, null, 2));
     alert("Asset reference copied. Use this as lightweight scene/composition metadata.");
   };
+
+  const resetImportForm = () => {
+    setImportName("");
+    setImportDescription("");
+    setImportTags("");
+    setImportAssetType("npc-full-body");
+    setImportDestinationLibrary("Asset Library");
+    setImportSource("");
+    setImportFileName("");
+    setImportImageDataUrl("");
+    setImportError("");
+  };
+
+  const handleImportFile = async (file?: File) => {
+    setImportError("");
+    if (!file) return;
+    const allowed = ["image/png", "image/webp", "image/jpeg"];
+    if (!allowed.includes(file.type)) {
+      setImportError("Unsupported file type. Import PNG, WebP, or JPG/JPEG only.");
+      return;
+    }
+    if (file.type === "image/jpeg" && !["battle-background", "realm-background", "scene-environment"].includes(importAssetType)) {
+      setImportError("JPG/JPEG is best for full backgrounds only. Use PNG/WebP for characters, props, UI, and transparent assets.");
+      return;
+    }
+    const dataUrl = await readFileAsDataUrl(file);
+    if (isOversizedDataUrl(dataUrl)) {
+      setImportError("This image is too large for prototype browser storage. Export a smaller PNG/WebP or wait for backend asset storage.");
+      return;
+    }
+    setImportImageDataUrl(dataUrl);
+    setImportFileName(file.name);
+    if (!importName.trim()) setImportName(file.name.replace(/\.[^.]+$/, "").replace(/[-_]+/g, " "));
+  };
+
+  const submitImportedAsset = () => {
+    if (!importImageDataUrl) {
+      setImportError("Choose an image file first.");
+      return;
+    }
+    const tags = importTags.split(",").map((tag) => tag.trim()).filter(Boolean);
+    const item: StudioAsset = {
+      ...baseMeta("user"),
+      id: `as-import-${Date.now()}`,
+      name: importName.trim() || importFileName.replace(/\.[^.]+$/, "") || "Imported asset",
+      kind: getImportAssetKind(importAssetType),
+      previewColor: "#9D8DF1",
+      description: importDescription,
+      previewUrl: importImageDataUrl,
+      transparentPreviewUrl: importImageDataUrl,
+      imageProvider: importSource ? `import:${importSource}` : "import:local-file",
+      promptUsed: "Imported manually through Asset Library. No image-generation provider required.",
+      importAssetType,
+      destinationLibrary: importDestinationLibrary,
+      importFileName,
+      importTags: tags,
+      importRecommendedSpec: getImportRecommendedSpec(importAssetType),
+    } as any;
+    addItem("assets", item);
+    resetImportForm();
+    setImportOpen(false);
+  };
+
   return (
     <div className="space-y-4" data-testid="asset-library-tab">
       <Card>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="h-display text-2xl">Asset Library</h2>
-            <p className="text-sm text-ink-muted">Unified catalog for Studio assets. This stays metadata-first and storage-safe for the future Land Editor.</p>
+            <p className="text-sm text-ink-muted">Unified catalog for Studio assets. Import external images, review them as cards, and reuse them across the Studio.</p>
           </div>
-          <span className="chip">{libraryAssets.length} usable image assets</span>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={() => setImportOpen((v) => !v)} className="btn-primary !text-sm !py-2 !px-4" data-testid="asset-library-import-toggle">+ Import Asset</button>
+            <span className="chip">{libraryAssets.length} usable image assets</span>
+          </div>
         </div>
         <div className="grid md:grid-cols-[1fr,220px,220px,180px] gap-3 mt-4 items-end">
           <Field label="Search assets"><TextField testid="asset-library-search" value={query} onChange={setQuery} placeholder="Search NPCs, pets, props, scenes…" /></Field>
-          <Field label="Category"><SelectField testid="asset-library-type" value={type} onChange={(v) => setType(v as any)} options={["all", "npc", "companion", "prop", "background", "art"]} /></Field>
+          <Field label="Category"><SelectField testid="asset-library-type" value={type} onChange={(v) => setType(v as any)} options={["all", "npc", "companion", "prop", "background", "art", "ui", "avatar", "quest", "misc"]} /></Field>
           <Field label="Use mode"><SelectField testid="asset-library-consumer-mode" value={consumerMode} onChange={(v) => setConsumerMode(v as AssetConsumerMode)} options={["library", "companion-art", "land-editor"]} /></Field>
           <label className="inline-flex items-center gap-2 px-3 py-3 rounded-full bg-white border-2 border-white text-sm font-extrabold">
             <input type="checkbox" checked={transparentOnly} onChange={(e) => setTransparentOnly(e.target.checked)} className="w-5 h-5 accent-primary" /> Transparent only
           </label>
         </div>
         <div className="flex flex-wrap gap-2 mt-3 text-xs font-extrabold text-ink-muted">
-          <span className="chip">NPCs {counts.npc || 0}</span><span className="chip">Pets {counts.companion || 0}</span><span className="chip">Props {counts.prop || 0}</span><span className="chip">Backgrounds {counts.background || 0}</span><span className="chip">Art {counts.art || 0}</span>
+          <span className="chip">NPCs {counts.npc || 0}</span><span className="chip">Pets {counts.companion || 0}</span><span className="chip">Props {counts.prop || 0}</span><span className="chip">Backgrounds {counts.background || 0}</span><span className="chip">Art {counts.art || 0}</span><span className="chip">UI {counts.ui || 0}</span><span className="chip">Avatar {counts.avatar || 0}</span>
         </div>
       </Card>
+
+      {importOpen && (
+        <Card data-testid="asset-library-import-panel">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h3 className="h-display text-xl">Import image asset</h3>
+              <p className="text-sm text-ink-muted">Bring in art generated elsewhere and save it as a reusable Studio asset card.</p>
+            </div>
+            <span className="chip">{getImportRecommendedSpec(importAssetType)}</span>
+          </div>
+          <div className="grid md:grid-cols-2 gap-3 mt-4">
+            <Field label="Asset name"><TextField testid="asset-import-name" value={importName} onChange={setImportName} placeholder="e.g. Sage the Cozy" /></Field>
+            <Field label="Asset type"><SelectField testid="asset-import-type" value={importAssetType} onChange={(v) => { setImportAssetType(v as ImportAssetType); setImportError(""); }} options={IMPORT_ASSET_TYPES} /></Field>
+            <Field label="Destination library"><SelectField testid="asset-import-library" value={importDestinationLibrary} onChange={(v) => setImportDestinationLibrary(v as ImportDestinationLibrary)} options={IMPORT_DESTINATION_LIBRARIES} /></Field>
+            <Field label="Source/provider note"><TextField testid="asset-import-source" value={importSource} onChange={setImportSource} placeholder="ChatGPT, Midjourney, artist, local file…" /></Field>
+            <Field label="Tags" full><TextField testid="asset-import-tags" value={importTags} onChange={setImportTags} placeholder="guide, cozy, npc, academy" /></Field>
+            <Field label="Description / notes" full><TextArea testid="asset-import-description" value={importDescription} onChange={setImportDescription} placeholder="Short notes, intended use, or source prompt summary." /></Field>
+            <Field label="Image file" full>
+              <input data-testid="asset-import-file" type="file" accept="image/png,image/webp,image/jpeg" onChange={(e) => handleImportFile(e.target.files?.[0])} className="block w-full text-sm font-bold text-ink file:mr-4 file:rounded-full file:border-0 file:bg-primary file:px-4 file:py-2 file:text-sm file:font-extrabold file:text-white" />
+              <p className="text-xs text-ink-muted mt-2">PNG/WebP preferred. JPG/JPEG should only be used for full backgrounds.</p>
+            </Field>
+          </div>
+          {importError && <div className="mt-3 rounded-2xl bg-danger/10 border-2 border-danger/30 p-3 text-sm font-bold text-danger">{importError}</div>}
+          {importImageDataUrl && (
+            <div className="mt-4 grid md:grid-cols-[220px,1fr] gap-4 items-start">
+              <img src={importImageDataUrl} alt="Import preview" className="w-full aspect-square object-contain rounded-2xl border-4 border-white bg-bg shadow-lg" />
+              <div className="rounded-2xl bg-bg border-2 border-white p-3">
+                <p className="text-[10px] font-extrabold uppercase text-ink-muted">Ready to import</p>
+                <p className="font-extrabold mt-1">{importName || importFileName}</p>
+                <p className="text-xs text-ink-muted mt-1">{importAssetType} → {importDestinationLibrary}</p>
+                <p className="text-xs text-ink-muted mt-1">{getImportRecommendedSpec(importAssetType)}</p>
+              </div>
+            </div>
+          )}
+          <div className="flex flex-wrap gap-2 mt-4">
+            <button type="button" onClick={submitImportedAsset} className="btn-primary !text-sm !py-2 !px-4" disabled={!importImageDataUrl}>Save imported asset</button>
+            <button type="button" onClick={resetImportForm} className="btn-ghost !text-sm !py-2 !px-4">Reset import</button>
+          </div>
+        </Card>
+      )}
+
       {selectedAssets.length > 0 && <Card><div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="h-display text-xl">Selected asset references</h3><p className="text-sm text-ink-muted">Phase 2 handoff for Companion Art and the upcoming Land Editor. These are lightweight refs, not duplicated images.</p></div><button type="button" onClick={() => setSelectedAssetIds([])} className="btn-ghost !text-sm !py-2 !px-4">Clear selection</button></div><pre className="mt-3 text-[10px] overflow-auto max-h-48 whitespace-pre-wrap bg-bg border-2 border-white rounded-2xl p-3">{JSON.stringify(selectedAssets.map((asset) => ({ sourceCollection: asset.sourceCollection, sourceId: asset.sourceId, assetType: asset.assetType, name: asset.name, url: asset.transparentUrl || asset.thumbnailUrl, tags: asset.tags })), null, 2)}</pre></Card>}
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         {filtered.map((asset) => {
@@ -3248,7 +3432,7 @@ const AssetLibraryTab: React.FC = () => {
           return (
             <Card key={asset.id} className="!p-3" data-testid={`asset-library-card-${asset.id}`}>
               <div className="aspect-square rounded-2xl border-4 border-white bg-bg overflow-hidden grid place-items-center">
-                {displayUrl ? <img src={normalizeStudioImageUrl(displayUrl)} alt={asset.name} className="w-full h-full object-cover" /> : <span className="text-xs text-ink-muted">No image</span>}
+                {displayUrl ? <img src={normalizeStudioImageUrl(displayUrl)} alt={asset.name} className="w-full h-full object-contain" /> : <span className="text-xs text-ink-muted">No image</span>}
               </div>
               <div className="mt-3">
                 <div className="flex items-center gap-2 justify-between">
@@ -3256,7 +3440,7 @@ const AssetLibraryTab: React.FC = () => {
                   {asset.status && <StatusChip status={asset.status} />}
                 </div>
                 <p className="text-[10px] font-extrabold uppercase text-ink-muted">{asset.assetType} · {asset.sourceCollection}</p>
-                {asset.transparentUrl && <p className="text-[10px] font-extrabold text-sage mt-1">Transparent variant available</p>}
+                {asset.transparentUrl && <p className="text-[10px] font-extrabold text-sage mt-1">Transparent/imported variant available</p>}
                 {asset.description && <p className="text-xs text-ink-muted line-clamp-2 mt-1">{asset.description}</p>}
                 <div className="flex flex-wrap gap-1 mt-2">{asset.tags.slice(0, 5).map((tag) => <span key={tag} className="px-2 py-0.5 rounded-full bg-bg text-[10px] font-bold text-ink-muted">{tag}</span>)}</div>
                 <div className="grid grid-cols-1 gap-2 mt-3">
@@ -3269,7 +3453,7 @@ const AssetLibraryTab: React.FC = () => {
           );
         })}
       </div>
-      {filtered.length === 0 && <Card><p className="text-sm text-ink-muted">No assets match those filters. Generate or save images on NPCs, pets, props, scenes, realms, battle BGs, or art cards first.</p></Card>}
+      {filtered.length === 0 && <Card><p className="text-sm text-ink-muted">No assets match those filters. Import art, generate/save images on cards, or clear filters.</p></Card>}
     </div>
   );
 };
@@ -3611,7 +3795,7 @@ const AssetsTab: React.FC = () => {
       renderItem={(i: StudioAsset) => (
         <div className="flex gap-3">
           {i.previewUrl ? (
-            <img src={getImageUrl(i)} alt={`${i.name} asset art`} className="w-16 h-16 object-cover rounded-2xl border-4 border-white shrink-0 shadow-lg" />
+            <img src={getImageUrl(i)} alt={`${i.name} asset art`} className="w-16 h-16 object-contain rounded-2xl border-4 border-white shrink-0 shadow-lg bg-bg" />
           ) : (
             <div className="w-16 h-16 rounded-2xl border-4 border-white shrink-0" style={{ background: `linear-gradient(135deg, ${i.previewColor}, ${(i as any).accentColor || "#F4C753"})` }} aria-hidden />
           )}
@@ -3959,7 +4143,7 @@ addItem("realms", item);
       renderItem={(i: StudioRealm) => (
         <div>
           {i.previewUrl && (
-            <img src={getImageUrl(i)} alt={`${i.name} realm concept`} className="w-full h-36 object-cover rounded-xl border-2 border-white mb-2" />
+            <img src={getImageUrl(i)} alt={`${i.name} realm concept`} className="w-full h-36 object-contain rounded-xl border-2 border-white mb-2 bg-bg" />
           )}
           <p className="h-display text-lg">{i.name}</p>
           <p className="text-[10px] font-extrabold uppercase text-ink-muted">{i.biome} {i.tone && `· ${i.tone}`}</p>
@@ -4120,7 +4304,7 @@ const BattleBgsTab: React.FC = () => {
       renderItem={(i: StudioBattleBg) => (
         <div>
           {i.previewUrl && (
-            <img src={getImageUrl(i)} alt={`${i.realm} battle background`} className="w-full h-32 object-cover rounded-xl border-2 border-white" />
+            <img src={getImageUrl(i)} alt={`${i.realm} battle background`} className="w-full h-32 object-contain rounded-xl border-2 border-white bg-bg" />
           )}
           <p className="h-display text-lg mt-2">{i.realm}</p>
           <p className="text-[10px] font-extrabold uppercase text-ink-muted">{i.environment}{i.timeOfDay && ` · ${i.timeOfDay}`}{i.mood && ` · ${i.mood}`}</p>
@@ -4282,7 +4466,7 @@ const ScenesTab: React.FC = () => {
       renderItem={(i: StudioScene) => (
         <div>
           {i.previewUrl && (
-            <img src={getImageUrl(i)} alt={`${i.name} scene concept`} className="w-full h-36 object-cover rounded-xl border-2 border-white mb-2" />
+            <img src={getImageUrl(i)} alt={`${i.name} scene concept`} className="w-full h-36 object-contain rounded-xl border-2 border-white mb-2 bg-bg" />
           )}
           <p className="h-display text-lg">{i.name}</p>
           <p className="text-[10px] font-extrabold uppercase text-ink-muted">{i.purpose.replace(/-/g," ")} · {i.realm}</p>
@@ -4501,7 +4685,7 @@ const NpcsTab: React.FC = () => {
       renderItem={(i: StudioNPC) => (
         <div>
           {i.previewUrl && (
-            <img src={getImageUrl(i)} alt={`${i.name} NPC portrait`} className="w-full h-40 object-cover rounded-xl border-2 border-white mb-2" />
+            <img src={getImageUrl(i)} alt={`${i.name} NPC portrait`} className="w-full h-40 object-contain rounded-xl border-2 border-white mb-2 bg-bg" />
           )}
           <p className="h-display text-lg">{i.name}</p>
           <p className="text-[10px] font-extrabold uppercase text-ink-muted">{i.role}{i.customRole && ` · ${i.customRole}`} · {i.realm}</p>
