@@ -143,7 +143,7 @@ const exportTransparentPngFromUrl = async (url: string, filenameBase: string) =>
     const height = canvas.height;
     const total = width * height;
 
-    const samplePixel = (x: number, y: number) => {
+    const samplePixel = (x: number, y: number): readonly [number, number, number] => {
       const idx = (y * width + x) * 4;
       return [data[idx], data[idx + 1], data[idx + 2]] as const;
     };
@@ -157,9 +157,13 @@ const exportTransparentPngFromUrl = async (url: string, filenameBase: string) =>
       edgeSamples.push(samplePixel(0, y), samplePixel(width - 1, y));
     }
 
-    const bg = edgeSamples.reduce(
-      (acc, c) => [acc[0] + c[0] / edgeSamples.length, acc[1] + c[1] / edgeSamples.length, acc[2] + c[2] / edgeSamples.length],
-      [0, 0, 0]
+    const bg = edgeSamples.reduce<readonly [number, number, number]>(
+      (acc, c) => [
+        acc[0] + c[0] / edgeSamples.length,
+        acc[1] + c[1] / edgeSamples.length,
+        acc[2] + c[2] / edgeSamples.length,
+      ] as const,
+      [0, 0, 0] as const
     );
 
     const distanceFromBg = (idx: number) => {
@@ -278,7 +282,7 @@ const createTransparentPngDataUrlFromUrl = async (url: string): Promise<string> 
   const width = canvas.width;
   const height = canvas.height;
   const total = width * height;
-  const samplePixel = (x: number, y: number) => {
+  const samplePixel = (x: number, y: number): readonly [number, number, number] => {
     const idx = (y * width + x) * 4;
     return [data[idx], data[idx + 1], data[idx + 2]] as const;
   };
@@ -286,7 +290,14 @@ const createTransparentPngDataUrlFromUrl = async (url: string): Promise<string> 
   const sampleEvery = Math.max(1, Math.floor(Math.min(width, height) / 24));
   for (let x = 0; x < width; x += sampleEvery) edgeSamples.push(samplePixel(x, 0), samplePixel(x, height - 1));
   for (let y = 0; y < height; y += sampleEvery) edgeSamples.push(samplePixel(0, y), samplePixel(width - 1, y));
-  const bg = edgeSamples.reduce((acc, c) => [acc[0] + c[0] / edgeSamples.length, acc[1] + c[1] / edgeSamples.length, acc[2] + c[2] / edgeSamples.length], [0, 0, 0]);
+  const bg = edgeSamples.reduce<readonly [number, number, number]>(
+    (acc, c) => [
+      acc[0] + c[0] / edgeSamples.length,
+      acc[1] + c[1] / edgeSamples.length,
+      acc[2] + c[2] / edgeSamples.length,
+    ] as const,
+    [0, 0, 0] as const
+  );
   const distanceFromBg = (idx: number) => {
     const r = data[idx]; const g = data[idx + 1]; const b = data[idx + 2];
     return Math.sqrt((r - bg[0]) ** 2 + (g - bg[1]) ** 2 + (b - bg[2]) ** 2);
@@ -571,6 +582,15 @@ const SceneComposerTab: React.FC = () => {
   const selectedLayer = layers.find((layer) => layer.id === selectedLayerId) ?? null;
 
   const backgroundOptions = useMemo(() => {
+    const importedBackgroundAssets = libraryAssets
+      .filter((asset) => asset.assetType === "background" && !!getComposerBackgroundImageUrl(asset))
+      .map((asset) => ({
+        id: `asset:${asset.id}`,
+        label: asset.name,
+        sublabel: `Imported background · ${asset.sourceCollection}${asset.status ? ` · ${asset.status}` : ""}`,
+        url: getComposerBackgroundImageUrl(asset),
+      }));
+
     if (backgroundMode === "scene") {
       return scenes
         .map((sc) => ({ id: sc.id, label: sc.name, sublabel: `${sc.purpose} · ${sc.realm}`, url: getComposerBackgroundImageUrl(sc) }))
@@ -582,12 +602,14 @@ const SceneComposerTab: React.FC = () => {
         .filter((x) => !!x.url);
     }
     if (backgroundMode === "battleBg") {
-      return battleBgs
+      const sourceBattleBackgrounds = battleBgs
         .map((b) => ({ id: b.id, label: b.realm || b.environment || "Battle background", sublabel: `${b.environment || "battle bg"} · ${b.status}`, url: getComposerBackgroundImageUrl(b) }))
         .filter((x) => !!x.url);
+
+      return [...sourceBattleBackgrounds, ...importedBackgroundAssets];
     }
     return [];
-  }, [backgroundMode, scenes, realms, battleBgs]);
+  }, [backgroundMode, scenes, realms, battleBgs, libraryAssets]);
 
   const selectedBackground = backgroundOptions.find((bg) => bg.id === backgroundId) ?? null;
 
@@ -1846,7 +1868,7 @@ type CompanionGeneratedPreview = {
   provider: string;
 };
 
-const COMPANION_MOVE_CATEGORIES = ["attack", "support", "defense", "utility"] as const;
+const COMPANION_MOVE_CATEGORIES = ["attack", "support", "defense", "utility"];
 const COMPANION_MOVE_DB = [
   { name: "Pat", affinity: "all", category: "support", defaultLevel: 1, flavor: "gentle comfort move" },
   { name: "Warm Hug", affinity: "all", category: "support", defaultLevel: 3, flavor: "friendly encouragement move" },
@@ -1858,7 +1880,7 @@ const COMPANION_MOVE_DB = [
   { name: "Breeze Veil", affinity: "air", category: "support", defaultLevel: 99, flavor: "soft wind support veil" },
   { name: "Glow Guard", affinity: "star", category: "defense", defaultLevel: 99, flavor: "friendly glowing guard" },
   { name: "Snack Cheer", affinity: "all", category: "utility", defaultLevel: 99, flavor: "happy utility boost" },
-] as const;
+];
 
 const DEFAULT_COMPANION_MOVE_ROWS = [
   { moveName: "Pat", unlockLevel: 1, category: "support" },
@@ -1869,7 +1891,7 @@ const DEFAULT_COMPANION_MOVE_ROWS = [
   { moveName: "Leaf Twirl", unlockLevel: 99, category: "attack" },
   { moveName: "Breeze Veil", unlockLevel: 99, category: "support" },
   { moveName: "Snack Cheer", unlockLevel: 99, category: "utility" },
-] as const;
+];
 
 const normalizeCompanionMoveRows = (moves?: string[]) => {
   const source = moves && moves.length ? moves : DEFAULT_COMPANION_MOVE_ROWS.map((m) => `Lv ${m.unlockLevel} · ${m.category} · ${m.moveName}`);
@@ -2202,10 +2224,10 @@ type EvolutionGeneratedPreview = {
   provider: string;
 };
 
-const EVOLUTION_TYPES = ["minor", "major", "final", "alternate", "shiny-only"] as const;
-const EVOLUTION_BACKGROUND_MODES = ["transparent-ready", "plain removable background", "simple light background", "game UI presentation"] as const;
-const EVOLUTION_PALETTE_RELATIONSHIPS = ["preserve base palette", "darker / stronger version", "lighter / angelic version", "shiny alternate", "complementary colors", "custom palette"] as const;
-const EVOLUTION_INTENSITIES = ["subtle first evolution", "clear second form", "final form", "alternate form"] as const;
+const EVOLUTION_TYPES = ["minor", "major", "final", "alternate", "shiny-only"];
+const EVOLUTION_BACKGROUND_MODES = ["transparent-ready", "plain removable background", "simple light background", "game UI presentation"];
+const EVOLUTION_PALETTE_RELATIONSHIPS = ["preserve base palette", "darker / stronger version", "lighter / angelic version", "shiny alternate", "complementary colors", "custom palette"];
+const EVOLUTION_INTENSITIES = ["subtle first evolution", "clear second form", "final form", "alternate form"];
 
 const getEvolutionStatGrowth = (stage: number, evolutionType?: string) => {
   if (evolutionType === "shiny-only") return { hp: 0, attack: 0, defense: 0, speed: 0 };
@@ -2595,10 +2617,10 @@ const EvolutionsTab: React.FC = () => {
 // ============================================================================
 type ArtGeneratedPreview = { url: string; prompt: string; provider: string };
 
-const ART_SUBJECT_TYPES = ["pet", "npc", "pet + npc", "two npcs", "scene moment", "realm vignette"] as const;
-const ART_COMPOSITION_TYPES = ["buddy pose", "teaching moment", "quest handoff", "shop interaction", "celebration", "portrait card", "scene vignette"] as const;
-const ART_OUTPUT_MODES = ["manual composition", "transparent character group", "full scene illustration", "square promo art", "banner/key art"] as const;
-const ART_CANVAS_RATIOS = ["16:9", "1:1", "4:5", "3:4"] as const;
+const ART_SUBJECT_TYPES = ["pet", "npc", "pet + npc", "two npcs", "scene moment", "realm vignette"];
+const ART_COMPOSITION_TYPES = ["buddy pose", "teaching moment", "quest handoff", "shop interaction", "celebration", "portrait card", "scene vignette"];
+const ART_OUTPUT_MODES = ["manual composition", "transparent character group", "full scene illustration", "square promo art", "banner/key art"];
+const ART_CANVAS_RATIOS = ["16:9", "1:1", "4:5", "3:4"];
 
 type ManualCompositionLayer = {
   id: string;
@@ -2657,7 +2679,15 @@ const summarizeRealmForArt = (r?: StudioRealm) => r ? `${r.name}, ${r.biome}, ${
 
 const getImageUrl = (item?: any, preferTransparent = false): string => {
   if (!item) return "";
-  const url = (preferTransparent ? item.transparentPreviewUrl : "") || item.previewUrl || item.imageUrl || item.generatedImageUrl || item.url || "";
+  const url =
+    (preferTransparent ? item.transparentPreviewUrl || item.transparentUrl : "") ||
+    item.previewUrl ||
+    item.imageUrl ||
+    item.generatedImageUrl ||
+    item.url ||
+    item.backgroundUrl ||
+    item.manualComposition?.backgroundUrl ||
+    "";
   return normalizeStudioImageUrl(url);
 };
 
@@ -3178,6 +3208,271 @@ type LibraryAsset = {
   useHint?: string;
 };
 
+
+
+type PromptBuilderAssetType =
+  | "npc-full-body" | "npc-portrait" | "companion" | "companion-evolution"
+  | "avatar-asset" | "ui-icon" | "prop" | "quest-item"
+  | "battle-background" | "realm-overview" | "scene-environment";
+
+const PROMPT_BUILDER_TYPES: PromptBuilderAssetType[] = [
+  "npc-full-body", "npc-portrait", "companion", "companion-evolution",
+  "avatar-asset", "ui-icon", "prop", "quest-item",
+  "battle-background", "realm-overview", "scene-environment",
+];
+
+const ENVIRONMENT_PROMPT_TYPES: PromptBuilderAssetType[] = ["battle-background", "realm-overview", "scene-environment"];
+const OBJECT_PROMPT_TYPES: PromptBuilderAssetType[] = ["avatar-asset", "ui-icon", "prop", "quest-item"];
+
+const LOCATION_PRESETS = ["sunlit meadow path", "library interior", "snowy grove", "crystal pond", "academy courtyard", "book bridge", "floating classroom ruins", "custom"];
+const MOOD_PRESETS = ["cozy", "magical", "calm", "adventurous", "mysterious", "celebratory", "warm", "custom"];
+const TIME_OF_DAY_PRESETS = ["morning", "afternoon", "golden hour", "sunset", "night", "twilight", "custom"];
+const SILHOUETTE_PRESETS = ["cozy", "round", "scholarly", "tiny", "heroic", "soft", "custom"];
+const POSE_PRESETS = ["friendly wave", "standing calmly", "holding a book", "gentle teaching pose", "cheerful idle pose", "custom"];
+const RARITY_PRESETS = ["common", "uncommon", "rare", "epic", "legendary", "custom"];
+const ELEMENT_PRESETS = ["nature", "fire", "water", "earth", "air", "star", "custom"];
+
+const isEnvironmentPromptType = (assetType: PromptBuilderAssetType): boolean => ENVIRONMENT_PROMPT_TYPES.includes(assetType);
+const isNpcPromptType = (assetType: PromptBuilderAssetType): boolean => assetType === "npc-full-body" || assetType === "npc-portrait";
+const isCompanionPromptType = (assetType: PromptBuilderAssetType): boolean => assetType === "companion" || assetType === "companion-evolution";
+const isObjectPromptType = (assetType: PromptBuilderAssetType): boolean => OBJECT_PROMPT_TYPES.includes(assetType);
+
+const cleanPromptText = (value?: string, fallback = ""): string => {
+  const raw = (value || fallback || "").trim().replace(/\s+/g, " ");
+  return raw.replace(/[\s.-]+$/g, "");
+};
+
+const withPeriod = (value?: string, fallback = ""): string => {
+  const clean = cleanPromptText(value, fallback);
+  return clean ? `${clean}.` : "";
+};
+
+const presetSelectValue = (value: string | undefined, options: readonly string[]): string =>
+  value && options.includes(value) ? value : "custom";
+
+const getPromptBuilderDefaultFields = (assetType: PromptBuilderAssetType): Record<string, string> => {
+  const base = {
+    name: "Sage the Cozy",
+    realm: "Questing Academy",
+    theme: "Questing Academy",
+    primaryColor: "#9D8DF1",
+    accentColor: "#F4C753",
+  };
+
+  if (assetType === "battle-background") return {
+    ...base,
+    name: "Battle BG 1",
+    purpose: "battle encounter backdrop",
+    location: "sunlit meadow path",
+    mood: "cozy",
+    timeOfDay: "morning",
+    landmarks: "glowing classroom tower, book bridge, crystal pond",
+    visualNotes: "Wide 16:9 background with clear open battle space. No UI or text.",
+  };
+
+  if (assetType === "realm-overview") return {
+    ...base,
+    name: "Meadowfall Grove",
+    biome: "sunlit meadow academy grove",
+    mood: "magical",
+    landmarks: "academy tower, book bridge, crystal pond, gentle forest paths",
+    visualNotes: "Wide realm overview with clear landmarks and a strong sense of place. No labels or UI.",
+  };
+
+  if (assetType === "scene-environment") return {
+    ...base,
+    name: "Sticker Shop",
+    purpose: "town hub interior",
+    location: "cozy academy shop interior",
+    mood: "cozy",
+    timeOfDay: "afternoon",
+    landmarks: "display shelves, warm counter, glowing jars, soft classroom decor",
+    visualNotes: "Wide 16:9 scene environment with usable empty space for NPCs and props. No UI or text.",
+  };
+
+  if (assetType === "companion" || assetType === "companion-evolution") return {
+    ...base,
+    name: assetType === "companion-evolution" ? "Bubbee Bloom" : "Bubbee",
+    species: "friendly fantasy creature",
+    element: "nature",
+    rarity: "common",
+    personality: "friendly, brave, emotionally appealing",
+    abilities: "gentle support ability, learning encouragement, soft magical glow",
+    visualNotes: "Single centered companion asset. Transparent background preferred.",
+  };
+
+  if (assetType === "ui-icon") return {
+    ...base,
+    name: "XP Sparkle",
+    purpose: "reward icon",
+    theme: "Questing Academy rewards",
+    visualNotes: "Single readable icon shape. Transparent background.",
+  };
+
+  if (assetType === "avatar-asset") return {
+    ...base,
+    name: "Scholar Hat",
+    category: "hat",
+    theme: "cozy academy outfit",
+    visualNotes: "Single wearable avatar asset. Transparent background preferred.",
+  };
+
+  if (assetType === "quest-item") return {
+    ...base,
+    name: "Glowing Lesson Key",
+    category: "quest item",
+    visualNotes: "Single centered quest item. Transparent background preferred.",
+  };
+
+  return {
+    ...base,
+    name: "Academy Prop",
+    category: "prop",
+    visualNotes: "Single centered prop asset. Transparent background preferred.",
+  };
+};
+
+const getPromptBuilderRecommendedSpec = (assetType: PromptBuilderAssetType): string => {
+  if (assetType === "ui-icon") return "Recommended output: PNG, 512x512, transparent background.";
+  if (assetType === "battle-background") return "Recommended output: PNG or WebP, 1920x1080, wide 16:9 battle background.";
+  if (assetType === "realm-overview") return "Recommended output: PNG or WebP, 2048x1152, wide 16:9 realm overview.";
+  if (assetType === "scene-environment") return "Recommended output: PNG or WebP, 1920x1080, wide 16:9 scene environment.";
+  return "Recommended output: PNG, 1024x1024, transparent background preferred. If transparency is unavailable, use flat pure white removable background.";
+};
+
+const buildAssetPromptOnly = (assetType: PromptBuilderAssetType, fields: Record<string, string>): string => {
+  const name = cleanPromptText(fields.name, "[NAME]");
+  const primary = fields.primaryColor || "#9D8DF1";
+  const accent = fields.accentColor || "#F4C753";
+  const notes = cleanPromptText(fields.visualNotes, "");
+  const style = "Style: cute chibi educational fantasy RPG, soft pastel storybook game art, rounded shapes, friendly expression, child-safe, polished game asset, readable at small game UI size.";
+  const transparent = "Background: transparent background preferred. If transparent output is unavailable, use a flat pure white removable background for transparent PNG export.";
+  const negative = "Negative: no text, no labels, no watermark, no logo, no UI mockup, no concept sheet, no duplicate subjects, no extra characters, no weapons, no combat pose, no villain, no horror, no photorealism.";
+
+  if (assetType === "npc-full-body" || assetType === "npc-portrait") {
+    return [
+      `Create one single game-ready Questing Academy NPC character asset: ${name}.`,
+      `Role: ${cleanPromptText(fields.role, "[ROLE]")}. Species/body type: ${cleanPromptText(fields.species, "human")}. Age read: ${cleanPromptText(fields.ageRead, "[AGE READ]")}. Silhouette: ${cleanPromptText(fields.silhouette, "cozy")}.`,
+      `Outfit: ${cleanPromptText(fields.outfit, "[OUTFIT]")}. Pose: ${cleanPromptText(fields.pose, "friendly wave")}. Personality: ${cleanPromptText(fields.personality, "cheerful, patient, encouraging")}.`,
+      `Realm flavor: ${cleanPromptText(fields.realm, "Questing Academy")}. Color palette: ${primary} with ${accent} accents.`,
+      notes ? `Visual notes: ${withPeriod(notes)}` : "",
+      assetType === "npc-portrait" ? "Framing: centered clean portrait or bust, exactly one NPC only, readable at small UI size." : "Framing: centered full body or clean three-quarter body, exactly one NPC only, readable at game size.",
+      style,
+      getPromptBuilderRecommendedSpec(assetType),
+      transparent,
+      negative,
+    ].filter(Boolean).join("\n");
+  }
+
+  if (assetType === "companion" || assetType === "companion-evolution") {
+    return [
+      `Create one single game-ready Questing Academy companion creature asset: ${name}.`,
+      `Family/species: ${cleanPromptText(fields.species, "[CREATURE FAMILY]")}. Element/affinity: ${cleanPromptText(fields.element, "nature")}. Rarity: ${cleanPromptText(fields.rarity, "common")}.`,
+      assetType === "companion-evolution" ? `Evolution stage: ${cleanPromptText(fields.stage, "[STAGE]")}. Base companion: ${cleanPromptText(fields.baseCompanion, "[BASE COMPANION]")}. Preserve recognizable family traits while clearly evolving the design.` : "Show the base companion form clearly.",
+      `Personality: ${cleanPromptText(fields.personality, "friendly, brave, emotionally appealing")}. Ability notes: ${cleanPromptText(fields.abilities, "gentle support ability")}.`,
+      notes ? `Visual notes: ${withPeriod(notes)} Color palette: ${primary} with ${accent} accents.` : `Color palette: ${primary} with ${accent} accents.`,
+      "Framing: centered full body creature, exactly one companion only, readable at small game size.",
+      style,
+      getPromptBuilderRecommendedSpec(assetType),
+      transparent,
+      negative.replace("no extra characters", "no extra companions, no extra characters"),
+    ].join("\n");
+  }
+
+  if (assetType === "ui-icon") {
+    return [
+      `Create one Questing Academy UI icon: ${name}.`,
+      `Purpose: ${cleanPromptText(fields.purpose, "[PURPOSE]")}. Theme: ${cleanPromptText(fields.theme, "[THEME]")}.`,
+      `Colors: ${primary} with ${accent} accents.${notes ? ` Visual notes: ${withPeriod(notes)}` : ""}`,
+      "Framing: centered simple silhouette, readable at very small size, one icon only.",
+      "Style: soft pastel Questing Academy UI icon, rounded shapes, polished child-safe game asset.",
+      getPromptBuilderRecommendedSpec(assetType),
+      "Background: transparent background.",
+      "Negative: no text, no labels, no watermark, no logo, no UI mockup, no multiple icons, no photorealism, no horror.",
+    ].join("\n");
+  }
+
+  if (assetType === "battle-background" || assetType === "realm-overview" || assetType === "scene-environment") {
+    const environmentStyle = "Style: cute educational fantasy RPG environment art, soft pastel storybook rendering, cozy lighting, readable shapes, child-safe Questing Academy tone, polished game background.";
+    const envNegative = "Negative: no text, no labels, no watermark, no logo, no UI, no characters unless explicitly requested, no scary mood, no horror, no photorealism.";
+    const realm = cleanPromptText(fields.realm || fields.theme, "Questing Academy");
+    const location = cleanPromptText(fields.location || fields.biome, assetType === "realm-overview" ? "sunlit academy grove" : assetType === "scene-environment" ? "cozy academy location" : "open academy training field");
+    const mood = cleanPromptText(fields.mood, "cozy");
+    const timeOfDay = cleanPromptText(fields.timeOfDay, "morning");
+    const landmarks = cleanPromptText(fields.landmarks, assetType === "realm-overview" ? "academy tower, book bridge, crystal pond" : "soft academy landmarks and readable set pieces");
+
+    if (assetType === "battle-background") {
+      return [
+        `Create one Questing Academy battle background: ${name}.`,
+        `Realm: ${realm}.`,
+        `Location: ${location}.`,
+        `Mood: ${mood}.`,
+        `Time of day: ${timeOfDay}.`,
+        `Key set pieces / landmarks: ${landmarks}.`,
+        notes ? `Visual notes: ${withPeriod(notes)}` : "",
+        "Composition: wide 16:9 RPG battle background with clear open battle space, foreground/midground/background depth, readable at game size.",
+        environmentStyle,
+        getPromptBuilderRecommendedSpec(assetType),
+        envNegative,
+      ].filter(Boolean).join("\n");
+    }
+
+    if (assetType === "realm-overview") {
+      return [
+        `Create one Questing Academy realm overview illustration: ${name}.`,
+        `Realm: ${realm}.`,
+        `Biome/location: ${location}.`,
+        `Mood: ${mood}.`,
+        `Key landmarks: ${landmarks}.`,
+        notes ? `Visual notes: ${withPeriod(notes)}` : "",
+        "Composition: wide 16:9 storybook realm overview/world illustration, clear landmarks, strong sense of place, suitable for a realm selection card or map backdrop.",
+        environmentStyle,
+        getPromptBuilderRecommendedSpec(assetType),
+        "Negative: no text, no labels, no map labels, no watermark, no logo, no UI, no horror, no photorealism.",
+      ].filter(Boolean).join("\n");
+    }
+
+    return [
+      `Create one Questing Academy scene environment: ${name}.`,
+      `Purpose/use case: ${cleanPromptText(fields.purpose, "town or story scene backdrop")}.`,
+      `Realm: ${realm}.`,
+      `Location: ${location}.`,
+      `Mood: ${mood}.`,
+      `Time of day: ${timeOfDay}.`,
+      `Key set pieces / landmarks: ${landmarks}.`,
+      notes ? `Visual notes: ${withPeriod(notes)}` : "",
+      "Composition: wide 16:9 storybook RPG environment, clean usable scene space, readable props and background zones, suitable for Scene Composer or town/location display.",
+      environmentStyle,
+      getPromptBuilderRecommendedSpec(assetType),
+      envNegative,
+    ].filter(Boolean).join("\n");
+  }
+
+  if (assetType === "avatar-asset") {
+    return [
+      `Create one Questing Academy avatar customization asset: ${name}.`,
+      `Category: ${cleanPromptText(fields.category, "hair / hat / outfit / accessory")}. Theme: ${cleanPromptText(fields.theme, "Questing Academy")}.`,
+      `Colors: ${primary} with ${accent} accents.${notes ? ` Visual notes: ${withPeriod(notes)}` : ""}`,
+      "Show only the wearable avatar asset or clean item presentation. No full character unless required for scale.",
+      style,
+      getPromptBuilderRecommendedSpec(assetType),
+      transparent,
+      negative,
+    ].join("\n");
+  }
+
+  return [
+    `Create one single game-ready Questing Academy ${assetType === "quest-item" ? "quest item" : "prop"} asset: ${name}.`,
+    `Category: ${cleanPromptText(fields.category, "[CATEGORY]")}. Realm/theme: ${cleanPromptText(fields.realm || fields.theme, "Questing Academy")}.`,
+    `Colors: ${primary} with ${accent} accents.${notes ? ` Visual notes: ${withPeriod(notes)}` : ""}`,
+    "Framing: centered single object only, clean readable silhouette, no scene background.",
+    style,
+    getPromptBuilderRecommendedSpec(assetType),
+    transparent,
+    negative.replace("no extra characters", "no extra objects, no extra characters"),
+  ].join("\n");
+};
+
 type ImportAssetType =
   | "npc-portrait" | "npc-full-body" | "companion" | "companion-evolution"
   | "avatar-part" | "avatar-hair" | "avatar-hat" | "avatar-outfit"
@@ -3242,8 +3537,50 @@ const readFileAsDataUrl = (file: File): Promise<string> =>
     reader.readAsDataURL(file);
   });
 
+
+
+type UploadedStudioAssetImage = {
+  ok: boolean;
+  url: string;
+  filename: string;
+  originalName: string;
+  mimeType: string;
+  sizeBytes: number;
+};
+
+const uploadStudioAssetImage = async (payload: {
+  dataUrl: string;
+  originalName: string;
+  assetName: string;
+  assetType: ImportAssetType;
+  destinationLibrary: ImportDestinationLibrary;
+}): Promise<UploadedStudioAssetImage> => {
+  const response = await fetch(`${STUDIO_BACKEND_ORIGIN}/api/studio/upload-asset`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok || !data?.ok || !data?.url) {
+    throw new Error(data?.error || `Asset upload failed (${response.status})`);
+  }
+
+  return data as UploadedStudioAssetImage;
+};
+
 const getLibraryImageUrl = (item: any, preferTransparent = false): string =>
-  normalizeStudioImageUrl((preferTransparent ? item?.transparentPreviewUrl : "") || item?.previewUrl || item?.imageUrl || item?.generatedImageUrl || item?.url || "");
+  normalizeStudioImageUrl(
+    (preferTransparent ? item?.transparentPreviewUrl || item?.transparentUrl : "") ||
+    item?.previewUrl ||
+    item?.imageUrl ||
+    item?.generatedImageUrl ||
+    item?.url ||
+    item?.backgroundUrl ||
+    item?.manualComposition?.backgroundUrl ||
+    ""
+  );
 const pushLibraryAsset = (out: LibraryAsset[], asset: LibraryAsset) => {
   if (!asset.thumbnailUrl && !asset.transparentUrl) return;
   out.push(asset);
@@ -3262,6 +3599,8 @@ const buildStudioAssetLibrary = (state: ReturnType<typeof useStudio.getState>): 
 const AssetLibraryTab: React.FC = () => {
   const studio = useStudio();
   const addItem = useStudio((s) => s.addItem);
+  const updateItem = useStudio((s) => s.updateItem);
+  const removeItem = useStudio((s) => s.removeItem);
   const [consumerMode, setConsumerMode] = useState<AssetConsumerMode>("library");
   const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([]);
   const libraryAssets = useMemo(() => buildStudioAssetLibrary(studio), [studio]);
@@ -3278,6 +3617,33 @@ const AssetLibraryTab: React.FC = () => {
   const [importFileName, setImportFileName] = useState("");
   const [importImageDataUrl, setImportImageDataUrl] = useState("");
   const [importError, setImportError] = useState("");
+  const [importUploading, setImportUploading] = useState(false);
+  const [assignOpenAssetId, setAssignOpenAssetId] = useState<string>("");
+  const [assignTargetCollection, setAssignTargetCollection] = useState<StudioCollectionKey>("npcs");
+  const [assignTargetId, setAssignTargetId] = useState<string>("");
+  const [assignSlot, setAssignSlot] = useState<"previewUrl" | "transparentPreviewUrl" | "imageUrl" | "backgroundUrl">("previewUrl");
+  const [promptBuilderOpen, setPromptBuilderOpen] = useState(false);
+  const [promptAssetType, setPromptAssetType] = useState<PromptBuilderAssetType>("npc-full-body");
+  const [promptFields, setPromptFields] = useState<Record<string, string>>({
+    name: "Sage the Cozy",
+    role: "guide",
+    species: "human",
+    ageRead: "teen",
+    silhouette: "cozy",
+    outfit: "librarian cardigan",
+    pose: "friendly wave",
+    personality: "cheerful, patient, encouraging",
+    realm: "Questing Academy",
+    primaryColor: "#9D8DF1",
+    accentColor: "#F4C753",
+    visualNotes: "No background. Single centered game-ready asset.",
+  });
+  const generatedPromptOnly = useMemo(() => buildAssetPromptOnly(promptAssetType, promptFields), [promptAssetType, promptFields]);
+  const updatePromptField = (key: string, value: string) => setPromptFields((current) => ({ ...current, [key]: value }));
+  const copyGeneratedPrompt = async () => {
+    await navigator.clipboard?.writeText(generatedPromptOnly);
+    alert("Prompt copied. Generate externally, then import the finished image here.");
+  };
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -3290,11 +3656,96 @@ const AssetLibraryTab: React.FC = () => {
   }, [libraryAssets, query, type, transparentOnly]);
   const counts = libraryAssets.reduce((acc, asset) => ({ ...acc, [asset.assetType]: (acc[asset.assetType] || 0) + 1 }), {} as Record<string, number>);
   const selectedAssets = libraryAssets.filter((asset) => selectedAssetIds.includes(asset.id));
+
+  const assignableCollections: { key: StudioCollectionKey; label: string }[] = [
+    { key: "npcs", label: "NPCs" },
+    { key: "companions", label: "Pets / Companions" },
+    { key: "evolutions", label: "Evolutions" },
+    { key: "avatars", label: "Avatars" },
+    { key: "assets", label: "Assets / Props" },
+    { key: "realms", label: "Realms" },
+    { key: "battleBgs", label: "Battle BGs" },
+    { key: "scenes", label: "Scenes" },
+    { key: "quests", label: "Quests" },
+  ];
+
+  const getAssignableTargets = (collection: StudioCollectionKey): any[] => {
+    const state: any = studio;
+    const rows = Array.isArray(state[collection]) ? state[collection] : [];
+    return rows;
+  };
+
+  const assignTargetOptions = useMemo(() => {
+    return getAssignableTargets(assignTargetCollection).map((item: any) => ({
+      id: item.id,
+      label: getStudioItemTitle(item),
+      sublabel: [item.status, item.realm, item.environment, item.kind, item.role, item.rarity].filter(Boolean).join(" · "),
+    }));
+  }, [studio, assignTargetCollection]);
+
+  const openAssignAsset = (asset: LibraryAsset) => {
+    setAssignOpenAssetId(asset.id);
+    setAssignTargetCollection(asset.assetType === "background" ? "battleBgs" : asset.assetType === "npc" ? "npcs" : asset.assetType === "companion" ? "companions" : asset.assetType === "avatar" ? "avatars" : "assets");
+    setAssignTargetId("");
+    setAssignSlot(asset.transparentUrl && asset.assetType !== "background" ? "transparentPreviewUrl" : "previewUrl");
+  };
+
+  const applyAssetAssignment = (asset: LibraryAsset) => {
+    if (!assignTargetId) {
+      alert("Choose a target card first.");
+      return;
+    }
+
+    const sourceUrl = assignSlot === "transparentPreviewUrl"
+      ? (asset.transparentUrl || asset.thumbnailUrl)
+      : (asset.thumbnailUrl || asset.transparentUrl);
+
+    if (!sourceUrl) {
+      alert("This asset has no usable image URL.");
+      return;
+    }
+
+    const normalizedUrl = normalizeStudioImageUrl(sourceUrl);
+    const patch: Record<string, any> = {
+      [assignSlot]: normalizedUrl,
+      assignedAssetId: asset.id,
+      assignedAssetName: asset.name,
+      assignedAssetSourceCollection: asset.sourceCollection,
+      assignedAssetSourceId: asset.sourceId,
+      assignedAssetType: asset.assetType,
+      assignedAssetSlot: assignSlot,
+      assignedAssetAssignedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    if (assignSlot === "backgroundUrl") {
+      patch.previewUrl = normalizedUrl;
+    } else if (assignSlot === "previewUrl" || assignSlot === "imageUrl") {
+      patch.imageUrl = normalizedUrl;
+    }
+
+    updateItem(assignTargetCollection, assignTargetId, patch as any);
+    setAssignOpenAssetId("");
+    setAssignTargetId("");
+    alert(`Assigned ${asset.name} to ${assignTargetCollection}.`);
+  };
+
   const toggleSelectedAsset = (asset: LibraryAsset) => setSelectedAssetIds((ids) => ids.includes(asset.id) ? ids.filter((id) => id !== asset.id) : [...ids, asset.id]);
   const copyAssetJson = async (asset: LibraryAsset) => {
     const payload = { sourceCollection: asset.sourceCollection, sourceId: asset.sourceId, assetType: asset.assetType, name: asset.name, url: asset.transparentUrl || asset.thumbnailUrl, transparentUrl: asset.transparentUrl, tags: asset.tags };
     await navigator.clipboard?.writeText(JSON.stringify(payload, null, 2));
     alert("Asset reference copied. Use this as lightweight scene/composition metadata.");
+  };
+
+  const deleteLibraryAsset = (asset: LibraryAsset) => {
+    const ok = window.confirm(`Delete ${asset.name} from ${asset.sourceCollection}? This removes the source Studio card from the library. This cannot be undone.`);
+    if (!ok) return;
+    removeItem(asset.sourceCollection, asset.sourceId);
+    setSelectedAssetIds((ids) => ids.filter((id) => id !== asset.id));
+    if (assignOpenAssetId === asset.id) {
+      setAssignOpenAssetId("");
+      setAssignTargetId("");
+    }
   };
 
   const resetImportForm = () => {
@@ -3322,41 +3773,66 @@ const AssetLibraryTab: React.FC = () => {
       return;
     }
     const dataUrl = await readFileAsDataUrl(file);
-    if (isOversizedDataUrl(dataUrl)) {
-      setImportError("This image is too large for prototype browser storage. Export a smaller PNG/WebP or wait for backend asset storage.");
-      return;
-    }
     setImportImageDataUrl(dataUrl);
     setImportFileName(file.name);
     if (!importName.trim()) setImportName(file.name.replace(/\.[^.]+$/, "").replace(/[-_]+/g, " "));
   };
 
-  const submitImportedAsset = () => {
+  const submitImportedAsset = async () => {
     if (!importImageDataUrl) {
       setImportError("Choose an image file first.");
       return;
     }
-    const tags = importTags.split(",").map((tag) => tag.trim()).filter(Boolean);
-    const item: StudioAsset = {
-      ...baseMeta("user"),
-      id: `as-import-${Date.now()}`,
-      name: importName.trim() || importFileName.replace(/\.[^.]+$/, "") || "Imported asset",
-      kind: getImportAssetKind(importAssetType),
-      previewColor: "#9D8DF1",
-      description: importDescription,
-      previewUrl: importImageDataUrl,
-      transparentPreviewUrl: importImageDataUrl,
-      imageProvider: importSource ? `import:${importSource}` : "import:local-file",
-      promptUsed: "Imported manually through Asset Library. No image-generation provider required.",
-      importAssetType,
-      destinationLibrary: importDestinationLibrary,
-      importFileName,
-      importTags: tags,
-      importRecommendedSpec: getImportRecommendedSpec(importAssetType),
-    } as any;
-    addItem("assets", item);
-    resetImportForm();
-    setImportOpen(false);
+
+    setImportUploading(true);
+    setImportError("");
+
+    try {
+      const safeName = importName.trim() || importFileName.replace(/\.[^.]+$/, "") || "Imported asset";
+      const uploaded = await uploadStudioAssetImage({
+        dataUrl: importImageDataUrl,
+        originalName: importFileName || `${safeName}.png`,
+        assetName: safeName,
+        assetType: importAssetType,
+        destinationLibrary: importDestinationLibrary,
+      });
+
+      const tags = importTags.split(",").map((tag) => tag.trim()).filter(Boolean);
+      const assetUrl = normalizeStudioImageUrl(uploaded.url);
+      const backgroundLike = ["battle-background", "realm-background", "scene-environment"].includes(importAssetType);
+
+      const item: StudioAsset = {
+        ...baseMeta("user"),
+        id: `as-import-${Date.now()}`,
+        name: safeName,
+        kind: getImportAssetKind(importAssetType),
+        previewColor: "#9D8DF1",
+        description: importDescription,
+        previewUrl: assetUrl,
+        transparentPreviewUrl: backgroundLike ? undefined : assetUrl,
+        imageUrl: assetUrl,
+        imageProvider: importSource ? `import:${importSource}` : "import:backend-upload",
+        promptUsed: "Imported manually through Asset Library. Image stored by local backend asset storage. No image-generation provider required.",
+        importAssetType,
+        destinationLibrary: importDestinationLibrary,
+        importFileName: uploaded.originalName || importFileName,
+        storedFileName: uploaded.filename,
+        uploadedUrl: assetUrl,
+        uploadMimeType: uploaded.mimeType,
+        uploadSizeBytes: uploaded.sizeBytes,
+        importTags: tags,
+        importRecommendedSpec: getImportRecommendedSpec(importAssetType),
+      } as any;
+
+      addItem("assets", item);
+      resetImportForm();
+      setImportOpen(false);
+    } catch (err) {
+      console.error(err);
+      setImportError(err instanceof Error ? err.message : "Asset upload failed. Make sure the backend is running on http://localhost:5050.");
+    } finally {
+      setImportUploading(false);
+    }
   };
 
   return (
@@ -3367,7 +3843,173 @@ const AssetLibraryTab: React.FC = () => {
             <h2 className="h-display text-2xl">Asset Library</h2>
             <p className="text-sm text-ink-muted">Unified catalog for Studio assets. Import external images, review them as cards, and reuse them across the Studio.</p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          {promptBuilderOpen && (
+            <div className="mt-4 rounded-3xl bg-white/80 border-4 border-primary/20 p-4 w-full" data-testid="asset-library-prompt-builder">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="h-display text-xl leading-tight">Prompt Builder</p>
+                  <p className="text-xs text-ink-muted">Prompt only. Copy this into any image generator, then import the finished PNG/WebP back into the Asset Library.</p>
+                </div>
+                <span className="chip">No API call</span>
+              </div>
+
+              <div className="grid md:grid-cols-2 gap-3 mt-4">
+                <Field label="Asset type">
+                  <SelectField
+                    testid="prompt-builder-asset-type"
+                    value={promptAssetType}
+                    onChange={(v) => {
+                      const next = v as PromptBuilderAssetType;
+                      const defaults = getPromptBuilderDefaultFields(next);
+                      setPromptAssetType(next);
+                      setPromptFields((current) => ({
+                        ...defaults,
+                        primaryColor: current.primaryColor || defaults.primaryColor,
+                        accentColor: current.accentColor || defaults.accentColor,
+                      }));
+                    }}
+                    options={PROMPT_BUILDER_TYPES}
+                  />
+                </Field>
+                <Field label="Recommended output">
+                  <div className="rounded-full bg-bg border-2 border-white px-4 py-3 text-xs font-extrabold text-ink-muted">
+                    {getPromptBuilderRecommendedSpec(promptAssetType)}
+                  </div>
+                </Field>
+
+                <Field label="Name">
+                  <TextField testid="prompt-builder-name" value={promptFields.name || ""} onChange={(v) => updatePromptField("name", v)} placeholder={isEnvironmentPromptType(promptAssetType) ? "Battle BG 1 / Meadowfall Grove / Sticker Shop" : "Sage the Cozy"} />
+                </Field>
+
+                {isEnvironmentPromptType(promptAssetType) ? (
+                  <>
+                    {promptAssetType === "scene-environment" && (
+                      <Field label="Purpose / use case">
+                        <TextField testid="prompt-builder-purpose" value={promptFields.purpose || ""} onChange={(v) => updatePromptField("purpose", v)} placeholder="town hub interior / quest scene / classroom backdrop" />
+                      </Field>
+                    )}
+                    <Field label="Realm">
+                      <TextField testid="prompt-builder-realm" value={promptFields.realm || ""} onChange={(v) => { updatePromptField("realm", v); updatePromptField("theme", v); }} placeholder="Questing Academy / Meadowfall Grove" />
+                    </Field>
+                    <Field label={promptAssetType === "realm-overview" ? "Biome / location" : "Location"}>
+                      <SelectField
+                        testid="prompt-builder-location-preset"
+                        value={presetSelectValue(promptFields.location || promptFields.biome, LOCATION_PRESETS)}
+                        onChange={(v) => {
+                          const next = v === "custom" ? "" : v;
+                          updatePromptField("location", next);
+                          updatePromptField("biome", next);
+                        }}
+                        options={LOCATION_PRESETS}
+                      />
+                      {(presetSelectValue(promptFields.location || promptFields.biome, LOCATION_PRESETS) === "custom" || !(promptFields.location || promptFields.biome)) && (
+                        <TextField testid="prompt-builder-location-custom" value={promptFields.location || promptFields.biome || ""} onChange={(v) => { updatePromptField("location", v); updatePromptField("biome", v); }} placeholder="Custom location / biome" />
+                      )}
+                    </Field>
+                    <Field label="Mood">
+                      <SelectField testid="prompt-builder-mood-preset" value={presetSelectValue(promptFields.mood, MOOD_PRESETS)} onChange={(v) => updatePromptField("mood", v === "custom" ? "" : v)} options={MOOD_PRESETS} />
+                      {(presetSelectValue(promptFields.mood, MOOD_PRESETS) === "custom" || !promptFields.mood) && <TextField testid="prompt-builder-mood-custom" value={promptFields.mood || ""} onChange={(v) => updatePromptField("mood", v)} placeholder="Custom mood" />}
+                    </Field>
+                    {promptAssetType !== "realm-overview" && (
+                      <Field label="Time of day">
+                        <SelectField testid="prompt-builder-time-of-day-preset" value={presetSelectValue(promptFields.timeOfDay, TIME_OF_DAY_PRESETS)} onChange={(v) => updatePromptField("timeOfDay", v === "custom" ? "" : v)} options={TIME_OF_DAY_PRESETS} />
+                        {(presetSelectValue(promptFields.timeOfDay, TIME_OF_DAY_PRESETS) === "custom" || !promptFields.timeOfDay) && <TextField testid="prompt-builder-time-of-day-custom" value={promptFields.timeOfDay || ""} onChange={(v) => updatePromptField("timeOfDay", v)} placeholder="Custom time of day" />}
+                      </Field>
+                    )}
+                    <Field label="Landmarks / set pieces" full>
+                      <TextArea testid="prompt-builder-landmarks" value={promptFields.landmarks || ""} onChange={(v) => updatePromptField("landmarks", v)} placeholder="glowing classroom tower, book bridge, crystal pond" />
+                    </Field>
+                  </>
+                ) : (
+                  <>
+                    {!isObjectPromptType(promptAssetType) && (
+                      <Field label="Role / purpose">
+                        <TextField testid="prompt-builder-role" value={promptFields.role || promptFields.purpose || ""} onChange={(v) => { updatePromptField("role", v); updatePromptField("purpose", v); }} placeholder="guide / support pet / reward item" />
+                      </Field>
+                    )}
+                    {(isNpcPromptType(promptAssetType) || isCompanionPromptType(promptAssetType) || promptAssetType === "prop" || promptAssetType === "quest-item" || promptAssetType === "avatar-asset") && (
+                      <Field label={isCompanionPromptType(promptAssetType) ? "Species / creature family" : "Species / category"}>
+                        <TextField testid="prompt-builder-species" value={promptFields.species || promptFields.category || ""} onChange={(v) => { updatePromptField("species", v); updatePromptField("category", v); }} placeholder={isCompanionPromptType(promptAssetType) ? "friendly fantasy creature" : "human / prop category / item category"} />
+                      </Field>
+                    )}
+                    <Field label="Theme / realm">
+                      <TextField testid="prompt-builder-realm" value={promptFields.realm || promptFields.theme || ""} onChange={(v) => { updatePromptField("realm", v); updatePromptField("theme", v); }} placeholder="Questing Academy / Meadowfall Grove" />
+                    </Field>
+                  </>
+                )}
+
+                {!isEnvironmentPromptType(promptAssetType) && (
+                  <>
+                    <Field label="Primary color"><ColorField testid="prompt-builder-primary" value={promptFields.primaryColor || "#9D8DF1"} onChange={(v) => updatePromptField("primaryColor", v)} /></Field>
+                    <Field label="Accent color"><ColorField testid="prompt-builder-accent" value={promptFields.accentColor || "#F4C753"} onChange={(v) => updatePromptField("accentColor", v)} /></Field>
+                  </>
+                )}
+
+                {isNpcPromptType(promptAssetType) && (
+                  <>
+                    <Field label="Age read"><TextField testid="prompt-builder-age" value={promptFields.ageRead || ""} onChange={(v) => updatePromptField("ageRead", v)} placeholder="teen / adult / elder" /></Field>
+                    <Field label="Silhouette">
+                      <SelectField testid="prompt-builder-silhouette-preset" value={presetSelectValue(promptFields.silhouette, SILHOUETTE_PRESETS)} onChange={(v) => updatePromptField("silhouette", v === "custom" ? "" : v)} options={SILHOUETTE_PRESETS} />
+                      {(presetSelectValue(promptFields.silhouette, SILHOUETTE_PRESETS) === "custom" || !promptFields.silhouette) && <TextField testid="prompt-builder-silhouette-custom" value={promptFields.silhouette || ""} onChange={(v) => updatePromptField("silhouette", v)} placeholder="Custom silhouette" />}
+                    </Field>
+                    <Field label="Outfit"><TextField testid="prompt-builder-outfit" value={promptFields.outfit || ""} onChange={(v) => updatePromptField("outfit", v)} placeholder="librarian cardigan" /></Field>
+                    <Field label="Pose">
+                      <SelectField testid="prompt-builder-pose-preset" value={presetSelectValue(promptFields.pose, POSE_PRESETS)} onChange={(v) => updatePromptField("pose", v === "custom" ? "" : v)} options={POSE_PRESETS} />
+                      {(presetSelectValue(promptFields.pose, POSE_PRESETS) === "custom" || !promptFields.pose) && <TextField testid="prompt-builder-pose-custom" value={promptFields.pose || ""} onChange={(v) => updatePromptField("pose", v)} placeholder="Custom pose" />}
+                    </Field>
+                  </>
+                )}
+
+                {isCompanionPromptType(promptAssetType) && (
+                  <>
+                    <Field label="Element / affinity">
+                      <SelectField testid="prompt-builder-element-preset" value={presetSelectValue(promptFields.element, ELEMENT_PRESETS)} onChange={(v) => updatePromptField("element", v === "custom" ? "" : v)} options={ELEMENT_PRESETS} />
+                      {(presetSelectValue(promptFields.element, ELEMENT_PRESETS) === "custom" || !promptFields.element) && <TextField testid="prompt-builder-element-custom" value={promptFields.element || ""} onChange={(v) => updatePromptField("element", v)} placeholder="Custom element" />}
+                    </Field>
+                    <Field label="Rarity">
+                      <SelectField testid="prompt-builder-rarity-preset" value={presetSelectValue(promptFields.rarity, RARITY_PRESETS)} onChange={(v) => updatePromptField("rarity", v === "custom" ? "" : v)} options={RARITY_PRESETS} />
+                      {(presetSelectValue(promptFields.rarity, RARITY_PRESETS) === "custom" || !promptFields.rarity) && <TextField testid="prompt-builder-rarity-custom" value={promptFields.rarity || ""} onChange={(v) => updatePromptField("rarity", v)} placeholder="Custom rarity" />}
+                    </Field>
+                  </>
+                )}
+
+                {promptAssetType === "companion-evolution" && (
+                  <>
+                    <Field label="Base companion"><TextField testid="prompt-builder-base-companion" value={promptFields.baseCompanion || ""} onChange={(v) => updatePromptField("baseCompanion", v)} placeholder="Bubbee" /></Field>
+                    <Field label="Evolution stage"><TextField testid="prompt-builder-stage" value={promptFields.stage || ""} onChange={(v) => updatePromptField("stage", v)} placeholder="Stage 2" /></Field>
+                  </>
+                )}
+
+                {!isEnvironmentPromptType(promptAssetType) && (isNpcPromptType(promptAssetType) || isCompanionPromptType(promptAssetType)) && (
+                  <Field label={isCompanionPromptType(promptAssetType) ? "Personality / ability notes" : "Personality"} full>
+                    <TextArea testid="prompt-builder-personality" value={promptFields.personality || promptFields.abilities || ""} onChange={(v) => { updatePromptField("personality", v); updatePromptField("abilities", v); }} placeholder="cheerful, patient, encouraging" />
+                  </Field>
+                )}
+
+                <Field label="Visual notes" full>
+                  <TextArea
+                    testid="prompt-builder-visual-notes"
+                    value={promptFields.visualNotes || ""}
+                    onChange={(v) => updatePromptField("visualNotes", v)}
+                    placeholder={isEnvironmentPromptType(promptAssetType) ? "Wide 16:9 background. No UI or text. Clear readable environment." : "No background. Single centered asset. Transparent preferred."}
+                  />
+                </Field>
+              </div>
+
+              <div className="mt-4">
+                <p className="text-[10px] font-extrabold uppercase text-ink-muted mb-1">Generated prompt</p>
+                <pre className="text-xs text-ink-muted bg-bg border-2 border-white rounded-2xl p-3 max-h-72 overflow-auto whitespace-pre-wrap">{generatedPromptOnly}</pre>
+                <div className="flex flex-wrap gap-2 mt-3">
+                  <button type="button" onClick={copyGeneratedPrompt} className="btn-primary !text-sm !py-2 !px-4" data-testid="prompt-builder-copy">Copy prompt</button>
+                  <button type="button" onClick={() => setImportOpen(true)} className="btn-outline !text-sm !py-2 !px-4">Import finished image</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+
+        <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={() => setPromptBuilderOpen((v) => !v)} className="btn-outline !text-sm !py-2 !px-4" data-testid="asset-library-prompt-builder-toggle"><Wand2 size={14} strokeWidth={3} /> Prompt Builder</button>
             <button type="button" onClick={() => setImportOpen((v) => !v)} className="btn-primary !text-sm !py-2 !px-4" data-testid="asset-library-import-toggle">+ Import Asset</button>
             <span className="chip">{libraryAssets.length} usable image assets</span>
           </div>
@@ -3407,6 +4049,11 @@ const AssetLibraryTab: React.FC = () => {
             </Field>
           </div>
           {importError && <div className="mt-3 rounded-2xl bg-danger/10 border-2 border-danger/30 p-3 text-sm font-bold text-danger">{importError}</div>}
+          {importImageDataUrl && isOversizedDataUrl(importImageDataUrl) && !importError && (
+            <div className="mt-3 rounded-2xl bg-sage/10 border-2 border-sage/30 p-3 text-sm font-bold text-sage">
+              Large image detected. Good — TEA-105 will upload it to backend storage instead of saving it into browser localStorage.
+            </div>
+          )}
           {importImageDataUrl && (
             <div className="mt-4 grid md:grid-cols-[220px,1fr] gap-4 items-start">
               <img src={importImageDataUrl} alt="Import preview" className="w-full aspect-square object-contain rounded-2xl border-4 border-white bg-bg shadow-lg" />
@@ -3419,7 +4066,7 @@ const AssetLibraryTab: React.FC = () => {
             </div>
           )}
           <div className="flex flex-wrap gap-2 mt-4">
-            <button type="button" onClick={submitImportedAsset} className="btn-primary !text-sm !py-2 !px-4" disabled={!importImageDataUrl}>Save imported asset</button>
+            <button type="button" onClick={submitImportedAsset} className="btn-primary !text-sm !py-2 !px-4" disabled={!importImageDataUrl || importUploading}>{importUploading ? "Uploading..." : "Save imported asset"}</button>
             <button type="button" onClick={resetImportForm} className="btn-ghost !text-sm !py-2 !px-4">Reset import</button>
           </div>
         </Card>
@@ -3445,9 +4092,53 @@ const AssetLibraryTab: React.FC = () => {
                 <div className="flex flex-wrap gap-1 mt-2">{asset.tags.slice(0, 5).map((tag) => <span key={tag} className="px-2 py-0.5 rounded-full bg-bg text-[10px] font-bold text-ink-muted">{tag}</span>)}</div>
                 <div className="grid grid-cols-1 gap-2 mt-3">
                   <button type="button" onClick={() => toggleSelectedAsset(asset)} className={cn("btn-outline !text-xs !py-1.5 !px-3 w-full", selectedAssetIds.includes(asset.id) ? "!bg-primary !text-white" : "")}>{selectedAssetIds.includes(asset.id) ? "Selected for " : "Use in "}{consumerMode === "library" ? "builder" : consumerMode}</button>
+                  <button type="button" onClick={() => openAssignAsset(asset)} className="btn-primary !text-xs !py-1.5 !px-3 w-full">Assign to source card</button>
                   <button type="button" onClick={() => copyAssetJson(asset)} className="btn-outline !text-xs !py-1.5 !px-3 w-full">Copy asset ref JSON</button>
                   {displayUrl && <button type="button" onClick={() => downloadImageFromUrl(displayUrl, `asset-library-${asset.name}`)} className="btn-outline !text-xs !py-1.5 !px-3 w-full"><Download size={13} strokeWidth={3} /> Export source image</button>}
+                  <button type="button" onClick={() => deleteLibraryAsset(asset)} className="btn-ghost !text-xs !py-1.5 !px-3 w-full text-danger"><Trash2 size={13} strokeWidth={3} /> Delete asset card</button>
                 </div>
+
+                {assignOpenAssetId === asset.id && (
+                  <div className="mt-3 rounded-2xl bg-bg border-2 border-white p-3 space-y-3">
+                    <div>
+                      <p className="text-[10px] font-extrabold uppercase text-primary">TEA-106 assignment</p>
+                      <p className="text-xs text-ink-muted">Attach this imported/library image to a real source record. The source card will display it immediately.</p>
+                    </div>
+                    <Field label="Target collection">
+                      <SelectField
+                        testid={`asset-assign-collection-${asset.id}`}
+                        value={assignTargetCollection}
+                        onChange={(v) => {
+                          setAssignTargetCollection(v as StudioCollectionKey);
+                          setAssignTargetId("");
+                          setAssignSlot((v === "battleBgs" || v === "scenes" || v === "realms") && asset.assetType === "background" ? "previewUrl" : "previewUrl");
+                        }}
+                        options={assignableCollections.map((x) => x.key)}
+                      />
+                    </Field>
+                    <Field label="Target card">
+                      <SearchSelect
+                        testid={`asset-assign-target-${asset.id}`}
+                        value={assignTargetId}
+                        onChange={setAssignTargetId}
+                        options={assignTargetOptions}
+                        placeholder="Search target card..."
+                      />
+                    </Field>
+                    <Field label="Image slot">
+                      <SelectField
+                        testid={`asset-assign-slot-${asset.id}`}
+                        value={assignSlot}
+                        onChange={(v) => setAssignSlot(v as any)}
+                        options={["previewUrl", "transparentPreviewUrl", "imageUrl", "backgroundUrl"]}
+                      />
+                    </Field>
+                    <div className="flex flex-wrap gap-2">
+                      <button type="button" onClick={() => applyAssetAssignment(asset)} className="btn-primary !text-xs !py-1.5 !px-3">Apply assignment</button>
+                      <button type="button" onClick={() => { setAssignOpenAssetId(""); setAssignTargetId(""); }} className="btn-ghost !text-xs !py-1.5 !px-3">Cancel</button>
+                    </div>
+                  </div>
+                )}
               </div>
             </Card>
           );
@@ -3467,14 +4158,14 @@ type AssetGeneratedPreview = {
   provider: string;
 };
 
-const ASSET_BACKGROUND_MODES = ["transparent-ready", "plain removable background", "simple light background", "game UI presentation"] as const;
-const ASSET_UI_SIZES = ["small icon", "medium inventory icon", "large shop preview", "reward popup size"] as const;
-const ASSET_SHAPE_LANGUAGES = ["none", "round and soft", "star-like", "shield-like", "leaf-like", "gem-like", "book-like", "ribbon-like", "simple silhouette"] as const;
-const ASSET_TOKEN_TYPES = ["coin", "gem", "star shard", "crystal token", "leaf token", "moon token", "academy seal"] as const;
-const ASSET_MATERIALS = ["none", "soft fabric", "polished metal", "warm wood", "glowing crystal", "paper/card", "painted ceramic", "magical light"] as const;
-const ASSET_EFFECTS = ["none", "soft glow", "sparkle", "shimmer", "tiny floating motes", "gentle shine"] as const;
-const ASSET_COSMETIC_SLOTS = ["head", "face", "neck", "shoulder", "back", "hand", "outfit accent", "pet accessory"] as const;
-const ASSET_UI_PLACEMENTS = ["corner flourish", "button frame", "panel divider", "reward banner trim", "inventory slot frame", "quest card accent"] as const;
+const ASSET_BACKGROUND_MODES = ["transparent-ready", "plain removable background", "simple light background", "game UI presentation"];
+const ASSET_UI_SIZES = ["small icon", "medium inventory icon", "large shop preview", "reward popup size"];
+const ASSET_SHAPE_LANGUAGES = ["none", "round and soft", "star-like", "shield-like", "leaf-like", "gem-like", "book-like", "ribbon-like", "simple silhouette"];
+const ASSET_TOKEN_TYPES = ["coin", "gem", "star shard", "crystal token", "leaf token", "moon token", "academy seal"];
+const ASSET_MATERIALS = ["none", "soft fabric", "polished metal", "warm wood", "glowing crystal", "paper/card", "painted ceramic", "magical light"];
+const ASSET_EFFECTS = ["none", "soft glow", "sparkle", "shimmer", "tiny floating motes", "gentle shine"];
+const ASSET_COSMETIC_SLOTS = ["head", "face", "neck", "shoulder", "back", "hand", "outfit accent", "pet accessory"];
+const ASSET_UI_PLACEMENTS = ["corner flourish", "button frame", "panel divider", "reward banner trim", "inventory slot frame", "quest card accent"];
 
 const buildSection = (title: string, lines: string[]): string => [
   `${title}:`,
@@ -3819,20 +4510,20 @@ const AssetsTab: React.FC = () => {
 // REALMS
 // ============================================================================
 
-const REALM_PREFIXES = ["Meadowfall", "Lullaby", "Starlit", "Sunberry", "Frostpine", "Moonpetal", "Pebblebrook", "Whisperwind", "Honeydew", "Brightbloom", "Cloudberry", "Willowwish"] as const;
-const REALM_TYPES = ["enchanted forest", "castle town", "mountain vale", "sky islands", "moonlit marsh", "crystal grotto", "desert oasis", "volcanic ridge", "snowfield", "coral lagoon", "academy grounds", "meadow village", "storybook kingdom", "river town", "sunlit plateau"] as const;
-const REALM_BUILDING_COUNTS = ["3", "5", "7", "10", "15", "20+"] as const;
-const REALM_CAMERA_OPTIONS = ["fixed 2D browser RPG screen", "orthographic oblique RPG screen", "top-down gameplay screen", "light isometric gameplay screen", "side-view scenic"] as const;
-const REALM_SCREEN_FORMATS = ["outdoor route", "outdoor town edge", "building entrance", "interior room", "plaza screen", "cave/dungeon room", "beach/water edge", "forest clearing"] as const;
-const REALM_CAMERA_DISTANCES = ["close", "medium", "overview"] as const;
-const REALM_BOUNDARY_STYLES = ["trees", "water", "fences", "room walls", "cliffs/rocks", "counters/shelves", "mixed natural edges"] as const;
-const REALM_BUILDING_MODES = ["none", "partial/cropped entrance", "one building edge", "multiple buildings"] as const;
-const REALM_MAP_SCALES = ["small room", "single-screen chunk", "town lane", "plaza chunk", "forest path", "building entrance", "cave room", "bridge crossing"] as const;
-const REALM_FANTASY_LEVELS = ["grounded", "magical", "high fantasy"] as const;
-const REALM_EXIT_OPTIONS = ["north gate", "south road", "east bridge", "west forest path", "secret portal", "boat dock", "mountain pass", "academy archway"] as const;
-const REALM_OUTPUT_MODES = ["Playable RPG Screen", "Map Chunk / Room", "Walking Map", "Realm Key Art"] as const;
+const REALM_PREFIXES = ["Meadowfall", "Lullaby", "Starlit", "Sunberry", "Frostpine", "Moonpetal", "Pebblebrook", "Whisperwind", "Honeydew", "Brightbloom", "Cloudberry", "Willowwish"];
+const REALM_TYPES = ["enchanted forest", "castle town", "mountain vale", "sky islands", "moonlit marsh", "crystal grotto", "desert oasis", "volcanic ridge", "snowfield", "coral lagoon", "academy grounds", "meadow village", "storybook kingdom", "river town", "sunlit plateau"];
+const REALM_BUILDING_COUNTS = ["3", "5", "7", "10", "15", "20+"];
+const REALM_CAMERA_OPTIONS = ["fixed 2D browser RPG screen", "orthographic oblique RPG screen", "top-down gameplay screen", "light isometric gameplay screen", "side-view scenic"];
+const REALM_SCREEN_FORMATS = ["outdoor route", "outdoor town edge", "building entrance", "interior room", "plaza screen", "cave/dungeon room", "beach/water edge", "forest clearing"];
+const REALM_CAMERA_DISTANCES = ["close", "medium", "overview"];
+const REALM_BOUNDARY_STYLES = ["trees", "water", "fences", "room walls", "cliffs/rocks", "counters/shelves", "mixed natural edges"];
+const REALM_BUILDING_MODES = ["none", "partial/cropped entrance", "one building edge", "multiple buildings"];
+const REALM_MAP_SCALES = ["small room", "single-screen chunk", "town lane", "plaza chunk", "forest path", "building entrance", "cave room", "bridge crossing"];
+const REALM_FANTASY_LEVELS = ["grounded", "magical", "high fantasy"];
+const REALM_EXIT_OPTIONS = ["north gate", "south road", "east bridge", "west forest path", "secret portal", "boat dock", "mountain pass", "academy archway"];
+const REALM_OUTPUT_MODES = ["Playable RPG Screen", "Map Chunk / Room", "Walking Map", "Realm Key Art"];
 type RealmOutputMode = typeof REALM_OUTPUT_MODES[number];
-const REALM_VISUAL_REFERENCE_STYLES = ["cozy browser RPG", "tilemap-inspired", "Prodigy-like outdoor route", "cozy indoor RPG room"] as const;
+const REALM_VISUAL_REFERENCE_STYLES = ["cozy browser RPG", "tilemap-inspired", "Prodigy-like outdoor route", "cozy indoor RPG room"];
 
 const pickRealm = <T,>(arr: readonly T[]): T => arr[Math.floor(Math.random() * arr.length)];
 const makeRealmName = (prefix?: string, type?: string) => `${prefix || pickRealm(REALM_PREFIXES)} ${type || pickRealm(REALM_TYPES)}`.replace(/\b\w/g, (c) => c.toUpperCase());
@@ -4489,12 +5180,12 @@ type NPCGeneratedPreview = {
   provider: string;
 };
 
-const NPC_SPECIES_TYPES = ["human", "animalfolk", "magical creature", "object mascot", "robot", "spirit"] as const;
-const NPC_AGE_READS = ["child", "teen", "adult", "elder", "ageless"] as const;
-const NPC_SILHOUETTES = ["round", "tall", "tiny", "stout", "elegant", "cozy"] as const;
-const NPC_OUTFIT_STYLES = ["academy robe", "shopkeeper apron", "ranger cloak", "librarian cardigan", "caretaker overalls", "wizard coat", "storybook dress", "cozy sweater"] as const;
-const NPC_POSE_STYLES = ["friendly wave", "hands clasped", "holding book", "shopkeeper welcome", "teacher point", "calm standing pose"] as const;
-const NPC_BACKGROUND_MODES = ["transparent-ready", "plain removable background", "simple light background", "realm-inspired portrait"] as const;
+const NPC_SPECIES_TYPES = ["human", "animalfolk", "magical creature", "object mascot", "robot", "spirit"];
+const NPC_AGE_READS = ["child", "teen", "adult", "elder", "ageless"];
+const NPC_SILHOUETTES = ["round", "tall", "tiny", "stout", "elegant", "cozy"];
+const NPC_OUTFIT_STYLES = ["academy robe", "shopkeeper apron", "ranger cloak", "librarian cardigan", "caretaker overalls", "wizard coat", "storybook dress", "cozy sweater"];
+const NPC_POSE_STYLES = ["friendly wave", "hands clasped", "holding book", "shopkeeper welcome", "teacher point", "calm standing pose"];
+const NPC_BACKGROUND_MODES = ["transparent-ready", "plain removable background", "simple light background", "realm-inspired portrait"];
 
 const buildNPCImagePrompt = (draft: Partial<StudioNPC> & Record<string, any>, realm?: StudioRealm): string => {
   const name = draft.name?.trim() || "unnamed academy mentor";
