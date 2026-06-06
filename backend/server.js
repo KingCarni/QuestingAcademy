@@ -1,14 +1,30 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5050;
+const PUBLIC_ORIGIN = process.env.PUBLIC_ORIGIN || `http://localhost:${PORT}`;
+const UPLOAD_ROOT = path.join(__dirname, "uploads");
+const STUDIO_ASSET_UPLOAD_DIR = path.join(UPLOAD_ROOT, "studio-assets");
+const MAX_UPLOAD_BYTES = Number(process.env.STUDIO_MAX_UPLOAD_BYTES || 12 * 1024 * 1024);
+
+fs.mkdirSync(STUDIO_ASSET_UPLOAD_DIR, { recursive: true });
 
 app.use(cors({ origin: ["http://localhost:3000", "http://localhost:3001"] }));
-app.use(express.json({ limit: "15mb" }));
+app.use(express.json({ limit: "35mb" }));
+app.use("/uploads", express.static(UPLOAD_ROOT, {
+  maxAge: "1d",
+  etag: true,
+}));
 
 const escapeSvgText = (value = "") =>
   String(value)
@@ -22,6 +38,39 @@ const makeSeed = (value = "") =>
       0
     )
   );
+
+const slugifyForFile = (value = "questing-academy-asset") =>
+  String(value || "questing-academy-asset")
+    .toLowerCase()
+    .replace(/\.[a-z0-9]+$/i, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 72) || "questing-academy-asset";
+
+const mimeToExtension = (mimeType = "") => {
+  if (mimeType === "image/png") return "png";
+  if (mimeType === "image/webp") return "webp";
+  if (mimeType === "image/jpeg") return "jpg";
+  return "bin";
+};
+
+const parseImageDataUrl = (dataUrl = "") => {
+  const match = String(dataUrl).match(/^data:(image\/(png|webp|jpeg));base64,([A-Za-z0-9+/=\r\n]+)$/);
+  if (!match) {
+    throw new Error("Expected a PNG, WebP, or JPG image data URL.");
+  }
+
+  const mimeType = match[1];
+  const base64 = match[3].replace(/\s/g, "");
+  const buffer = Buffer.from(base64, "base64");
+
+  if (!buffer.length) throw new Error("Uploaded image was empty.");
+  if (buffer.length > MAX_UPLOAD_BYTES) {
+    throw new Error(`Image is too large. Max upload is ${Math.round(MAX_UPLOAD_BYTES / 1024 / 1024)} MB.`);
+  }
+
+  return { mimeType, buffer };
+};
 
 const makeMockImageDataUrl = ({ promptUsed, prompt, contentType }) => {
   const safePrompt = escapeSvgText(prompt);
@@ -66,6 +115,45 @@ const makeMockImageDataUrl = ({ promptUsed, prompt, contentType }) => {
   return `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
 };
 
+app.post("/api/studio/upload-asset", async (req, res) => {
+  try {
+    const { dataUrl, originalName, assetName, assetType, destinationLibrary } = req.body || {};
+
+    if (!dataUrl || typeof dataUrl !== "string") {
+      return res.status(400).json({ ok: false, error: "Missing image dataUrl." });
+    }
+
+    const { mimeType, buffer } = parseImageDataUrl(dataUrl);
+    const ext = mimeToExtension(mimeType);
+    const safeBase = slugifyForFile(assetName || originalName || "studio-asset");
+    const unique = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const filename = `${safeBase}-${unique}.${ext}`;
+    const targetPath = path.join(STUDIO_ASSET_UPLOAD_DIR, filename);
+
+    await fs.promises.writeFile(targetPath, buffer);
+
+    const urlPath = `/uploads/studio-assets/${filename}`;
+
+    return res.status(201).json({
+      ok: true,
+      url: `${PUBLIC_ORIGIN}${urlPath}`,
+      path: urlPath,
+      filename,
+      originalName: originalName || filename,
+      mimeType,
+      sizeBytes: buffer.length,
+      assetType: assetType || "misc",
+      destinationLibrary: destinationLibrary || "Asset Library",
+    });
+  } catch (err) {
+    console.error("Studio asset upload failed", err);
+    return res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Asset upload failed.",
+    });
+  }
+});
+
 app.post("/api/studio/generate-image", async (req, res) => {
   try {
     const imageMode = process.env.STUDIO_IMAGE_MODE || "gemini";
@@ -90,9 +178,7 @@ app.post("/api/studio/generate-image", async (req, res) => {
       stylePreset ? `Style preset: ${stylePreset}` : "",
       linkedEntityId ? `Linked entity: ${linkedEntityId}` : "",
       palette?.from || palette?.to
-        ? `Palette direction: ${palette?.from || "default"} to ${
-            palette?.to || "default"
-          }`
+        ? `Palette direction: ${palette?.from || "default"} to ${palette?.to || "default"}`
         : "",
       Array.isArray(visualReferences) && visualReferences.length
         ? `Visual references provided as metadata: ${visualReferences
@@ -218,4 +304,5 @@ app.get("/api/studio/image", async (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`Questing Academy backend running on http://localhost:${PORT}`);
+  console.log(`Studio asset uploads served from ${PUBLIC_ORIGIN}/uploads/studio-assets/`);
 });

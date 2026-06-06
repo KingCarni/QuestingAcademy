@@ -34,7 +34,7 @@ import {
   NPC_TEACHING_STYLES, NPC_HUMOR_LEVELS, NPC_FORMALITIES, NPC_ENCOURAGEMENT,
   TIMES_OF_DAY, SCENE_MOODS,
 } from "../lib/studioTypes";
-import { ShieldCheck, Library, Lock, Send, Eye, ChevronDown, ChevronRight, Wand2, Sparkles, Download, Archive, Trash2 } from "lucide-react";
+import { ShieldCheck, Library, Lock, Send, Eye, ChevronDown, ChevronRight, Wand2, Sparkles, Download, Archive, Trash2, Undo2, XCircle, MapPin, Link2, Unlink, UserRound } from "lucide-react";
 import { cn } from "../lib/cn";
 
 const STUDIO_PIN = "2580";
@@ -529,6 +529,38 @@ type SceneComposerLayer = {
 
 type SceneComposerBackgroundMode = "blank" | "transparent" | "scene" | "realm" | "battleBg";
 
+type SceneZoneType = "walkable" | "blocked" | "water" | "tall-grass" | "interaction";
+type SceneZonePoint = { x: number; y: number };
+type SceneComposerZone = {
+  id: string;
+  name: string;
+  type: SceneZoneType;
+  points: SceneZonePoint[];
+  closed: boolean;
+};
+
+type SceneMarkerType = "player-start" | "npc-anchor" | "companion-anchor" | "quest-object" | "shop-point" | "door" | "exit" | "fast-travel" | "point-of-interest";
+type SceneComposerMarker = {
+  id: string;
+  name: string;
+  type: SceneMarkerType;
+  x: number;
+  y: number;
+  linkedCollection?: StudioCollectionKey | "";
+  linkedId?: string;
+  linkedLabel?: string;
+};
+
+const SCENE_MARKER_TYPES: SceneMarkerType[] = ["player-start", "npc-anchor", "companion-anchor", "quest-object", "shop-point", "door", "exit", "fast-travel", "point-of-interest"];
+
+const MARKER_LINK_COLLECTIONS: (StudioCollectionKey | "")[] = ["", "npcs", "companions", "quests", "assets", "scenes", "realms", "battleBgs"];
+const PLAYER_START_LINK_LABEL = "Player";
+const markerLinkCollectionLabel = (collection?: StudioCollectionKey | ""): string => {
+  if (!collection) return "No linked card";
+  if (collection === "battleBgs") return "Battle BGs";
+  return collection.charAt(0).toUpperCase() + collection.slice(1);
+};
+
 const getComposerImageUrl = (item?: any, preferTransparent = false): string => {
   if (!item) return "";
 
@@ -549,6 +581,67 @@ const getComposerImageUrl = (item?: any, preferTransparent = false): string => {
 
 const getComposerBackgroundImageUrl = (item?: any): string => getComposerImageUrl(item, false);
 
+const getManualCompositionLayerImageUrl = (layer: any): string =>
+  normalizeStudioImageUrl(layer?.url || layer?.previewUrl || layer?.imageRef?.url || "");
+
+const sceneComposerLayerToManualLayer = (layer: SceneComposerLayer): ManualCompositionLayer => ({
+  id: layer.id,
+  kind: layer.assetType === "companion" ? "pet" : "npc",
+  label: layer.name,
+  url: layer.previewUrl ? normalizeStudioImageUrl(layer.previewUrl) : "",
+  x: layer.x,
+  y: layer.y,
+  scale: layer.scale,
+  flip: layer.flip,
+  shadow: true,
+  opacity: layer.opacity,
+  zIndex: layer.zIndex,
+  rotation: layer.rotation,
+  sourceMode: "scene-composer",
+});
+
+const getSceneCompositionDisplayUrl = (item: any, fallbackUrl?: string): string => {
+  const mc = item?.manualComposition;
+  if (mc?.createdFrom === "scene-composer" && mc?.previewCompositeUrl) return normalizeStudioImageUrl(mc.previewCompositeUrl);
+  return normalizeStudioImageUrl(fallbackUrl || item?.previewUrl || mc?.backgroundUrl || "");
+};
+
+const exportSavedSceneComposerComposition = async (item: any, filenameBase: string) => {
+  const mc = item?.manualComposition;
+  if (!mc?.layers?.length) {
+    alert("No saved scene composer layers found on this card.");
+    return;
+  }
+
+  const manualLayers = mc.layers.map((layer: any) => ({
+    id: layer.id || layer.assetId || `${layer.name}-${layer.zIndex}`,
+    kind: layer.assetType === "companion" ? "pet" : "npc",
+    label: layer.name || "Scene layer",
+    url: getManualCompositionLayerImageUrl(layer),
+    x: Number(layer.x ?? 50),
+    y: Number(layer.y ?? 50),
+    scale: Number(layer.scale ?? 1),
+    flip: !!layer.flip,
+    shadow: false,
+    opacity: Number(layer.opacity ?? 100),
+    zIndex: Number(layer.zIndex ?? 1),
+    rotation: Number(layer.rotation ?? 0),
+  })).filter((layer: ManualCompositionLayer) => !!layer.url);
+
+  if (!manualLayers.length) {
+    alert("Saved scene layers do not have usable image URLs.");
+    return;
+  }
+
+  await exportManualCompositionPng(
+    mc.backgroundUrl || "",
+    manualLayers,
+    filenameBase,
+    mc.canvasRatio || item.canvasRatio || "16:9",
+    !!mc.transparentBackground
+  );
+};
+
 const SceneComposerTab: React.FC = () => {
   const studio = useStudio();
   const scenes = useStudio((s) => s.scenes);
@@ -562,6 +655,23 @@ const SceneComposerTab: React.FC = () => {
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
   const [draggingLayerId, setDraggingLayerId] = useState<string | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
+  const addItem = useStudio((s) => s.addItem);
+  const [saveName, setSaveName] = useState("");
+  const [saveRealm, setSaveRealm] = useState("Questing Academy");
+  const [savePurpose, setSavePurpose] = useState<ScenePurpose>("cutscene");
+  const [saveNotes, setSaveNotes] = useState("");
+  const [lastSavedSceneId, setLastSavedSceneId] = useState("");
+  const [zoneMode, setZoneMode] = useState(false);
+  const [zoneType, setZoneType] = useState<SceneZoneType>("walkable");
+  const [zones, setZones] = useState<SceneComposerZone[]>([]);
+  const [activeZoneId, setActiveZoneId] = useState<string | null>(null);
+  const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
+  const [markerMode, setMarkerMode] = useState(false);
+  const [markerType, setMarkerType] = useState<SceneMarkerType>("player-start");
+  const [markers, setMarkers] = useState<SceneComposerMarker[]>([]);
+  const [selectedMarkerId, setSelectedMarkerId] = useState<string | null>(null);
+  const [draggingMarkerId, setDraggingMarkerId] = useState<string | null>(null);
+
 
   const libraryAssets = useMemo(() => buildStudioAssetLibrary(studio), [studio]);
 
@@ -686,7 +796,248 @@ const SceneComposerTab: React.FC = () => {
     updateLayer(layerId, { x: nextX, y: nextY });
   };
 
+  const addZonePointFromPointer = (clientX: number, clientY: number) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const point: SceneZonePoint = {
+      x: Math.max(0, Math.min(100, ((clientX - rect.left) / rect.width) * 100)),
+      y: Math.max(0, Math.min(100, ((clientY - rect.top) / rect.height) * 100)),
+    };
+    setZones((current) => {
+      const active = activeZoneId ? current.find((zone) => zone.id === activeZoneId && !zone.closed) : null;
+      if (active) return current.map((zone) => zone.id === active.id ? { ...zone, points: [...zone.points, point] } : zone);
+      const zone: SceneComposerZone = {
+        id: `scene-zone-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        name: `${zoneType.replace("-", " ")} zone ${current.length + 1}`,
+        type: zoneType,
+        points: [point],
+        closed: false,
+      };
+      setActiveZoneId(zone.id);
+      setSelectedZoneId(zone.id);
+      return [...current, zone];
+    });
+  };
+
+  const closeActiveZone = () => {
+    if (!activeZoneId) return;
+    setZones((current) => current.map((zone) => zone.id === activeZoneId && zone.points.length >= 3 ? { ...zone, closed: true } : zone));
+    setActiveZoneId(null);
+  };
+
+  const deleteSelectedZone = () => {
+    if (!selectedZoneId) return;
+    setZones((current) => current.filter((zone) => zone.id !== selectedZoneId));
+    if (activeZoneId === selectedZoneId) setActiveZoneId(null);
+    setSelectedZoneId(null);
+  };
+
+  const undoLastZonePoint = () => {
+    if (!activeZoneId) return;
+    setZones((current) => {
+      const active = current.find((zone) => zone.id === activeZoneId && !zone.closed);
+      if (!active) return current;
+      if (active.points.length <= 1) {
+        setActiveZoneId(null);
+        setSelectedZoneId(null);
+        return current.filter((zone) => zone.id !== active.id);
+      }
+      return current.map((zone) => zone.id === active.id ? { ...zone, points: zone.points.slice(0, -1) } : zone);
+    });
+  };
+
+  const cancelActiveZone = () => {
+    if (!activeZoneId) return;
+    setZones((current) => current.filter((zone) => zone.id !== activeZoneId));
+    setActiveZoneId(null);
+    if (selectedZoneId === activeZoneId) setSelectedZoneId(null);
+  };
+
+  const clearZones = () => {
+    setZones([]);
+    setActiveZoneId(null);
+    setSelectedZoneId(null);
+  };
+
+  const zoneColorClass = (type: SceneZoneType): string => {
+    if (type === "walkable") return "stroke-sage fill-sage/20";
+    if (type === "blocked") return "stroke-danger fill-danger/20";
+    if (type === "water") return "stroke-sky-400 fill-sky-300/25";
+    if (type === "tall-grass") return "stroke-green-500 fill-green-300/25";
+    return "stroke-primary fill-primary/20";
+  };
+
+  const addMarkerFromPointer = (clientX: number, clientY: number) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = Math.max(0, Math.min(100, ((clientX - rect.left) / rect.width) * 100));
+    const y = Math.max(0, Math.min(100, ((clientY - rect.top) / rect.height) * 100));
+    const marker: SceneComposerMarker = {
+      id: `scene-marker-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      name: `${markerType.replace(/-/g, " ")} ${markers.length + 1}`,
+      type: markerType,
+      x,
+      y,
+      linkedCollection: markerType === "player-start" ? "avatars" : "",
+      linkedId: markerType === "player-start" ? "player" : "",
+      linkedLabel: markerType === "player-start" ? PLAYER_START_LINK_LABEL : "",
+    };
+    setMarkers((current) => [...current, marker]);
+    setSelectedMarkerId(marker.id);
+  };
+
+  const moveMarkerFromPointer = (markerId: string, clientX: number, clientY: number) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = Math.max(0, Math.min(100, ((clientX - rect.left) / rect.width) * 100));
+    const y = Math.max(0, Math.min(100, ((clientY - rect.top) / rect.height) * 100));
+    setMarkers((current) => current.map((marker) => marker.id === markerId ? { ...marker, x, y } : marker));
+  };
+
+  const updateSelectedMarker = (patch: Partial<SceneComposerMarker>) => {
+    if (!selectedMarkerId) return;
+    setMarkers((current) => current.map((marker) => marker.id === selectedMarkerId ? { ...marker, ...patch } : marker));
+  };
+
+  const deleteSelectedMarker = () => {
+    if (!selectedMarkerId) return;
+    setMarkers((current) => current.filter((marker) => marker.id !== selectedMarkerId));
+    setSelectedMarkerId(null);
+    if (draggingMarkerId === selectedMarkerId) setDraggingMarkerId(null);
+  };
+
+  const clearMarkers = () => {
+    setMarkers([]);
+    setSelectedMarkerId(null);
+    setDraggingMarkerId(null);
+  };
+
+  const markerLabel = (type: SceneMarkerType): string => type.replace(/-/g, " ");
+  const selectedMarker = selectedMarkerId ? markers.find((marker) => marker.id === selectedMarkerId) ?? null : null;
+  const markerLinkOptions = useMemo(() => {
+    const collection = selectedMarker?.linkedCollection;
+    if (!collection) return [];
+    const sourceItems = ((studio as any)[collection] || []) as any[];
+    return sourceItems.map((item) => ({
+      id: item.id,
+      label: getStudioItemTitle(item),
+      sublabel: [item.status, item.realm, item.purpose, item.kind, item.role, item.name === getStudioItemTitle(item) ? "" : item.name].filter(Boolean).join(" · "),
+    }));
+  }, [selectedMarker?.linkedCollection, studio]);
+
+  const updateSelectedMarkerLinkCollection = (collection: StudioCollectionKey | "") => {
+    updateSelectedMarker({ linkedCollection: collection, linkedId: "", linkedLabel: "" });
+  };
+
+  const updateSelectedMarkerLinkId = (linkedId: string) => {
+    const linked = markerLinkOptions.find((option) => option.id === linkedId);
+    updateSelectedMarker({ linkedId, linkedLabel: linked?.label || "" });
+  };
+
+  const unlinkSelectedMarker = () => {
+    updateSelectedMarker({ linkedCollection: "", linkedId: "", linkedLabel: "" });
+  };
+
   const sortedLayers = useMemo(() => [...layers].sort((a, b) => a.zIndex - b.zIndex), [layers]);
+
+  const saveCompositionAsScene = async () => {
+    const sceneName = saveName.trim() || `Scene Composition ${new Date().toLocaleTimeString()}`;
+    const bgUrl = selectedBackground?.url ? normalizeStudioImageUrl(selectedBackground.url) : "";
+    const manualLayers = layers.map(sceneComposerLayerToManualLayer).filter((layer) => !!layer.url);
+    let previewCompositeUrl = bgUrl;
+
+    if (manualLayers.length || bgUrl || backgroundMode === "transparent") {
+      try {
+        const compositeBlob = await renderManualCompositionToBlob(bgUrl, manualLayers, "16:9", backgroundMode === "transparent");
+        const compositeDataUrl = await blobToDataUrl(compositeBlob);
+        if (!isOversizedDataUrl(compositeDataUrl)) {
+          previewCompositeUrl = compositeDataUrl;
+        }
+      } catch (err) {
+        console.error(err);
+        alert("Scene card saved with layer metadata, but the composite preview could not be rendered. Export may still work from saved layers.");
+      }
+    }
+
+    const sceneNpcNames = layers.filter((layer) => layer.assetType === "npc").map((layer) => layer.name);
+    const newScene: StudioScene & Record<string, any> = {
+      ...baseMeta("user"),
+      id: `scene-composer-${Date.now()}`,
+      name: sceneName,
+      realm: saveRealm.trim() || "Questing Academy",
+      purpose: savePurpose,
+      mood: "cozy" as SceneMood,
+      timeOfDay: "morning" as TimeOfDay,
+      npcs: sceneNpcNames,
+      visualPrompt: saveNotes.trim() || "Saved from Scene Composer.",
+      previewUrl: previewCompositeUrl || bgUrl || undefined,
+      backgroundUrl: bgUrl || undefined,
+      promptUsed: "Scene Composer manual composition save.",
+      imageProvider: "scene-composer",
+      manualComposition: {
+        createdFrom: "scene-composer",
+        backgroundMode,
+        backgroundId,
+        backgroundUrl: bgUrl,
+        backgroundLabel: selectedBackground?.label || "",
+        transparentBackground: backgroundMode === "transparent",
+        canvasRatio: "16:9",
+        previewCompositeUrl: previewCompositeUrl || "",
+        layers: layers.map((layer) => ({
+          id: layer.id,
+          assetId: layer.assetId,
+          sourceCollection: layer.sourceCollection,
+          sourceId: layer.sourceId,
+          name: layer.name,
+          assetType: layer.assetType,
+          previewUrl: layer.previewUrl ? normalizeStudioImageUrl(layer.previewUrl) : "",
+          url: layer.previewUrl ? normalizeStudioImageUrl(layer.previewUrl) : "",
+          imageRef: createImageRef(layer.previewUrl ? normalizeStudioImageUrl(layer.previewUrl) : ""),
+          x: layer.x,
+          y: layer.y,
+          scale: layer.scale,
+          opacity: layer.opacity,
+          flip: layer.flip,
+          rotation: layer.rotation,
+          zIndex: layer.zIndex,
+          sourceMode: "scene-composer",
+        })),
+        markers: markers.map((marker) => ({
+          ...marker,
+          linkedCollection: marker.type === "player-start" ? "avatars" : (marker.linkedCollection || ""),
+          linkedId: marker.type === "player-start" ? "player" : (marker.linkedId || ""),
+          linkedLabel: marker.type === "player-start" ? PLAYER_START_LINK_LABEL : (marker.linkedLabel || ""),
+          x: Number(marker.x.toFixed(3)),
+          y: Number(marker.y.toFixed(3)),
+        })),
+        zones: zones.map((zone) => ({
+          ...zone,
+          points: zone.points.map((point) => ({
+            x: Number(point.x.toFixed(3)),
+            y: Number(point.y.toFixed(3)),
+          })),
+        })),
+      },
+      compositionLayerCount: layers.length,
+      zoneCount: zones.length,
+      markerCount: markers.length,
+      compositionSourceAssets: layers.map((layer) => ({
+        assetId: layer.assetId,
+        sourceCollection: layer.sourceCollection,
+        sourceId: layer.sourceId,
+        name: layer.name,
+      })),
+      createdAt: nowISO(),
+      updatedAt: nowISO(),
+    };
+    addItem("scenes", newScene);
+    setLastSavedSceneId(newScene.id);
+  };
+
+  const activeZonePointCount = activeZoneId ? (zones.find((zone) => zone.id === activeZoneId)?.points.length ?? 0) : 0;
 
   return (
     <div className="grid xl:grid-cols-[300px,minmax(900px,1fr),300px] 2xl:grid-cols-[330px,minmax(1200px,1fr),330px] gap-4">
@@ -804,9 +1155,11 @@ const SceneComposerTab: React.FC = () => {
             onClick={() => {
               setLayers([]);
               setSelectedLayerId(null);
+              clearZones();
+              clearMarkers();
             }}
             className="btn-ghost !text-xs !py-1.5 !px-3"
-            disabled={layers.length === 0}
+            disabled={layers.length === 0 && zones.length === 0 && markers.length === 0}
           >
             Clear canvas
           </button>
@@ -820,12 +1173,28 @@ const SceneComposerTab: React.FC = () => {
             backgroundMode === "transparent" ? "bg-white" : "bg-gradient-to-br from-[#EAF7FF] to-[#FFF8DD]"
           )}
           onPointerMove={(event) => {
+            if (draggingMarkerId) {
+              moveMarkerFromPointer(draggingMarkerId, event.clientX, event.clientY);
+              return;
+            }
             if (!draggingLayerId) return;
             moveLayerFromPointer(draggingLayerId, event.clientX, event.clientY);
           }}
-          onPointerUp={() => setDraggingLayerId(null)}
-          onPointerLeave={() => setDraggingLayerId(null)}
-          onClick={() => setSelectedLayerId(null)}
+          onPointerUp={() => { setDraggingLayerId(null); setDraggingMarkerId(null); }}
+          onPointerLeave={() => { setDraggingLayerId(null); setDraggingMarkerId(null); }}
+          onClick={(event) => {
+            if (zoneMode) {
+              addZonePointFromPointer(event.clientX, event.clientY);
+              return;
+            }
+            if (markerMode) {
+              addMarkerFromPointer(event.clientX, event.clientY);
+              return;
+            }
+            setSelectedLayerId(null);
+            setSelectedZoneId(null);
+            setSelectedMarkerId(null);
+          }}
         >
           {backgroundMode === "transparent" && (
             <div className="absolute inset-0" style={{ backgroundImage: "linear-gradient(45deg, #eee 25%, transparent 25%), linear-gradient(-45deg, #eee 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #eee 75%), linear-gradient(-45deg, transparent 75%, #eee 75%)", backgroundSize: "24px 24px", backgroundPosition: "0 0, 0 12px, 12px -12px, -12px 0px", backgroundColor: "#fff" }} />
@@ -880,6 +1249,72 @@ const SceneComposerTab: React.FC = () => {
               </div>
             );
           })}
+
+          <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
+            {zones.map((zone) => {
+              const points = zone.points.map((p) => `${p.x},${p.y}`).join(" ");
+              const isSelected = zone.id === selectedZoneId;
+              return (
+                <g key={zone.id}>
+                  {zone.closed && zone.points.length >= 3 ? (
+                    <polygon points={points} className={cn(zoneColorClass(zone.type), isSelected ? "stroke-[0.8]" : "stroke-[0.45]")} />
+                  ) : (
+                    <polyline points={points} fill="none" className={cn(zoneColorClass(zone.type), "stroke-[0.65]")} />
+                  )}
+                  {zone.points.map((point, index) => (
+                    <circle key={`${zone.id}-${index}`} cx={point.x} cy={point.y} r={1.05} className="fill-white stroke-primary stroke-[0.35]" />
+                  ))}
+                </g>
+              );
+            })}
+          </svg>
+
+          {zones.map((zone) => zone.points[0] ? (
+            <button
+              key={`zone-label-${zone.id}`}
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                setSelectedZoneId(zone.id);
+              }}
+              className={cn(
+                "absolute z-[90] -translate-x-1/2 -translate-y-full rounded-full px-2 py-1 text-[10px] font-extrabold shadow-sm border-2",
+                zone.id === selectedZoneId ? "bg-primary text-white border-primary" : "bg-white/90 text-ink border-white"
+              )}
+              style={{ left: `${zone.points[0].x}%`, top: `${zone.points[0].y}%`, pointerEvents: zoneMode ? "auto" : "none" }}
+            >
+              {zone.type}
+            </button>
+          ) : null)}
+
+          
+
+          {markers.map((marker) => (
+            <button
+              key={marker.id}
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                setSelectedMarkerId(marker.id);
+                setSelectedLayerId(null);
+              }}
+              onPointerDown={(event) => {
+                event.stopPropagation();
+                setSelectedMarkerId(marker.id);
+                setSelectedLayerId(null);
+                setDraggingMarkerId(marker.id);
+                moveMarkerFromPointer(marker.id, event.clientX, event.clientY);
+              }}
+              className={cn(
+                "absolute z-[95] -translate-x-1/2 -translate-y-full rounded-full px-2 py-1 text-[10px] font-extrabold shadow-md border-2 bg-white/95 cursor-grab active:cursor-grabbing",
+                selectedMarkerId === marker.id ? "border-primary text-primary ring-4 ring-primary/25" : "border-white text-ink"
+              )}
+              style={{ left: `${marker.x}%`, top: `${marker.y}%`, pointerEvents: markerMode ? "auto" : "none" }}
+              title={`${marker.name} · ${markerLabel(marker.type)}`}
+            >
+              <span className="inline-flex items-center gap-1"><MapPin size={11} strokeWidth={3} /> {markerLabel(marker.type)}</span>
+            </button>
+          ))}
 
           {layers.length === 0 && !selectedBackground && backgroundMode !== "transparent" && (
             <div className="absolute inset-0 grid place-items-center text-center p-6 pointer-events-none">
@@ -954,6 +1389,126 @@ const SceneComposerTab: React.FC = () => {
             </button>
           </div>
         )}
+
+        <div className="mt-4 rounded-2xl bg-bg border-2 border-white p-3 space-y-3">
+          <div>
+            <p className="h-display text-lg">Walkable zones</p>
+            <p className="text-xs text-ink-muted">Click the canvas to add polygon points. Coordinates save as percentages.</p>
+          </div>
+          <label className="inline-flex items-center gap-2 px-3 py-2 rounded-full bg-white border-2 border-white text-xs font-extrabold">
+            <input type="checkbox" checked={zoneMode} onChange={(event) => { setZoneMode(event.target.checked); if (event.target.checked) setMarkerMode(false); }} className="accent-primary" />
+            Zone edit mode
+          </label>
+          <Field label="Zone type">
+            <SelectField testid="scene-composer-zone-type" value={zoneType} onChange={(v) => setZoneType(v as SceneZoneType)} options={["walkable", "blocked", "water", "tall-grass", "interaction"]} />
+          </Field>
+          <div className="grid grid-cols-2 gap-2">
+            <button type="button" onClick={closeActiveZone} disabled={!activeZoneId || activeZonePointCount < 3} className="btn-outline !text-xs !py-1.5 !px-3 disabled:opacity-40">Close zone</button>
+            <button type="button" onClick={undoLastZonePoint} disabled={!activeZoneId || activeZonePointCount === 0} className="btn-outline !text-xs !py-1.5 !px-3 disabled:opacity-40"><Undo2 size={12} strokeWidth={3} /> Undo point</button>
+            <button type="button" onClick={cancelActiveZone} disabled={!activeZoneId} className="btn-outline !text-xs !py-1.5 !px-3 disabled:opacity-40"><XCircle size={12} strokeWidth={3} /> Cancel zone</button>
+            <button type="button" onClick={deleteSelectedZone} disabled={!selectedZoneId} className="btn-outline !text-xs !py-1.5 !px-3 disabled:opacity-40">Delete zone</button>
+          </div>
+          {zones.length > 0 && (
+            <div className="rounded-2xl bg-white border-2 border-white p-2 space-y-1 max-h-40 overflow-auto">
+              {zones.map((zone) => (
+                <button key={zone.id} type="button" onClick={() => setSelectedZoneId(zone.id)} className={cn("w-full text-left rounded-xl px-3 py-2 text-xs font-bold", selectedZoneId === zone.id ? "bg-primary text-white" : "bg-bg text-ink")}>
+                  {zone.name} · {zone.points.length} pts {zone.closed ? "· closed" : "· open"}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="mt-4 rounded-2xl bg-bg border-2 border-white p-3 space-y-3">
+          <div>
+            <p className="h-display text-lg">Gameplay markers</p>
+            <p className="text-xs text-ink-muted">Click the canvas to place gameplay anchors. Coordinates save as percentages.</p>
+          </div>
+          <label className="inline-flex items-center gap-2 px-3 py-2 rounded-full bg-white border-2 border-white text-xs font-extrabold">
+            <input type="checkbox" checked={markerMode} onChange={(event) => { setMarkerMode(event.target.checked); if (event.target.checked) setZoneMode(false); }} className="accent-primary" />
+            Marker edit mode
+          </label>
+          <Field label="Marker type">
+            <SelectField testid="scene-composer-marker-type" value={markerType} onChange={(v) => setMarkerType(v as SceneMarkerType)} options={SCENE_MARKER_TYPES} />
+          </Field>
+          {selectedMarker && (
+            <div className="rounded-2xl bg-white border-2 border-white p-3 space-y-2">
+              <p className="text-[10px] font-extrabold uppercase text-ink-muted">Selected marker</p>
+              <Field label="Marker name">
+                <TextField testid="scene-composer-marker-name" value={selectedMarker.name} onChange={(v) => updateSelectedMarker({ name: v })} placeholder="Marker name" />
+              </Field>
+              <Field label="Type">
+                <SelectField testid="scene-composer-selected-marker-type" value={selectedMarker.type} onChange={(v) => { const nextType = v as SceneMarkerType; updateSelectedMarker(nextType === "player-start" ? { type: nextType, linkedCollection: "avatars", linkedId: "player", linkedLabel: PLAYER_START_LINK_LABEL } : { type: nextType }); }} options={SCENE_MARKER_TYPES} />
+              </Field>
+              {selectedMarker.type === "player-start" ? (
+                <div className="rounded-2xl bg-bg border-2 border-white px-3 py-2 text-xs font-extrabold text-primary inline-flex items-center gap-2">
+                  <UserRound size={13} strokeWidth={3} /> Player start is automatically linked to the player.
+                </div>
+              ) : (
+                <Field label="Linked card type">
+                  <SelectField
+                    testid="scene-composer-marker-linked-collection"
+                    value={selectedMarker.linkedCollection || ""}
+                    onChange={(v) => updateSelectedMarkerLinkCollection(v as StudioCollectionKey | "")}
+                    options={MARKER_LINK_COLLECTIONS}
+                    placeholder="No linked card"
+                  />
+                </Field>
+              )}
+              {selectedMarker.type !== "player-start" && selectedMarker.linkedCollection && (
+                <Field label={`Linked ${markerLinkCollectionLabel(selectedMarker.linkedCollection)}`}>
+                  <SearchSelect
+                    testid="scene-composer-marker-linked-id"
+                    value={selectedMarker.linkedId || ""}
+                    onChange={updateSelectedMarkerLinkId}
+                    options={markerLinkOptions}
+                    placeholder="Search Studio card..."
+                  />
+                </Field>
+              )}
+              {selectedMarker.linkedLabel && (
+                <p className="text-[10px] font-extrabold text-sage inline-flex items-center gap-1"><Link2 size={11} strokeWidth={3} /> Linked: {selectedMarker.linkedLabel}</p>
+              )}
+              <p className="text-[10px] text-ink-muted font-bold">X {selectedMarker.x.toFixed(1)}% · Y {selectedMarker.y.toFixed(1)}%</p>
+              <button type="button" onClick={unlinkSelectedMarker} disabled={selectedMarker.type === "player-start" || (!selectedMarker.linkedCollection && !selectedMarker.linkedId)} className="btn-outline !text-xs !py-1.5 !px-3 w-full disabled:opacity-40"><Unlink size={12} strokeWidth={3} /> Clear linked card</button>
+              <button type="button" onClick={deleteSelectedMarker} className="btn-outline !text-xs !py-1.5 !px-3 w-full text-danger"><Trash2 size={12} strokeWidth={3} /> Delete marker</button>
+            </div>
+          )}
+          {markers.length > 0 && (
+            <div className="rounded-2xl bg-white border-2 border-white p-2 space-y-1 max-h-40 overflow-auto">
+              {markers.map((marker) => (
+                <button key={marker.id} type="button" onClick={() => setSelectedMarkerId(marker.id)} className={cn("w-full text-left rounded-xl px-3 py-2 text-xs font-bold", selectedMarkerId === marker.id ? "bg-primary text-white" : "bg-bg text-ink")}> 
+                  {marker.name} · {markerLabel(marker.type)} · {marker.x.toFixed(1)}%, {marker.y.toFixed(1)}%
+                  {marker.linkedLabel ? <span className="block text-[10px] text-sage">Linked: {marker.linkedLabel}</span> : null}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+
+        <div className="mt-4 rounded-2xl bg-bg border-2 border-white p-3 space-y-3">
+          <div>
+            <p className="h-display text-lg">Save composition</p>
+            <p className="text-xs text-ink-muted">Creates a reusable Scene card with the selected background and layer metadata.</p>
+          </div>
+          <Field label="Scene name">
+            <TextField testid="scene-composer-save-name" value={saveName} onChange={setSaveName} placeholder="e.g. Snowy Grove Lesson Scene" />
+          </Field>
+          <Field label="Realm">
+            <TextField testid="scene-composer-save-realm" value={saveRealm} onChange={setSaveRealm} placeholder="Questing Academy" />
+          </Field>
+          <Field label="Purpose">
+            <SelectField testid="scene-composer-save-purpose" value={savePurpose} onChange={(v) => setSavePurpose(v as ScenePurpose)} options={SCENE_PURPOSES} />
+          </Field>
+          <Field label="Notes">
+            <TextArea testid="scene-composer-save-notes" value={saveNotes} onChange={setSaveNotes} placeholder="Short note for this saved scene..." />
+          </Field>
+          <button type="button" onClick={saveCompositionAsScene} className="btn-primary !text-sm !py-2 !px-4 w-full">
+            Save as Scene card
+          </button>
+          {lastSavedSceneId && <p className="text-[10px] font-extrabold text-sage">Saved scene card: {lastSavedSceneId}</p>}
+        </div>
       </Card>
     </div>
   );
@@ -1265,16 +1820,105 @@ const exportSavedManualComposition = async (item: any, filenameBase: string) => 
   );
 };
 
+
+
+
+const scenePreviewZoneColorClass = (type?: string): string => {
+  if (type === "walkable") return "stroke-sage fill-sage/20";
+  if (type === "blocked") return "stroke-danger fill-danger/20";
+  if (type === "water") return "stroke-sky-400 fill-sky-300/25";
+  if (type === "tall-grass") return "stroke-green-500 fill-green-300/25";
+  return "stroke-primary fill-primary/20";
+};
+
+const formatSceneMarkerLabel = (marker: any): string => {
+  const typeLabel = String(marker?.type || "marker").replace(/-/g, " ");
+  return marker?.linkedLabel ? `${typeLabel}: ${marker.linkedLabel}` : typeLabel;
+};
+
+const SceneComposerLayeredPreview: React.FC<{ item: any; className?: string; alt?: string; showGameplayOverlay?: boolean }> = ({ item, className, alt, showGameplayOverlay = false }) => {
+  const mc = item?.manualComposition;
+  const backgroundUrl = normalizeStudioImageUrl(mc?.backgroundUrl || item?.backgroundUrl || item?.previewUrl || "");
+  const layers = Array.isArray(mc?.layers) ? [...mc.layers].sort((a: any, b: any) => Number(a?.zIndex ?? 1) - Number(b?.zIndex ?? 1)) : [];
+  const zones = Array.isArray(mc?.zones) ? mc.zones : [];
+  const markers = Array.isArray(mc?.markers) ? mc.markers : [];
+  return (
+    <div className={cn("relative overflow-hidden rounded-2xl border-4 border-white shadow-lg bg-bg aspect-video", className)}>
+      {backgroundUrl ? (
+        <img src={backgroundUrl} alt={alt || item?.name || "Scene background"} className="absolute inset-0 w-full h-full object-cover" />
+      ) : (
+        <div className="absolute inset-0 bg-gradient-to-br from-[#EAF7FF] to-[#FFF8DD]" />
+      )}
+      {layers.map((layer: any) => {
+        const url = getManualCompositionLayerImageUrl(layer);
+        if (!url) return null;
+        const scale = Number(layer?.scale ?? 1);
+        const displayWidthPercent = Math.max(8, Math.min(45, 12.5 * scale));
+        return (
+          <img
+            key={layer?.id || `${layer?.name}-${layer?.zIndex}`}
+            src={url}
+            alt={layer?.name || "Scene layer"}
+            className="absolute object-contain drop-shadow-xl pointer-events-none select-none"
+            style={{
+              left: `${Number(layer?.x ?? 50)}%`,
+              top: `${Number(layer?.y ?? 50)}%`,
+              width: `${displayWidthPercent}%`,
+              transform: `translate(-50%, -50%) rotate(${Number(layer?.rotation ?? 0)}deg) scaleX(${layer?.flip ? -1 : 1})`,
+              opacity: Math.max(0, Math.min(100, Number(layer?.opacity ?? 100))) / 100,
+              zIndex: Number(layer?.zIndex ?? 1),
+            }}
+          />
+        );
+      })}
+      {showGameplayOverlay && zones.length > 0 && (
+        <svg className="absolute inset-0 w-full h-full pointer-events-none z-[80]" viewBox="0 0 100 100" preserveAspectRatio="none">
+          {zones.map((zone: any) => {
+            const points = Array.isArray(zone?.points) ? zone.points.map((p: any) => `${Number(p?.x ?? 0)},${Number(p?.y ?? 0)}`).join(" ") : "";
+            if (!points) return null;
+            return zone?.closed && zone.points.length >= 3 ? (
+              <polygon key={zone.id || zone.name} points={points} className={cn(scenePreviewZoneColorClass(zone.type), "stroke-[0.45]")} />
+            ) : (
+              <polyline key={zone.id || zone.name} points={points} fill="none" className={cn(scenePreviewZoneColorClass(zone.type), "stroke-[0.65]")} />
+            );
+          })}
+        </svg>
+      )}
+      {showGameplayOverlay && markers.map((marker: any) => (
+        <div
+          key={marker?.id || marker?.name}
+          className="absolute z-[90] -translate-x-1/2 -translate-y-full rounded-full px-2 py-1 text-[10px] font-extrabold shadow-md border-2 border-white bg-white/95 text-ink pointer-events-none"
+          style={{ left: `${Number(marker?.x ?? 50)}%`, top: `${Number(marker?.y ?? 50)}%` }}
+          title={marker?.name || formatSceneMarkerLabel(marker)}
+        >
+          <span className="inline-flex items-center gap-1"><MapPin size={11} strokeWidth={3} /> {formatSceneMarkerLabel(marker)}</span>
+        </div>
+      ))}
+    </div>
+  );
+};
+
 const StudioViewEditButton: React.FC<StudioViewEditButtonProps> = ({ collection, item, title, imageUrl }) => {
   const exportFilename = `${collection}-${getStudioItemTitle(item)}-${item.outputMode || item.zonePurpose || item.id || "image"}`;
-  const hasManualComposition = collection === "arts" && !!item?.manualComposition?.layers?.length;
-  const displayImageUrl = normalizeStudioImageUrl(hasManualComposition ? getManualCompositionDisplayUrl(item, imageUrl) : imageUrl);
+  const hasArtManualComposition = collection === "arts" && !!item?.manualComposition?.layers?.length;
+  const hasSceneComposerComposition =
+    collection === "scenes" &&
+    item?.manualComposition?.createdFrom === "scene-composer" &&
+    (
+      !!item?.manualComposition?.layers?.length ||
+      !!item?.manualComposition?.markers?.length ||
+      !!item?.manualComposition?.zones?.length
+    );
+  const displayImageUrl = hasSceneComposerComposition
+    ? getSceneCompositionDisplayUrl(item, imageUrl)
+    : normalizeStudioImageUrl(hasArtManualComposition ? getManualCompositionDisplayUrl(item, imageUrl) : imageUrl);
   const updateItem = useStudio((s) => s.updateItem);
   const setStatus = useStudio((s) => s.setStatus);
   const removeItem = useStudio((s) => s.removeItem);
   const [open, setOpen] = useState(false);
   const [edit, setEdit] = useState(false);
   const [fullscreenImage, setFullscreenImage] = useState(false);
+  const [showGameplayOverlay, setShowGameplayOverlay] = useState(false);
   const editableFields = useMemo(() => getEditableStudioFields(collection, item), [collection, item.id]);
   const [form, setForm] = useState<Record<string, string>>({});
 
@@ -1344,21 +1988,37 @@ const StudioViewEditButton: React.FC<StudioViewEditButtonProps> = ({ collection,
               <button type="button" onClick={() => setOpen(false)} className="btn-ghost !text-sm !py-2 !px-4">Close</button>
             </div>
 
-            {displayImageUrl && (
+            {(displayImageUrl || hasSceneComposerComposition) && (
               <div className="mt-4">
                 <button type="button" onClick={() => setFullscreenImage(true)} className="group block w-full text-left">
-                  <img src={displayImageUrl} alt={`${displayTitle} full preview`} className="w-full max-h-[420px] object-contain rounded-2xl border-4 border-white shadow-lg transition group-hover:brightness-95 bg-bg" />
+                  {hasSceneComposerComposition ? (
+                    <SceneComposerLayeredPreview item={item} alt={`${displayTitle} full preview`} className="w-full max-h-[420px] transition group-hover:brightness-95" showGameplayOverlay={showGameplayOverlay} />
+                  ) : (
+                    <img src={displayImageUrl} alt={`${displayTitle} full preview`} className="w-full max-h-[420px] object-contain rounded-2xl border-4 border-white shadow-lg transition group-hover:brightness-95 bg-bg" />
+                  )}
                 </button>
                 <div className="flex flex-wrap gap-2 mt-2">
                   <button type="button" onClick={() => setFullscreenImage(true)} className="btn-outline !text-xs !py-1.5 !px-3">
                     <Eye size={13} strokeWidth={3} /> View image fullscreen
                   </button>
-                  <button type="button" onClick={() => downloadImageFromUrl(displayImageUrl, exportFilename)} className="btn-outline !text-xs !py-1.5 !px-3">
-                    <Download size={13} strokeWidth={3} /> Export image
-                  </button>
-                  {hasManualComposition && (
+                  {hasSceneComposerComposition && (
+                    <button type="button" onClick={() => setShowGameplayOverlay((v) => !v)} className={cn("btn-outline !text-xs !py-1.5 !px-3", showGameplayOverlay ? "!bg-primary !text-white" : "")}>
+                      <MapPin size={13} strokeWidth={3} /> {showGameplayOverlay ? "Hide gameplay overlay" : "Show gameplay overlay"}
+                    </button>
+                  )}
+                  {!hasSceneComposerComposition && (
+                    <button type="button" onClick={() => downloadImageFromUrl(displayImageUrl, exportFilename)} className="btn-outline !text-xs !py-1.5 !px-3">
+                      <Download size={13} strokeWidth={3} /> Export image
+                    </button>
+                  )}
+                  {hasArtManualComposition && (
                     <button type="button" onClick={() => exportSavedManualComposition(item, exportFilename)} className="btn-outline !text-xs !py-1.5 !px-3">
                       <Download size={13} strokeWidth={3} /> Export saved composition PNG
+                    </button>
+                  )}
+                  {hasSceneComposerComposition && (
+                    <button type="button" onClick={() => exportSavedSceneComposerComposition(item, exportFilename)} className="btn-outline !text-xs !py-1.5 !px-3">
+                      <Download size={13} strokeWidth={3} /> Export saved scene PNG
                     </button>
                   )}
                   {/^(assets|companions|arts|avatars|evolutions|npcs)$/.test(collection) && (
@@ -1459,7 +2119,7 @@ const StudioViewEditButton: React.FC<StudioViewEditButtonProps> = ({ collection,
         </div>
       )}
 
-      {fullscreenImage && displayImageUrl && (
+      {fullscreenImage && (displayImageUrl || hasSceneComposerComposition) && (
         <div className="fixed inset-0 z-[60] bg-black/85 p-4 flex items-center justify-center" role="dialog" aria-modal="true">
           <div className="absolute top-4 right-4 flex gap-2">
             <button type="button" onClick={() => downloadImageFromUrl(displayImageUrl, exportFilename)} className="btn-ghost !bg-white !text-ink !text-sm !py-2 !px-4"><Download size={14} strokeWidth={3} /> Export</button>
@@ -1468,7 +2128,11 @@ const StudioViewEditButton: React.FC<StudioViewEditButtonProps> = ({ collection,
             )}
             <button type="button" onClick={() => setFullscreenImage(false)} className="btn-ghost !bg-white !text-ink !text-sm !py-2 !px-4">Close</button>
           </div>
-          <img src={displayImageUrl} alt={`${displayTitle} fullscreen`} className="max-w-[95vw] max-h-[92vh] object-contain rounded-2xl shadow-2xl" />
+          {hasSceneComposerComposition ? (
+            <SceneComposerLayeredPreview item={item} alt={`${displayTitle} fullscreen`} className="w-[95vw] max-w-[1400px] max-h-[92vh] rounded-2xl shadow-2xl" showGameplayOverlay={showGameplayOverlay} />
+          ) : (
+            <img src={displayImageUrl} alt={`${displayTitle} fullscreen`} className="max-w-[95vw] max-h-[92vh] object-contain rounded-2xl shadow-2xl" />
+          )}
         </div>
       )}
     </>
@@ -2634,6 +3298,8 @@ type ManualCompositionLayer = {
   shadow: boolean;
   opacity: number;
   zIndex: number;
+  rotation?: number;
+  sourceMode?: "scene-composer" | "manual-composition";
 };
 
 const buildNpcIdentityLock = (n?: StudioNPC): string => {
@@ -2765,28 +3431,30 @@ const renderManualCompositionToBlob = async (
   const sortedLayers = [...layers].sort((a, b) => (a.zIndex ?? 1) - (b.zIndex ?? 1));
   for (const layer of sortedLayers) {
     const img = await loadImageForCanvas(layer.url);
-    const baseHeight = 220 * (layer.scale / 100);
-    const ratio = img.width / Math.max(1, img.height);
-    const drawW = baseHeight * ratio;
-    const drawH = baseHeight;
+    const layerScale = Number(layer.scale ?? 1);
+    const isSceneComposerLayer = (layer as any).sourceMode === "scene-composer" || layerScale <= 4;
+    const drawW = isSceneComposerLayer
+      ? Math.max(48, canvas.width * 0.125 * layerScale)
+      : Math.max(48, layerScale * 1.35);
+    const ratio = img.height / Math.max(1, img.width);
+    const drawH = drawW * ratio;
     const x = (layer.x / 100) * canvas.width - drawW / 2;
-    const y = (layer.y / 100) * canvas.height - drawH;
+    const y = (layer.y / 100) * canvas.height - drawH / 2;
 
     ctx.save();
     ctx.globalAlpha = layer.opacity == null ? 1 : Math.max(0, Math.min(1, layer.opacity / 100));
     if (layer.shadow) {
-      ctx.fillStyle = "rgba(0,0,0,0.18)";
+      ctx.fillStyle = "rgba(0,0,0,0.06)";
       ctx.beginPath();
       ctx.ellipse((layer.x / 100) * canvas.width, y + drawH - 4, drawW * 0.34, drawH * 0.08, 0, 0, Math.PI * 2);
       ctx.fill();
     }
-    if (layer.flip) {
-      ctx.translate(x + drawW, y);
-      ctx.scale(-1, 1);
-      ctx.drawImage(img, 0, 0, drawW, drawH);
-    } else {
-      ctx.drawImage(img, x, y, drawW, drawH);
-    }
+    const centerX = (layer.x / 100) * canvas.width;
+    const centerY = (layer.y / 100) * canvas.height;
+    ctx.translate(centerX, centerY);
+    ctx.rotate(((layer as any).rotation || 0) * Math.PI / 180);
+    ctx.scale(layer.flip ? -1 : 1, 1);
+    ctx.drawImage(img, -drawW / 2, -drawH / 2, drawW, drawH);
     ctx.restore();
   }
 
@@ -3213,15 +3881,15 @@ type LibraryAsset = {
 type PromptBuilderAssetType =
   | "npc-full-body" | "npc-portrait" | "companion" | "companion-evolution"
   | "avatar-asset" | "ui-icon" | "prop" | "quest-item"
-  | "battle-background" | "realm-overview" | "scene-environment";
+  | "battle-background" | "realm-overview" | "scene-environment" | "walking-map-environment";
 
 const PROMPT_BUILDER_TYPES: PromptBuilderAssetType[] = [
   "npc-full-body", "npc-portrait", "companion", "companion-evolution",
   "avatar-asset", "ui-icon", "prop", "quest-item",
-  "battle-background", "realm-overview", "scene-environment",
+  "battle-background", "realm-overview", "scene-environment", "walking-map-environment",
 ];
 
-const ENVIRONMENT_PROMPT_TYPES: PromptBuilderAssetType[] = ["battle-background", "realm-overview", "scene-environment"];
+const ENVIRONMENT_PROMPT_TYPES: PromptBuilderAssetType[] = ["battle-background", "realm-overview", "scene-environment", "walking-map-environment"];
 const OBJECT_PROMPT_TYPES: PromptBuilderAssetType[] = ["avatar-asset", "ui-icon", "prop", "quest-item"];
 
 const LOCATION_PRESETS = ["sunlit meadow path", "library interior", "snowy grove", "crystal pond", "academy courtyard", "book bridge", "floating classroom ruins", "custom"];
@@ -3290,6 +3958,17 @@ const getPromptBuilderDefaultFields = (assetType: PromptBuilderAssetType): Recor
     visualNotes: "Wide 16:9 scene environment with usable empty space for NPCs and props. No UI or text.",
   };
 
+  if (assetType === "walking-map-environment") return {
+    ...base,
+    name: "Town Hub Walking Map A-1",
+    purpose: "walkable town hub map for exploration",
+    location: "cozy academy town hub",
+    mood: "cozy",
+    timeOfDay: "afternoon",
+    landmarks: "clear main path, soft academy landmarks, shop entrance, quest board, readable blocked edges",
+    visualNotes: "Wide 16:9 walking map environment with clear walkable ground, readable collision boundaries, usable empty space for NPCs and props, and obvious interaction points. No UI or text.",
+  };
+
   if (assetType === "companion" || assetType === "companion-evolution") return {
     ...base,
     name: assetType === "companion-evolution" ? "Bubbee Bloom" : "Bubbee",
@@ -3337,6 +4016,7 @@ const getPromptBuilderRecommendedSpec = (assetType: PromptBuilderAssetType): str
   if (assetType === "battle-background") return "Recommended output: PNG or WebP, 1920x1080, wide 16:9 battle background.";
   if (assetType === "realm-overview") return "Recommended output: PNG or WebP, 2048x1152, wide 16:9 realm overview.";
   if (assetType === "scene-environment") return "Recommended output: PNG or WebP, 1920x1080, wide 16:9 scene environment.";
+  if (assetType === "walking-map-environment") return "Recommended output: PNG or WebP, 1920x1080, wide 16:9 walking map environment.";
   return "Recommended output: PNG, 1024x1024, transparent background preferred. If transparency is unavailable, use flat pure white removable background.";
 };
 
@@ -3392,11 +4072,11 @@ const buildAssetPromptOnly = (assetType: PromptBuilderAssetType, fields: Record<
     ].join("\n");
   }
 
-  if (assetType === "battle-background" || assetType === "realm-overview" || assetType === "scene-environment") {
+  if (assetType === "battle-background" || assetType === "realm-overview" || assetType === "scene-environment" || assetType === "walking-map-environment") {
     const environmentStyle = "Style: cute educational fantasy RPG environment art, soft pastel storybook rendering, cozy lighting, readable shapes, child-safe Questing Academy tone, polished game background.";
     const envNegative = "Negative: no text, no labels, no watermark, no logo, no UI, no characters unless explicitly requested, no scary mood, no horror, no photorealism.";
     const realm = cleanPromptText(fields.realm || fields.theme, "Questing Academy");
-    const location = cleanPromptText(fields.location || fields.biome, assetType === "realm-overview" ? "sunlit academy grove" : assetType === "scene-environment" ? "cozy academy location" : "open academy training field");
+    const location = cleanPromptText(fields.location || fields.biome, assetType === "realm-overview" ? "sunlit academy grove" : assetType === "scene-environment" ? "cozy academy location" : assetType === "walking-map-environment" ? "cozy academy town hub" : "open academy training field");
     const mood = cleanPromptText(fields.mood, "cozy");
     const timeOfDay = cleanPromptText(fields.timeOfDay, "morning");
     const landmarks = cleanPromptText(fields.landmarks, assetType === "realm-overview" ? "academy tower, book bridge, crystal pond" : "soft academy landmarks and readable set pieces");
@@ -3429,6 +4109,25 @@ const buildAssetPromptOnly = (assetType: PromptBuilderAssetType, fields: Record<
         environmentStyle,
         getPromptBuilderRecommendedSpec(assetType),
         "Negative: no text, no labels, no map labels, no watermark, no logo, no UI, no horror, no photorealism.",
+      ].filter(Boolean).join("\n");
+    }
+
+    if (assetType === "walking-map-environment") {
+      return [
+        `Create one Questing Academy walking map environment: ${name}.`,
+        `Purpose/use case: ${cleanPromptText(fields.purpose, "walkable exploration map for town/location display")}.`,
+        `Realm: ${realm}.`,
+        `Location: ${location}.`,
+        `Mood: ${mood}.`,
+        `Time of day: ${timeOfDay}.`,
+        `Key set pieces / landmarks: ${landmarks}.`,
+        notes ? `Visual notes: ${withPeriod(notes)}` : "",
+        "Composition: wide 16:9 storybook RPG walking map environment, clear readable walkable paths, obvious blocked/collision edges, clean open ground for NPCs and props, readable interaction points such as doors, signs, quest boards, bridges, paths, counters, or gates.",
+        "Camera/view: slightly elevated RPG exploration view, not a battle arena, not a close-up illustration, with foreground/midground/background depth but no clutter blocking the main walkable area.",
+        "Map-readability rules: make traversable ground visually obvious, keep obstacle boundaries readable at game size, leave enough empty placement space for Scene Composer assets and Walkable Zone Editor polygons.",
+        environmentStyle,
+        getPromptBuilderRecommendedSpec(assetType),
+        envNegative,
       ].filter(Boolean).join("\n");
     }
 
@@ -3476,7 +4175,7 @@ const buildAssetPromptOnly = (assetType: PromptBuilderAssetType, fields: Record<
 type ImportAssetType =
   | "npc-portrait" | "npc-full-body" | "companion" | "companion-evolution"
   | "avatar-part" | "avatar-hair" | "avatar-hat" | "avatar-outfit"
-  | "battle-background" | "realm-background" | "scene-environment" | "scene-prop"
+  | "battle-background" | "realm-background" | "scene-environment" | "walking-map-environment" | "scene-prop"
   | "building" | "tree" | "decoration" | "ui-icon" | "badge" | "sticker"
   | "quest-item" | "inventory-item" | "misc";
 
@@ -3768,7 +4467,7 @@ const AssetLibraryTab: React.FC = () => {
       setImportError("Unsupported file type. Import PNG, WebP, or JPG/JPEG only.");
       return;
     }
-    if (file.type === "image/jpeg" && !["battle-background", "realm-background", "scene-environment"].includes(importAssetType)) {
+    if (file.type === "image/jpeg" && !["battle-background", "realm-background", "scene-environment", "walking-map-environment"].includes(importAssetType)) {
       setImportError("JPG/JPEG is best for full backgrounds only. Use PNG/WebP for characters, props, UI, and transparent assets.");
       return;
     }
@@ -3799,7 +4498,7 @@ const AssetLibraryTab: React.FC = () => {
 
       const tags = importTags.split(",").map((tag) => tag.trim()).filter(Boolean);
       const assetUrl = normalizeStudioImageUrl(uploaded.url);
-      const backgroundLike = ["battle-background", "realm-background", "scene-environment"].includes(importAssetType);
+      const backgroundLike = ["battle-background", "realm-background", "scene-environment", "walking-map-environment"].includes(importAssetType);
 
       const item: StudioAsset = {
         ...baseMeta("user"),
@@ -5154,11 +5853,15 @@ const ScenesTab: React.FC = () => {
           </button>
         </div>
       }
-      renderItem={(i: StudioScene) => (
+      renderItem={(i: StudioScene) => {
+        const hasSceneComposerComposition = (i as any)?.manualComposition?.createdFrom === "scene-composer" && !!(i as any)?.manualComposition?.layers?.length;
+        return (
         <div>
-          {i.previewUrl && (
+          {hasSceneComposerComposition ? (
+            <SceneComposerLayeredPreview item={i} alt={`${i.name} scene composition`} className="w-full h-36 !aspect-auto mb-2" />
+          ) : i.previewUrl ? (
             <img src={getImageUrl(i)} alt={`${i.name} scene concept`} className="w-full h-36 object-contain rounded-xl border-2 border-white mb-2 bg-bg" />
-          )}
+          ) : null}
           <p className="h-display text-lg">{i.name}</p>
           <p className="text-[10px] font-extrabold uppercase text-ink-muted">{i.purpose.replace(/-/g," ")} · {i.realm}</p>
           {i.previewUrl && <p className="text-[10px] font-extrabold text-sage mt-1">Generated image attached · {i.imageProvider ?? "prototype"}</p>}
@@ -5166,7 +5869,8 @@ const ScenesTab: React.FC = () => {
           {!!i.npcs.length && <p className="text-[10px] font-extrabold text-primary mt-1">NPCs: {i.npcs.join(", ")}</p>}
           <StudioViewEditButton collection="scenes" item={i} title={i.name} imageUrl={getImageUrl(i)} />
         </div>
-      )}
+        );
+      }}
     />
   );
 };

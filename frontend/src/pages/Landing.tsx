@@ -28,7 +28,7 @@ const Landing: React.FC = () => {
             <Sparkles strokeWidth={3} />
           </div>
           <div>
-            <p className="h-display text-2xl leading-none">Questing Academy</p>
+            <p className="h-display text-2xl leading-none">Edu-Mates Academy</p>
             <p className="text-xs font-bold text-ink-muted tracking-widest uppercase">Meadowfall Grove · Beta</p>
           </div>
         </div>
@@ -45,7 +45,7 @@ const Landing: React.FC = () => {
               <Sparkles size={14} strokeWidth={3} /> Made for Grades K–7
             </div>
             <h1 className="h-display text-5xl md:text-7xl leading-[0.95]">
-              Make math feel like a
+              Make learning feel like a
               <span className="block text-primary">cozy little adventure.</span>
             </h1>
             <p className="mt-6 text-lg md:text-xl text-ink/80 max-w-xl">
