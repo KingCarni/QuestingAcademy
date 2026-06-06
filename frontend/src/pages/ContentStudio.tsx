@@ -426,13 +426,13 @@ const ContentStudio: React.FC = () => {
   if (!unlocked) {
     return (
       <div className="min-h-screen">
-        <TopBar back="/admin" title="TeachMe Studio" />
+        <TopBar back="/admin" title="Edu-Mates Academy" />
         <main className="max-w-md mx-auto px-4 md:px-8 py-10">
           <Card className="text-center">
             <div className="w-14 h-14 rounded-2xl bg-primary text-white grid place-items-center mx-auto shadow-btn-primary">
               <Lock strokeWidth={3} />
             </div>
-            <h1 className="h-display text-3xl mt-3">TeachMe Studio</h1>
+            <h1 className="h-display text-3xl mt-3">Edu-Mates Academy</h1>
             <p className="text-ink-muted mt-1">Content review & approval workspace.</p>
             <p className="text-xs font-extrabold text-primary mt-1">(Demo PIN: 2580)</p>
             <input
@@ -454,7 +454,7 @@ const ContentStudio: React.FC = () => {
 
   return (
     <div className="min-h-screen pb-16">
-      <TopBar back="/admin" title="TeachMe Studio" />
+      <TopBar back="/admin" title="Edu-Mates Academy" />
       <main className={cn("mx-auto px-4 md:px-8 py-6 space-y-5", tab === "sceneComposer" ? "max-w-[1900px]" : "max-w-7xl")}>
         <Card className="!p-5 md:!p-6">
           <div className="flex items-center gap-3 flex-wrap">
@@ -1836,7 +1836,7 @@ const formatSceneMarkerLabel = (marker: any): string => {
   return marker?.linkedLabel ? `${typeLabel}: ${marker.linkedLabel}` : typeLabel;
 };
 
-const SceneComposerLayeredPreview: React.FC<{ item: any; className?: string; alt?: string; showGameplayOverlay?: boolean }> = ({ item, className, alt, showGameplayOverlay = false }) => {
+const SceneComposerLayeredPreview: React.FC<{ item: any; className?: string; alt?: string; showAssets?: boolean; showZones?: boolean; showMarkers?: boolean }> = ({ item, className, alt, showAssets = true, showZones = false, showMarkers = false }) => {
   const mc = item?.manualComposition;
   const backgroundUrl = normalizeStudioImageUrl(mc?.backgroundUrl || item?.backgroundUrl || item?.previewUrl || "");
   const layers = Array.isArray(mc?.layers) ? [...mc.layers].sort((a: any, b: any) => Number(a?.zIndex ?? 1) - Number(b?.zIndex ?? 1)) : [];
@@ -1849,7 +1849,7 @@ const SceneComposerLayeredPreview: React.FC<{ item: any; className?: string; alt
       ) : (
         <div className="absolute inset-0 bg-gradient-to-br from-[#EAF7FF] to-[#FFF8DD]" />
       )}
-      {layers.map((layer: any) => {
+      {showAssets && layers.map((layer: any) => {
         const url = getManualCompositionLayerImageUrl(layer);
         if (!url) return null;
         const scale = Number(layer?.scale ?? 1);
@@ -1871,7 +1871,7 @@ const SceneComposerLayeredPreview: React.FC<{ item: any; className?: string; alt
           />
         );
       })}
-      {showGameplayOverlay && zones.length > 0 && (
+      {showZones && zones.length > 0 && (
         <svg className="absolute inset-0 w-full h-full pointer-events-none z-[80]" viewBox="0 0 100 100" preserveAspectRatio="none">
           {zones.map((zone: any) => {
             const points = Array.isArray(zone?.points) ? zone.points.map((p: any) => `${Number(p?.x ?? 0)},${Number(p?.y ?? 0)}`).join(" ") : "";
@@ -1884,7 +1884,7 @@ const SceneComposerLayeredPreview: React.FC<{ item: any; className?: string; alt
           })}
         </svg>
       )}
-      {showGameplayOverlay && markers.map((marker: any) => (
+      {showMarkers && markers.map((marker: any) => (
         <div
           key={marker?.id || marker?.name}
           className="absolute z-[90] -translate-x-1/2 -translate-y-full rounded-full px-2 py-1 text-[10px] font-extrabold shadow-md border-2 border-white bg-white/95 text-ink pointer-events-none"
@@ -1898,6 +1898,146 @@ const SceneComposerLayeredPreview: React.FC<{ item: any; className?: string; alt
   );
 };
 
+
+
+type ScenePackageWarning = {
+  code: string;
+  message: string;
+  path?: string;
+};
+
+const sanitizeScenePackageUrl = (value: unknown, path: string, warnings: ScenePackageWarning[]): string => {
+  if (typeof value !== "string") return "";
+  const normalized = normalizeStudioImageUrl(value);
+  if (!normalized) return "";
+  if (normalized.startsWith("data:image/")) {
+    warnings.push({
+      code: "inline-image-stripped",
+      path,
+      message: "Inline data:image URL was stripped from the runtime scene package. Export/import the image as a file-backed asset before runtime use.",
+    });
+    return "";
+  }
+  return normalized;
+};
+
+const downloadJsonFile = (payload: unknown, filenameBase: string) => {
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const objectUrl = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = objectUrl;
+  a.download = `${slugifyForDownload(filenameBase)}.scene.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+};
+
+const buildScenePackageJson = (item: any) => {
+  const mc = item?.manualComposition || {};
+  const warnings: ScenePackageWarning[] = [];
+  const layers = Array.isArray(mc.layers) ? mc.layers : [];
+  const zones = Array.isArray(mc.zones) ? mc.zones : [];
+  const markers = Array.isArray(mc.markers) ? mc.markers : [];
+  const backgroundUrl = sanitizeScenePackageUrl(mc.backgroundUrl || item?.backgroundUrl || item?.previewUrl || "", "background.url", warnings);
+
+  const assets = layers.map((layer: any, index: number) => {
+    const layerUrl = sanitizeScenePackageUrl(layer?.url || layer?.previewUrl || layer?.imageRef?.url || "", `assets[${index}].url`, warnings);
+    if (!layerUrl) {
+      warnings.push({
+        code: "missing-asset-url",
+        path: `assets[${index}].url`,
+        message: `Scene layer ${layer?.name || layer?.id || index + 1} has no portable image URL.`,
+      });
+    }
+    return {
+      id: layer?.id || `layer-${index + 1}`,
+      assetId: layer?.assetId || "",
+      sourceCollection: layer?.sourceCollection || "",
+      sourceId: layer?.sourceId || "",
+      name: layer?.name || layer?.label || `Layer ${index + 1}`,
+      assetType: layer?.assetType || layer?.kind || "asset",
+      url: layerUrl,
+      transform: {
+        x: Number(layer?.x ?? 50),
+        y: Number(layer?.y ?? 50),
+        scale: Number(layer?.scale ?? 1),
+        opacity: Number(layer?.opacity ?? 100),
+        flip: !!layer?.flip,
+        rotation: Number(layer?.rotation ?? 0),
+        zIndex: Number(layer?.zIndex ?? index + 1),
+      },
+    };
+  });
+
+  if (!backgroundUrl && (mc.backgroundUrl || item?.backgroundUrl || item?.previewUrl)) {
+    warnings.push({
+      code: "missing-background-url",
+      path: "background.url",
+      message: "Scene background is not portable because it is missing or was stored as inline image data.",
+    });
+  }
+
+  return {
+    schemaVersion: "questing-academy.scene-package.v1",
+    exportedAt: new Date().toISOString(),
+    scene: {
+      id: item?.id || "",
+      name: item?.name || "Untitled Scene",
+      realm: item?.realm || "",
+      purpose: item?.purpose || "",
+      mood: item?.mood || "",
+      timeOfDay: item?.timeOfDay || "",
+      status: item?.status || "",
+      visualPrompt: item?.visualPrompt || "",
+    },
+    canvas: {
+      ratio: mc.canvasRatio || item?.canvasRatio || "16:9",
+      backgroundMode: mc.backgroundMode || "",
+      transparentBackground: !!mc.transparentBackground,
+    },
+    background: {
+      id: mc.backgroundId || "",
+      label: mc.backgroundLabel || "",
+      url: backgroundUrl,
+    },
+    assets,
+    zones: zones.map((zone: any, index: number) => ({
+      id: zone?.id || `zone-${index + 1}`,
+      name: zone?.name || `Zone ${index + 1}`,
+      type: zone?.type || "interaction",
+      closed: !!zone?.closed,
+      points: Array.isArray(zone?.points) ? zone.points.map((point: any) => ({ x: Number(point?.x ?? 0), y: Number(point?.y ?? 0) })) : [],
+    })),
+    markers: markers.map((marker: any, index: number) => ({
+      id: marker?.id || `marker-${index + 1}`,
+      name: marker?.name || `Marker ${index + 1}`,
+      type: marker?.type || "point-of-interest",
+      x: Number(marker?.x ?? 50),
+      y: Number(marker?.y ?? 50),
+      linkedCollection: marker?.linkedCollection || "",
+      linkedId: marker?.linkedId || "",
+      linkedLabel: marker?.linkedLabel || "",
+    })),
+    references: {
+      compositionSourceAssets: Array.isArray(item?.compositionSourceAssets) ? item.compositionSourceAssets : [],
+      previewCompositeUrl: sanitizeScenePackageUrl(mc.previewCompositeUrl || "", "references.previewCompositeUrl", warnings),
+    },
+    counts: {
+      assets: assets.length,
+      zones: zones.length,
+      markers: markers.length,
+      warnings: warnings.length,
+    },
+    warnings,
+  };
+};
+
+const exportScenePackageJson = (item: any, filenameBase: string) => {
+  const scenePackage = buildScenePackageJson(item);
+  downloadJsonFile(scenePackage, filenameBase);
+};
+
 const StudioViewEditButton: React.FC<StudioViewEditButtonProps> = ({ collection, item, title, imageUrl }) => {
   const exportFilename = `${collection}-${getStudioItemTitle(item)}-${item.outputMode || item.zonePurpose || item.id || "image"}`;
   const hasArtManualComposition = collection === "arts" && !!item?.manualComposition?.layers?.length;
@@ -1909,6 +2049,11 @@ const StudioViewEditButton: React.FC<StudioViewEditButtonProps> = ({ collection,
       !!item?.manualComposition?.markers?.length ||
       !!item?.manualComposition?.zones?.length
     );
+  const sceneCompositionLayers = Array.isArray(item?.manualComposition?.layers) ? item.manualComposition.layers : [];
+  const sceneCompositionMarkers = Array.isArray(item?.manualComposition?.markers) ? item.manualComposition.markers : [];
+  const sceneCompositionZones = Array.isArray(item?.manualComposition?.zones) ? item.manualComposition.zones : [];
+  const missingSceneLayers = sceneCompositionLayers.filter((layer: any) => !getManualCompositionLayerImageUrl(layer));
+  const hasMissingSceneAssets = missingSceneLayers.length > 0;
   const displayImageUrl = hasSceneComposerComposition
     ? getSceneCompositionDisplayUrl(item, imageUrl)
     : normalizeStudioImageUrl(hasArtManualComposition ? getManualCompositionDisplayUrl(item, imageUrl) : imageUrl);
@@ -1918,7 +2063,9 @@ const StudioViewEditButton: React.FC<StudioViewEditButtonProps> = ({ collection,
   const [open, setOpen] = useState(false);
   const [edit, setEdit] = useState(false);
   const [fullscreenImage, setFullscreenImage] = useState(false);
-  const [showGameplayOverlay, setShowGameplayOverlay] = useState(false);
+  const [showSceneAssets, setShowSceneAssets] = useState(true);
+  const [showSceneZones, setShowSceneZones] = useState(false);
+  const [showSceneMarkers, setShowSceneMarkers] = useState(false);
   const editableFields = useMemo(() => getEditableStudioFields(collection, item), [collection, item.id]);
   const [form, setForm] = useState<Record<string, string>>({});
 
@@ -1992,7 +2139,7 @@ const StudioViewEditButton: React.FC<StudioViewEditButtonProps> = ({ collection,
               <div className="mt-4">
                 <button type="button" onClick={() => setFullscreenImage(true)} className="group block w-full text-left">
                   {hasSceneComposerComposition ? (
-                    <SceneComposerLayeredPreview item={item} alt={`${displayTitle} full preview`} className="w-full max-h-[420px] transition group-hover:brightness-95" showGameplayOverlay={showGameplayOverlay} />
+                    <SceneComposerLayeredPreview item={item} alt={`${displayTitle} full preview`} className="w-full max-h-[420px] transition group-hover:brightness-95" showAssets={showSceneAssets} showZones={showSceneZones} showMarkers={showSceneMarkers} />
                   ) : (
                     <img src={displayImageUrl} alt={`${displayTitle} full preview`} className="w-full max-h-[420px] object-contain rounded-2xl border-4 border-white shadow-lg transition group-hover:brightness-95 bg-bg" />
                   )}
@@ -2002,9 +2149,11 @@ const StudioViewEditButton: React.FC<StudioViewEditButtonProps> = ({ collection,
                     <Eye size={13} strokeWidth={3} /> View image fullscreen
                   </button>
                   {hasSceneComposerComposition && (
-                    <button type="button" onClick={() => setShowGameplayOverlay((v) => !v)} className={cn("btn-outline !text-xs !py-1.5 !px-3", showGameplayOverlay ? "!bg-primary !text-white" : "")}>
-                      <MapPin size={13} strokeWidth={3} /> {showGameplayOverlay ? "Hide gameplay overlay" : "Show gameplay overlay"}
-                    </button>
+                    <>
+                      <button type="button" onClick={() => setShowSceneAssets((v) => !v)} className={cn("btn-outline !text-xs !py-1.5 !px-3", showSceneAssets ? "!bg-primary !text-white" : "")}>Assets {showSceneAssets ? "On" : "Off"}</button>
+                      <button type="button" onClick={() => setShowSceneZones((v) => !v)} className={cn("btn-outline !text-xs !py-1.5 !px-3", showSceneZones ? "!bg-primary !text-white" : "")}>Zones {showSceneZones ? "On" : "Off"}</button>
+                      <button type="button" onClick={() => setShowSceneMarkers((v) => !v)} className={cn("btn-outline !text-xs !py-1.5 !px-3", showSceneMarkers ? "!bg-primary !text-white" : "")}><MapPin size={13} strokeWidth={3} /> Markers {showSceneMarkers ? "On" : "Off"}</button>
+                    </>
                   )}
                   {!hasSceneComposerComposition && (
                     <button type="button" onClick={() => downloadImageFromUrl(displayImageUrl, exportFilename)} className="btn-outline !text-xs !py-1.5 !px-3">
@@ -2019,6 +2168,11 @@ const StudioViewEditButton: React.FC<StudioViewEditButtonProps> = ({ collection,
                   {hasSceneComposerComposition && (
                     <button type="button" onClick={() => exportSavedSceneComposerComposition(item, exportFilename)} className="btn-outline !text-xs !py-1.5 !px-3">
                       <Download size={13} strokeWidth={3} /> Export saved scene PNG
+                    </button>
+                  )}
+                  {hasSceneComposerComposition && (
+                    <button type="button" onClick={() => exportScenePackageJson(item, exportFilename)} className="btn-outline !text-xs !py-1.5 !px-3">
+                      <Download size={13} strokeWidth={3} /> Export scene package JSON
                     </button>
                   )}
                   {/^(assets|companions|arts|avatars|evolutions|npcs)$/.test(collection) && (
@@ -2121,15 +2275,25 @@ const StudioViewEditButton: React.FC<StudioViewEditButtonProps> = ({ collection,
 
       {fullscreenImage && (displayImageUrl || hasSceneComposerComposition) && (
         <div className="fixed inset-0 z-[60] bg-black/85 p-4 flex items-center justify-center" role="dialog" aria-modal="true">
-          <div className="absolute top-4 right-4 flex gap-2">
+          <div className="absolute top-4 right-4 flex flex-wrap gap-2 justify-end">
+            {hasSceneComposerComposition && (
+              <>
+                <button type="button" onClick={() => setShowSceneAssets((v) => !v)} className="btn-ghost !bg-white !text-ink !text-sm !py-2 !px-4">Assets {showSceneAssets ? "On" : "Off"}</button>
+                <button type="button" onClick={() => setShowSceneZones((v) => !v)} className="btn-ghost !bg-white !text-ink !text-sm !py-2 !px-4">Zones {showSceneZones ? "On" : "Off"}</button>
+                <button type="button" onClick={() => setShowSceneMarkers((v) => !v)} className="btn-ghost !bg-white !text-ink !text-sm !py-2 !px-4">Markers {showSceneMarkers ? "On" : "Off"}</button>
+              </>
+            )}
             <button type="button" onClick={() => downloadImageFromUrl(displayImageUrl, exportFilename)} className="btn-ghost !bg-white !text-ink !text-sm !py-2 !px-4"><Download size={14} strokeWidth={3} /> Export</button>
+            {hasSceneComposerComposition && (
+              <button type="button" onClick={() => exportScenePackageJson(item, exportFilename)} className="btn-ghost !bg-white !text-ink !text-sm !py-2 !px-4"><Download size={14} strokeWidth={3} /> Scene JSON</button>
+            )}
             {/^(assets|companions|arts|avatars|evolutions|npcs)$/.test(collection) && (
               <button type="button" onClick={() => exportTransparentPngFromUrl(displayImageUrl, exportFilename)} className="btn-ghost !bg-white !text-ink !text-sm !py-2 !px-4"><Download size={14} strokeWidth={3} /> Transparent PNG</button>
             )}
             <button type="button" onClick={() => setFullscreenImage(false)} className="btn-ghost !bg-white !text-ink !text-sm !py-2 !px-4">Close</button>
           </div>
           {hasSceneComposerComposition ? (
-            <SceneComposerLayeredPreview item={item} alt={`${displayTitle} fullscreen`} className="w-[95vw] max-w-[1400px] max-h-[92vh] rounded-2xl shadow-2xl" showGameplayOverlay={showGameplayOverlay} />
+            <SceneComposerLayeredPreview item={item} alt={`${displayTitle} fullscreen`} className="w-[95vw] max-w-[1400px] max-h-[92vh] rounded-2xl shadow-2xl" showAssets={showSceneAssets} showZones={showSceneZones} showMarkers={showSceneMarkers} />
           ) : (
             <img src={displayImageUrl} alt={`${displayTitle} fullscreen`} className="max-w-[95vw] max-h-[92vh] object-contain rounded-2xl shadow-2xl" />
           )}
@@ -3861,7 +4025,7 @@ const ArtsTab: React.FC = () => {
 // ASSET LIBRARY — unified catalog for Studio + future Land Editor
 // ============================================================================
 type LibraryAssetType = "npc" | "companion" | "prop" | "background" | "art" | "ui" | "avatar" | "quest" | "misc";
-type AssetConsumerMode = "library" | "companion-art" | "land-editor";
+type AssetConsumerMode = "library" | "companion-art" | "land-editor" | "character-sprites";
 type LibraryAsset = {
   id: string;
   sourceCollection: StudioCollectionKey;
@@ -3881,12 +4045,17 @@ type LibraryAsset = {
 type PromptBuilderAssetType =
   | "npc-full-body" | "npc-portrait" | "companion" | "companion-evolution"
   | "avatar-asset" | "ui-icon" | "prop" | "quest-item"
-  | "battle-background" | "realm-overview" | "scene-environment" | "walking-map-environment";
+  | "battle-background" | "realm-overview" | "scene-environment" | "walking-map-environment"
+  | "walkable-sprite-sheet" | "four-direction-character-sheet" | "idle-walk-frames" | "runtime-12-frame-sprite-sheet";
+
+type CharacterSpriteOutputType = "walkable-sprite-sheet" | "four-direction-character-sheet" | "idle-walk-frames" | "runtime-12-frame-sprite-sheet";
+const CHARACTER_SPRITE_OUTPUT_TYPES: CharacterSpriteOutputType[] = ["walkable-sprite-sheet", "four-direction-character-sheet", "idle-walk-frames", "runtime-12-frame-sprite-sheet"];
 
 const PROMPT_BUILDER_TYPES: PromptBuilderAssetType[] = [
   "npc-full-body", "npc-portrait", "companion", "companion-evolution",
   "avatar-asset", "ui-icon", "prop", "quest-item",
   "battle-background", "realm-overview", "scene-environment", "walking-map-environment",
+  "walkable-sprite-sheet", "four-direction-character-sheet", "idle-walk-frames", "runtime-12-frame-sprite-sheet",
 ];
 
 const ENVIRONMENT_PROMPT_TYPES: PromptBuilderAssetType[] = ["battle-background", "realm-overview", "scene-environment", "walking-map-environment"];
@@ -3904,6 +4073,8 @@ const isEnvironmentPromptType = (assetType: PromptBuilderAssetType): boolean => 
 const isNpcPromptType = (assetType: PromptBuilderAssetType): boolean => assetType === "npc-full-body" || assetType === "npc-portrait";
 const isCompanionPromptType = (assetType: PromptBuilderAssetType): boolean => assetType === "companion" || assetType === "companion-evolution";
 const isObjectPromptType = (assetType: PromptBuilderAssetType): boolean => OBJECT_PROMPT_TYPES.includes(assetType);
+const isCharacterSpritePromptType = (assetType: PromptBuilderAssetType): boolean =>
+  assetType === "walkable-sprite-sheet" || assetType === "four-direction-character-sheet" || assetType === "idle-walk-frames" || assetType === "runtime-12-frame-sprite-sheet";
 
 const cleanPromptText = (value?: string, fallback = ""): string => {
   const raw = (value || fallback || "").trim().replace(/\s+/g, " ");
@@ -3969,6 +4140,18 @@ const getPromptBuilderDefaultFields = (assetType: PromptBuilderAssetType): Recor
     visualNotes: "Wide 16:9 walking map environment with clear walkable ground, readable collision boundaries, usable empty space for NPCs and props, and obvious interaction points. No UI or text.",
   };
 
+  if (isCharacterSpritePromptType(assetType)) return {
+    ...base,
+    name: assetType === "runtime-12-frame-sprite-sheet" ? "Runtime 12-Frame Sprite Sheet" : assetType === "four-direction-character-sheet" ? "Character 4-Direction Sheet" : assetType === "idle-walk-frames" ? "Character Idle Walk Frames" : "Walkable Character Sprite Sheet",
+    role: "walkable RPG character",
+    species: "same as attached reference image",
+    ageRead: "same as attached reference image",
+    outfit: "preserve outfit from attached reference image",
+    pose: "front/back/left/right walkable sprite poses",
+    personality: "friendly, cozy, child-safe",
+    visualNotes: "Use the attached/imported character image as the source of truth. Preserve identity, outfit, hair, colors, proportions, and silhouette exactly.",
+  };
+
   if (assetType === "companion" || assetType === "companion-evolution") return {
     ...base,
     name: assetType === "companion-evolution" ? "Bubbee Bloom" : "Bubbee",
@@ -4017,6 +4200,10 @@ const getPromptBuilderRecommendedSpec = (assetType: PromptBuilderAssetType): str
   if (assetType === "realm-overview") return "Recommended output: PNG or WebP, 2048x1152, wide 16:9 realm overview.";
   if (assetType === "scene-environment") return "Recommended output: PNG or WebP, 1920x1080, wide 16:9 scene environment.";
   if (assetType === "walking-map-environment") return "Recommended output: PNG or WebP, 1920x1080, wide 16:9 walking map environment.";
+  if (assetType === "walkable-sprite-sheet") return "Recommended output: transparent PNG sprite sheet, clean grid, front/back/left/right with idle + 2 walk frames per direction.";
+  if (assetType === "four-direction-character-sheet") return "Recommended output: transparent PNG, clean 4-direction character sheet: front, back, left, right.";
+  if (assetType === "idle-walk-frames") return "Recommended output: transparent PNG sprite sheet with idle and walk frames, consistent scale and padding.";
+  if (assetType === "runtime-12-frame-sprite-sheet") return "Recommended output: transparent PNG runtime sprite sheet, strict 4 rows x 3 columns, 12 equal-size cells.";
   return "Recommended output: PNG, 1024x1024, transparent background preferred. If transparency is unavailable, use flat pure white removable background.";
 };
 
@@ -4028,6 +4215,24 @@ const buildAssetPromptOnly = (assetType: PromptBuilderAssetType, fields: Record<
   const style = "Style: cute chibi educational fantasy RPG, soft pastel storybook game art, rounded shapes, friendly expression, child-safe, polished game asset, readable at small game UI size.";
   const transparent = "Background: transparent background preferred. If transparent output is unavailable, use a flat pure white removable background for transparent PNG export.";
   const negative = "Negative: no text, no labels, no watermark, no logo, no UI mockup, no concept sheet, no duplicate subjects, no extra characters, no weapons, no combat pose, no villain, no horror, no photorealism.";
+
+  if (isCharacterSpritePromptType(assetType)) {
+    const outputType = assetType as CharacterSpriteOutputType;
+    return buildCharacterSpritePrompt(
+      outputType,
+      undefined,
+      [
+        `Character name/output name: ${name}`,
+        `Role/use case: ${cleanPromptText(fields.role || fields.purpose, "walkable RPG character")}`,
+        `Reference/body type: ${cleanPromptText(fields.species, "same as attached reference image")}`,
+        `Age read: ${cleanPromptText(fields.ageRead, "same as attached reference image")}`,
+        `Outfit preservation: ${cleanPromptText(fields.outfit, "preserve outfit from attached reference image")}`,
+        `Pose/animation direction: ${cleanPromptText(fields.pose, "simple readable walk cycle poses")}`,
+        `Personality/tone: ${cleanPromptText(fields.personality, "friendly, cozy, child-safe")}`,
+        notes ? `Additional visual notes: ${notes}` : "",
+      ].filter(Boolean).join(". ")
+    );
+  }
 
   if (assetType === "npc-full-body" || assetType === "npc-portrait") {
     return [
@@ -4172,6 +4377,58 @@ const buildAssetPromptOnly = (assetType: PromptBuilderAssetType, fields: Record<
   ].join("\n");
 };
 
+
+
+const buildCharacterSpritePrompt = (outputType: CharacterSpriteOutputType, reference?: LibraryAsset, customNotes = ""): string => {
+  const name = reference?.name || "the selected character";
+  const sourceKind = reference ? `${reference.assetType} from ${reference.sourceCollection}` : "attached reference image";
+  const notes = cleanPromptText(customNotes, "");
+  const shared = [
+    `Create one Edu-Mates Academy 2D walkable RPG character asset based on the attached reference image: ${name}.`,
+    `Reference source: ${sourceKind}. Use the attached/main reference image as the source of truth for identity and consistency.`,
+    "IDENTITY LOCK: preserve the same face feel, hair shape, hair color, outfit colors, outfit details, accessories, silhouette, proportions, species/body type, and friendly child-safe personality from the reference. Do not redesign, recolor, age-swap, species-swap, or replace the character.",
+    reference?.description ? `Reference notes: ${compactPromptText(reference.description, "")}.` : "",
+    notes ? `Extra direction: ${withPeriod(notes)}` : "",
+    "Style: cute educational fantasy RPG character art, soft pastel storybook rendering, rounded friendly shapes, cozy Edu-Mates Academy tone, readable at small game size, polished game-ready sprite art.",
+    "Output rules: transparent PNG preferred, no background, no scenery, no UI, no text labels, no watermark, no logo, no extra characters, no props unless already part of the reference, no horror, no weapons, no photorealism.",
+  ].filter(Boolean);
+
+  if (outputType === "four-direction-character-sheet") {
+    return [
+      ...shared,
+      "Output type: 4-direction character sheet.",
+      "Create a clean grid with front, back, left, and right views. Use one neutral idle pose per direction. Keep proportions, outfit details, colors, and scale consistent across every direction. Leave padding between frames for easy slicing.",
+    ].join("\n");
+  }
+
+  if (outputType === "idle-walk-frames") {
+    return [
+      ...shared,
+      "Output type: idle + walk animation frames.",
+      "Create a clean sprite sheet with idle, left-step, and right-step walking frames. Include front, back, left, and right directions if possible. Keep the character locked to the same design in every frame. Use simple readable foot/arm motion, not exaggerated action poses.",
+    ].join("\n");
+  }
+
+  if (outputType === "runtime-12-frame-sprite-sheet") {
+    return [
+      ...shared,
+      "Output type: runtime 12-frame sprite sheet.",
+      "Create a strict transparent PNG sprite sheet with exactly 12 frames arranged in a clean 4 rows x 3 columns grid.",
+      "Row 1: front idle, front left-step, front right-step.",
+      "Row 2: back idle, back left-step, back right-step.",
+      "Row 3: left idle, left walk A, left walk B.",
+      "Row 4: right idle, right walk A, right walk B.",
+      "Runtime rules: every cell must be the same size, the character must keep the same scale in every frame, feet must share the same baseline, body center/anchor must stay consistent, and padding must be even for easy slicing.",
+      "Do not add shadows, labels, grid lines, frame numbers, background scenery, cropped body parts, extra poses, duplicate rows, or decorative effects.",
+    ].join("\n");
+  }
+
+  return [
+    ...shared,
+    "Output type: walkable character sprite sheet.",
+    "Create a transparent PNG sprite sheet in a clean grid. Include four directions: front, back, left, and right. For each direction, include one idle pose and two simple walking frames. Keep frame size consistent, character centered, feet aligned, and proportions identical across all frames. Leave clear spacing/padding for easy slicing into game sprites.",
+  ].join("\n");
+};
 type ImportAssetType =
   | "npc-portrait" | "npc-full-body" | "companion" | "companion-evolution"
   | "avatar-part" | "avatar-hair" | "avatar-hat" | "avatar-outfit"
@@ -4337,11 +4594,21 @@ const AssetLibraryTab: React.FC = () => {
     accentColor: "#F4C753",
     visualNotes: "No background. Single centered game-ready asset.",
   });
+  const [spriteReferenceAssetId, setSpriteReferenceAssetId] = useState("");
+  const [spriteOutputType, setSpriteOutputType] = useState<CharacterSpriteOutputType>("walkable-sprite-sheet");
+  const [spriteNotes, setSpriteNotes] = useState("Preserve the imported character exactly and make it suitable for a walkable RPG map.");
   const generatedPromptOnly = useMemo(() => buildAssetPromptOnly(promptAssetType, promptFields), [promptAssetType, promptFields]);
+  const spriteReferenceOptions = useMemo(() => libraryAssets.filter((asset) => ["npc", "companion", "avatar", "art", "prop", "misc"].includes(asset.assetType) && !!(asset.transparentUrl || asset.thumbnailUrl)), [libraryAssets]);
+  const selectedSpriteReference = useMemo(() => spriteReferenceOptions.find((asset) => asset.id === spriteReferenceAssetId) || null, [spriteReferenceOptions, spriteReferenceAssetId]);
+  const generatedSpritePrompt = useMemo(() => buildCharacterSpritePrompt(spriteOutputType, selectedSpriteReference || undefined, spriteNotes), [spriteOutputType, selectedSpriteReference, spriteNotes]);
   const updatePromptField = (key: string, value: string) => setPromptFields((current) => ({ ...current, [key]: value }));
   const copyGeneratedPrompt = async () => {
     await navigator.clipboard?.writeText(generatedPromptOnly);
     alert("Prompt copied. Generate externally, then import the finished image here.");
+  };
+  const copyGeneratedSpritePrompt = async () => {
+    await navigator.clipboard?.writeText(generatedSpritePrompt);
+    alert("Sprite prompt copied. Attach the selected reference image in your image generator, then import the finished sprite sheet here.");
   };
 
   const filtered = useMemo(() => {
@@ -4577,7 +4844,7 @@ const AssetLibraryTab: React.FC = () => {
                 </Field>
 
                 <Field label="Name">
-                  <TextField testid="prompt-builder-name" value={promptFields.name || ""} onChange={(v) => updatePromptField("name", v)} placeholder={isEnvironmentPromptType(promptAssetType) ? "Battle BG 1 / Meadowfall Grove / Sticker Shop" : "Sage the Cozy"} />
+                  <TextField testid="prompt-builder-name" value={promptFields.name || ""} onChange={(v) => updatePromptField("name", v)} placeholder={isCharacterSpritePromptType(promptAssetType) ? "Linden Walkable Sprite Sheet" : isEnvironmentPromptType(promptAssetType) ? "Battle BG 1 / Meadowfall Grove / Sticker Shop" : "Sage the Cozy"} />
                 </Field>
 
                 {isEnvironmentPromptType(promptAssetType) ? (
