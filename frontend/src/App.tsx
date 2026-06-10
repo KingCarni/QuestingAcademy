@@ -14,6 +14,7 @@ import ContentStudio from "./pages/ContentStudio";
 import AdventureHub from "./pages/adventure/AdventureHub";
 import RealmMap from "./pages/adventure/RealmMap";
 import TownHub from "./pages/adventure/TownHub";
+import AdventureZone from "./pages/adventure/AdventureZone";
 import CompanionsPanel from "./pages/adventure/CompanionsPanel";
 import QuestsPreview from "./pages/adventure/QuestsPreview";
 import { RequirePlayer } from "./components/RequirePlayer";
@@ -30,6 +31,8 @@ const App: React.FC = () => {
       <Route path="/adventure" element={<RequirePlayer requireStarter><AdventureHub /></RequirePlayer>} />
       <Route path="/adventure/realms" element={<RequirePlayer requireStarter><RealmMap /></RequirePlayer>} />
       <Route path="/adventure/town/:realmId" element={<RequirePlayer requireStarter><TownHub /></RequirePlayer>} />
+      <Route path="/adventure/zone" element={<RequirePlayer requireStarter><AdventureZone /></RequirePlayer>} />
+      <Route path="/adventure/zone/:zoneId" element={<RequirePlayer requireStarter><AdventureZone /></RequirePlayer>} />
       <Route path="/adventure/companions" element={<RequirePlayer requireStarter><CompanionsPanel /></RequirePlayer>} />
       <Route path="/adventure/quests" element={<RequirePlayer requireStarter><QuestsPreview /></RequirePlayer>} />
 
