@@ -12,7 +12,9 @@ import {
 } from "../../lib/adventureZoneTypes";
 import { ArrowLeft, Box, Leaf, MapPin, MessageCircle, Search, Sparkles, Swords, Trees, Waypoints } from "lucide-react";
 
-const WALK_DURATION_S = 0.9;
+const WALK_DURATION_S = 0.85;
+
+type HeroPosition = { x: number; y: number };
 
 const markerIcon = (type: AdventureZoneMarker["type"]) => {
   switch (type) {
@@ -31,16 +33,26 @@ const markerIcon = (type: AdventureZoneMarker["type"]) => {
 
 const clampPercent = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
+const distancePercent = (a: HeroPosition, b: HeroPosition) => {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  return Math.sqrt(dx * dx + dy * dy);
+};
+
 const AdventureZone: React.FC = () => {
   const nav = useNavigate();
   const { zoneId } = useParams<{ zoneId: string }>();
   const player = useGame((s) => s.player);
 
   const zone = useMemo(() => ADVENTURE_ZONES.find((z) => z.id === zoneId) ?? ADVENTURE_ZONES[0], [zoneId]);
-  const startMarker = zone.markers.find((marker) => marker.type === "player-start");
-  const [hero, setHero] = useState<{ x: number; y: number }>(() => ({ x: startMarker?.x ?? 50, y: startMarker?.y ?? 82 }));
+  const startMarker = zone.markers.find((marker) => marker.id === zone.playerStartMarkerId) ?? zone.markers.find((marker) => marker.type === "player-start");
+  const bounds = zone.movementBounds ?? { minX: 4, maxX: 96, minY: 8, maxY: 92 };
+
+  const [hero, setHero] = useState<HeroPosition>(() => ({ x: startMarker?.x ?? 50, y: startMarker?.y ?? 82 }));
   const [selectedMarkerId, setSelectedMarkerId] = useState<string>("");
   const [showDebugMarkers, setShowDebugMarkers] = useState(true);
+  const [cameraFollow, setCameraFollow] = useState(zone.camera?.enabled ?? true);
+  const [lastAction, setLastAction] = useState("Click anywhere on the meadow to move.");
   const canvasRef = useRef<HTMLDivElement | null>(null);
 
   const selectedMarker = zone.markers.find((marker) => marker.id === selectedMarkerId) ?? null;
@@ -48,12 +60,37 @@ const AdventureZone: React.FC = () => {
   useEffect(() => {
     setHero({ x: startMarker?.x ?? 50, y: startMarker?.y ?? 82 });
     setSelectedMarkerId("");
-  }, [zone.id, startMarker?.x, startMarker?.y]);
+    setCameraFollow(zone.camera?.enabled ?? true);
+    setLastAction(`Loaded ${zone.name}.`);
+  }, [zone.id, zone.name, zone.camera?.enabled, startMarker?.x, startMarker?.y]);
+
+  const clampToBounds = (x: number, y: number): HeroPosition => ({
+    x: clampPercent(x, bounds.minX, bounds.maxX),
+    y: clampPercent(y, bounds.minY, bounds.maxY),
+  });
 
   const walkTo = (x: number, y: number): Promise<void> => {
-    setHero({ x, y });
+    const next = clampToBounds(x, y);
+    setHero(next);
     return new Promise((resolve) => setTimeout(resolve, WALK_DURATION_S * 1000));
   };
+
+  const cameraTransform = useMemo(() => {
+    if (!cameraFollow || zone.camera?.mode !== "soft-follow") return "translate3d(0%, 0%, 0) scale(1)";
+    const offsetX = clampPercent((50 - hero.x) * 0.08, -2.4, 2.4);
+    const offsetY = clampPercent((50 - hero.y) * 0.08, -1.4, 1.4);
+    return `translate3d(${offsetX}%, ${offsetY}%, 0) scale(1.015)`;
+  }, [cameraFollow, hero.x, hero.y, zone.camera?.mode]);
+
+  const nearestMarker = useMemo(() => {
+    const candidates = zone.markers.filter((marker) => marker.type !== "player-start");
+    const near = candidates
+      .map((marker) => ({ marker, distance: distancePercent(hero, { x: marker.x, y: marker.y }) }))
+      .sort((a, b) => a.distance - b.distance)[0];
+    if (!near) return null;
+    const radius = near.marker.radius ?? 7;
+    return near.distance <= radius + 2 ? near.marker : null;
+  }, [hero, zone.markers]);
 
   const handleCanvasClick = (e: React.MouseEvent<HTMLDivElement>) => {
     const c = canvasRef.current;
@@ -61,25 +98,32 @@ const AdventureZone: React.FC = () => {
     const rect = c.getBoundingClientRect();
     const x = ((e.clientX - rect.left) / rect.width) * 100;
     const y = ((e.clientY - rect.top) / rect.height) * 100;
+    const next = clampToBounds(x, y);
     setSelectedMarkerId("");
-    walkTo(clampPercent(x, 4, 96), clampPercent(y, 8, 92));
+    setLastAction(`Walking to ${next.x.toFixed(0)}%, ${next.y.toFixed(0)}%.`);
+    walkTo(next.x, next.y);
   };
 
   const selectMarker = async (marker: AdventureZoneMarker, e?: React.MouseEvent) => {
     e?.stopPropagation();
     setSelectedMarkerId(marker.id);
-    await walkTo(marker.x, clampPercent(marker.y + 4, 8, 92));
+    setLastAction(`Moving toward ${marker.label}.`);
+    await walkTo(marker.x, clampPercent(marker.y + 4, bounds.minY, bounds.maxY));
   };
 
   const activateSelected = () => {
     if (!selectedMarker) return;
+    setLastAction(`${ADVENTURE_ZONE_ACTION_LABELS[selectedMarker.type]}: ${selectedMarker.label}`);
     if (selectedMarker.type === "town-return") {
-      nav("/adventure/realms");
+      nav(selectedMarker.target || "/adventure/realms");
       return;
     }
     if (selectedMarker.type === "battle-trigger") {
       nav(selectedMarker.target || "/battle");
       return;
+    }
+    if (selectedMarker.type === "zone-exit" && selectedMarker.target && selectedMarker.target.startsWith("/")) {
+      nav(selectedMarker.target);
     }
   };
 
@@ -89,13 +133,21 @@ const AdventureZone: React.FC = () => {
         <div className="mx-auto mb-3 max-w-[92rem] rounded-[2rem] bg-white/82 border-2 border-white p-4 shadow-sm" data-testid="adventure-zone-dev-slots">
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div>
-              <p className="text-[10px] font-extrabold uppercase tracking-widest text-primary">Dev adventure zone</p>
-              <p className="text-xs text-ink-muted">Prototype shell for out-of-town maps. Movement is shared-stage ready; collision comes next.</p>
+              <p className="text-[10px] font-extrabold uppercase tracking-widest text-primary">TEA-130 / TEA-131 adventure zone</p>
+              <p className="text-xs text-ink-muted">Runtime shell, zone data model, click movement, soft camera, spawn points, exits, and marker-first interactions.</p>
             </div>
-            <label className="chip bg-white/80 border-white text-ink-muted cursor-pointer">
-              <input type="checkbox" checked={showDebugMarkers} onChange={(e) => setShowDebugMarkers(e.target.checked)} />
-              Show debug markers
-            </label>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="chip bg-primary/10 border-primary/20 text-primary">{zone.mode}</span>
+              <span className="chip bg-gold/15 border-gold/30 text-ink-muted">{zone.encounterPresentation}</span>
+              <label className="chip bg-white/80 border-white text-ink-muted cursor-pointer">
+                <input type="checkbox" checked={showDebugMarkers} onChange={(e) => setShowDebugMarkers(e.target.checked)} />
+                Show markers
+              </label>
+              <label className="chip bg-white/80 border-white text-ink-muted cursor-pointer">
+                <input type="checkbox" checked={cameraFollow} onChange={(e) => setCameraFollow(e.target.checked)} />
+                Soft camera
+              </label>
+            </div>
           </div>
         </div>
 
@@ -114,70 +166,82 @@ const AdventureZone: React.FC = () => {
                 backgroundColor: "#BFE0F2",
               }}
             >
-              <div className="absolute inset-0 bg-gradient-to-b from-white/5 via-transparent to-ink/18 pointer-events-none" />
-              <div className="absolute top-5 left-5 rounded-3xl bg-white/84 backdrop-blur-md border-2 border-white px-4 py-3 shadow-lg pointer-events-none z-30">
-                <p className="text-[10px] font-extrabold uppercase tracking-widest text-primary">Adventure zone</p>
-                <p className="h-display text-xl text-ink">{zone.name}</p>
-              </div>
+              <motion.div className="absolute inset-0 origin-center" animate={{ transform: cameraTransform }} transition={{ duration: 0.45, ease: "easeOut" }}>
+                <div className="absolute inset-0 bg-gradient-to-b from-white/5 via-transparent to-ink/18 pointer-events-none" />
+                <div className="absolute top-5 left-5 rounded-3xl bg-white/84 backdrop-blur-md border-2 border-white px-4 py-3 shadow-lg pointer-events-none z-30">
+                  <p className="text-[10px] font-extrabold uppercase tracking-widest text-primary">Adventure zone</p>
+                  <p className="h-display text-xl text-ink">{zone.name}</p>
+                  <p className="text-xs text-ink-muted">Hero {hero.x.toFixed(0)}%, {hero.y.toFixed(0)}%</p>
+                </div>
 
-              {showDebugMarkers && zone.markers.map((marker) => {
-                const Icon = markerIcon(marker.type);
-                const selected = selectedMarker?.id === marker.id;
-                return (
-                  <button
-                    key={marker.id}
-                    type="button"
-                    onClick={(e) => selectMarker(marker, e)}
-                    className="absolute -translate-x-1/2 -translate-y-1/2 z-30 group"
-                    style={{ left: `${marker.x}%`, top: `${marker.y}%` }}
-                    data-testid={`adventure-zone-marker-${marker.id}`}
+                {showDebugMarkers && zone.markers.map((marker) => {
+                  const Icon = markerIcon(marker.type);
+                  const selected = selectedMarker?.id === marker.id;
+                  const nearby = nearestMarker?.id === marker.id;
+                  return (
+                    <button
+                      key={marker.id}
+                      type="button"
+                      onClick={(e) => selectMarker(marker, e)}
+                      className="absolute -translate-x-1/2 -translate-y-1/2 z-30 group"
+                      style={{ left: `${marker.x}%`, top: `${marker.y}%` }}
+                      data-testid={`adventure-zone-marker-${marker.id}`}
+                    >
+                      <div className={`rounded-full border-2 px-3 py-2 shadow-xl backdrop-blur-md flex items-center gap-2 text-xs font-extrabold transition ${selected ? "bg-primary text-white border-white scale-110" : nearby ? "bg-gold/90 text-ink border-white scale-105" : "bg-white/86 text-ink border-white hover:-translate-y-0.5"}`}>
+                        <Icon size={14} strokeWidth={3} />
+                        <span className="max-w-[140px] truncate">{marker.label}</span>
+                      </div>
+                      {marker.radius && (
+                        <span className="absolute left-1/2 top-1/2 rounded-full border-2 border-white/65 bg-primary/10 -z-10" style={{ width: `${marker.radius * 2.2}rem`, height: `${marker.radius * 2.2}rem`, transform: "translate(-50%, -50%)" }} />
+                      )}
+                      <div className="mt-1 text-[10px] font-bold uppercase tracking-wider text-ink-muted bg-white/75 rounded-full px-2 py-0.5 opacity-0 group-hover:opacity-100 transition">
+                        {ADVENTURE_ZONE_MARKER_LABELS[marker.type]}
+                      </div>
+                    </button>
+                  );
+                })}
+
+                {player && (
+                  <motion.div
+                    data-testid="adventure-zone-hero-sprite"
+                    className="absolute pointer-events-none z-40 drop-shadow-xl"
+                    initial={false}
+                    animate={{ left: `${hero.x}%`, top: `${hero.y}%` }}
+                    transition={{ duration: WALK_DURATION_S, ease: "easeInOut" }}
+                    style={{ translateX: "-50%", translateY: "-100%" }}
                   >
-                    <div className={`rounded-full border-2 px-3 py-2 shadow-xl backdrop-blur-md flex items-center gap-2 text-xs font-extrabold transition ${selected ? "bg-primary text-white border-white scale-110" : "bg-white/86 text-ink border-white hover:-translate-y-0.5"}`}>
-                      <Icon size={14} strokeWidth={3} />
-                      <span className="max-w-[140px] truncate">{marker.label}</span>
-                    </div>
-                    <div className="mt-1 text-[10px] font-bold uppercase tracking-wider text-ink-muted bg-white/75 rounded-full px-2 py-0.5 opacity-0 group-hover:opacity-100 transition">
-                      {ADVENTURE_ZONE_MARKER_LABELS[marker.type]}
-                    </div>
-                  </button>
-                );
-              })}
-
-              {player && (
-                <motion.div
-                  data-testid="adventure-zone-hero-sprite"
-                  className="absolute pointer-events-none z-40 drop-shadow-xl"
-                  initial={false}
-                  animate={{ left: `${hero.x}%`, top: `${hero.y}%` }}
-                  transition={{ duration: WALK_DURATION_S, ease: "easeInOut" }}
-                  style={{ translateX: "-50%", translateY: "-100%" }}
-                >
-                  <motion.div animate={{ y: [0, -3, 0, -3, 0] }} transition={{ duration: WALK_DURATION_S, ease: "easeInOut", repeat: 0 }} key={`${hero.x.toFixed(0)}-${hero.y.toFixed(0)}`}>
-                    <ChibiAvatar config={player.avatar} size={72} />
+                    <motion.div animate={{ y: [0, -4, 0, -3, 0] }} transition={{ duration: WALK_DURATION_S, ease: "easeInOut", repeat: 0 }} key={`${hero.x.toFixed(0)}-${hero.y.toFixed(0)}`}>
+                      <ChibiAvatar config={player.avatar} size={74} />
+                    </motion.div>
                   </motion.div>
-                </motion.div>
-              )}
+                )}
+              </motion.div>
             </div>
           </div>
 
           <aside className="fixed right-3 top-28 z-30 w-[17.5rem] max-h-[calc(100vh-9rem)] overflow-y-auto rounded-[2rem] border-[4px] border-white bg-white/84 backdrop-blur-md shadow-2xl shadow-indigo-900/10 p-4" data-testid="adventure-zone-detail-rail">
             <div className="mb-4">
               <p className="text-[10px] font-extrabold uppercase tracking-widest text-primary">Selected marker</p>
-              <h2 className="h-display text-2xl text-ink mt-1">{selectedMarker?.label || "Choose a trail point"}</h2>
-              <p className="text-xs text-ink-muted mt-1">{selectedMarker ? ADVENTURE_ZONE_MARKER_LABELS[selectedMarker.type] : "Pick an objective, chest, exit, or encounter marker."}</p>
+              <h2 className="h-display text-2xl text-ink mt-1">{selectedMarker?.label || nearestMarker?.label || "Choose a trail point"}</h2>
+              <p className="text-xs text-ink-muted mt-1">{selectedMarker ? ADVENTURE_ZONE_MARKER_LABELS[selectedMarker.type] : nearestMarker ? `Nearby: ${ADVENTURE_ZONE_MARKER_LABELS[nearestMarker.type]}` : "Pick an objective, chest, exit, or encounter marker."}</p>
             </div>
             <div className="rounded-[1.5rem] bg-gradient-to-br from-primary/10 via-white/80 to-gold/15 border-2 border-white p-4 mb-4">
               <div className="flex items-center gap-3">
                 <div className="w-14 h-14 rounded-2xl bg-white grid place-items-center text-2xl shadow-inner" aria-hidden>🧭</div>
                 <div className="min-w-0">
                   <p className="text-[10px] font-extrabold uppercase tracking-widest text-ink-muted">Prototype action</p>
-                  <p className="h-display text-lg leading-tight">{selectedMarker ? ADVENTURE_ZONE_ACTION_LABELS[selectedMarker.type] : "No action"}</p>
+                  <p className="h-display text-lg leading-tight">{selectedMarker ? ADVENTURE_ZONE_ACTION_LABELS[selectedMarker.type] : nearestMarker ? ADVENTURE_ZONE_ACTION_LABELS[nearestMarker.type] : "No action"}</p>
                 </div>
               </div>
-              <p className="text-xs text-ink-muted mt-3 leading-snug">{selectedMarker?.description || "Marker-driven interactions first. Visible creatures/companions can come later as a presentation layer."}</p>
+              <p className="text-xs text-ink-muted mt-3 leading-snug">{selectedMarker?.description || nearestMarker?.description || "Marker-driven interactions first. Visible creatures/companions can come later as a presentation layer."}</p>
               <button type="button" onClick={activateSelected} disabled={!selectedMarker} className="btn-primary w-full justify-center mt-4 disabled:opacity-50 disabled:cursor-not-allowed" data-testid="adventure-zone-activate-marker">
                 {selectedMarker ? ADVENTURE_ZONE_ACTION_LABELS[selectedMarker.type] : "Select marker"}
               </button>
+            </div>
+            <div className="rounded-[1.25rem] bg-white/72 border-2 border-white p-3 mb-4">
+              <p className="text-[10px] font-extrabold uppercase tracking-widest text-ink-muted">Movement status</p>
+              <p className="text-xs text-ink-muted mt-1 leading-snug">{lastAction}</p>
+              <p className="text-[10px] text-ink-muted mt-2">Bounds: X {bounds.minX}-{bounds.maxX}, Y {bounds.minY}-{bounds.maxY}</p>
             </div>
             <div className="space-y-2">
               <p className="text-[10px] font-extrabold uppercase tracking-widest text-ink-muted">Zone markers</p>
