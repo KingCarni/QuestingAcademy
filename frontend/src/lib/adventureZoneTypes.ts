@@ -14,6 +14,31 @@ export type AdventureZoneMode = "route" | "open-field" | "forest" | "cave" | "in
 
 export type AdventureEncounterPresentation = "marker-only" | "visible-chip" | "visible-creature";
 
+export type AdventureCollisionZoneType = "walkable" | "blocked" | "water" | "tall-grass" | "interaction";
+
+export type AdventureZonePoint = { x: number; y: number };
+
+export interface AdventureCollisionZone {
+  id: string;
+  label: string;
+  type: AdventureCollisionZoneType;
+  points: AdventureZonePoint[];
+  closed?: boolean;
+  description?: string;
+}
+
+export interface AdventureCollisionSettings {
+  enabled: boolean;
+  requireWalkableZone?: boolean;
+  blockWater?: boolean;
+  blockBlocked?: boolean;
+  allowTallGrass?: boolean;
+  allowInteractionZones?: boolean;
+  blockedFeedback?: string;
+  waterFeedback?: string;
+  outsideWalkableFeedback?: string;
+}
+
 export type AdventureMarkerActionKind =
   | "none"
   | "return-town"
@@ -75,6 +100,8 @@ export interface AdventureZoneDefinition {
     minY: number;
     maxY: number;
   };
+  collision?: AdventureCollisionSettings;
+  collisionZones?: AdventureCollisionZone[];
   exits: AdventureZoneExit[];
   markers: AdventureZoneMarker[];
 }
@@ -115,6 +142,14 @@ export const ADVENTURE_ZONE_ACTION_KIND_LABELS: Record<AdventureMarkerActionKind
   talk: "Talk",
   "start-battle": "Start challenge",
   "companion-encounter": "Investigate companion",
+};
+
+export const ADVENTURE_COLLISION_ZONE_LABELS: Record<AdventureCollisionZoneType, string> = {
+  walkable: "Walkable",
+  blocked: "Blocked",
+  water: "Water",
+  "tall-grass": "Tall Grass",
+  interaction: "Interaction",
 };
 
 export const inferAdventureMarkerActionKind = (type: AdventureZoneMarkerType): AdventureMarkerActionKind => {
@@ -164,6 +199,113 @@ export const MEADOW_TRAIL_ZONE: AdventureZoneDefinition = {
     minY: 8,
     maxY: 92,
   },
+  collision: {
+    enabled: true,
+    requireWalkableZone: true,
+    blockWater: true,
+    blockBlocked: true,
+    allowTallGrass: true,
+    allowInteractionZones: true,
+    blockedFeedback: "That path is blocked. Try the open meadow or trail.",
+    waterFeedback: "The creek is not walkable yet. Use the bridge or meadow path.",
+    outsideWalkableFeedback: "Stay on the meadow route for now.",
+  },
+  collisionZones: [
+    {
+      id: "main-meadow-walkable",
+      label: "Main Meadow Play Space",
+      type: "walkable",
+      closed: true,
+      description: "Primary playable meadow and broad movement lanes.",
+      points: [
+        { x: 8, y: 18 },
+        { x: 61, y: 13 },
+        { x: 93, y: 22 },
+        { x: 94, y: 78 },
+        { x: 76, y: 90 },
+        { x: 18, y: 91 },
+        { x: 6, y: 75 },
+      ],
+    },
+    {
+      id: "creek-water-band",
+      label: "Creek Edge",
+      type: "water",
+      closed: true,
+      description: "Prototype water collision band along the lower/right creek edge.",
+      points: [
+        { x: 58, y: 81 },
+        { x: 100, y: 58 },
+        { x: 100, y: 100 },
+        { x: 49, y: 100 },
+      ],
+    },
+    {
+      id: "north-tree-wall",
+      label: "North Forest Boundary",
+      type: "blocked",
+      closed: true,
+      description: "Tree/cliff edge that should not be walked through.",
+      points: [
+        { x: 0, y: 0 },
+        { x: 100, y: 0 },
+        { x: 100, y: 12 },
+        { x: 0, y: 12 },
+      ],
+    },
+    {
+      id: "left-tree-wall",
+      label: "Left Tree Boundary",
+      type: "blocked",
+      closed: true,
+      description: "Left border decoration and fence boundary.",
+      points: [
+        { x: 0, y: 0 },
+        { x: 7, y: 0 },
+        { x: 7, y: 100 },
+        { x: 0, y: 100 },
+      ],
+    },
+    {
+      id: "right-tree-wall",
+      label: "Right Forest Boundary",
+      type: "blocked",
+      closed: true,
+      description: "Right forest decoration boundary.",
+      points: [
+        { x: 94, y: 0 },
+        { x: 100, y: 0 },
+        { x: 100, y: 100 },
+        { x: 94, y: 100 },
+      ],
+    },
+    {
+      id: "center-tall-grass",
+      label: "Soft Tall Grass",
+      type: "tall-grass",
+      closed: true,
+      description: "Allowed movement area used for future encounter flavor.",
+      points: [
+        { x: 33, y: 46 },
+        { x: 66, y: 45 },
+        { x: 67, y: 73 },
+        { x: 31, y: 75 },
+      ],
+    },
+    {
+      id: "quest-interaction-pocket",
+      label: "Study Clue Pocket",
+      type: "interaction",
+      closed: true,
+      description: "Loose activity pocket around the first quest objective.",
+      points: [
+        { x: 45, y: 42 },
+        { x: 59, y: 42 },
+        { x: 60, y: 58 },
+        { x: 43, y: 59 },
+      ],
+    },
+  ],
   exits: [
     {
       id: "return-town-exit",
