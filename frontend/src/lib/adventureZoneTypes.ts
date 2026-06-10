@@ -14,6 +14,17 @@ export type AdventureZoneMode = "route" | "open-field" | "forest" | "cave" | "in
 
 export type AdventureEncounterPresentation = "marker-only" | "visible-chip" | "visible-creature";
 
+export type AdventureMarkerActionKind =
+  | "none"
+  | "return-town"
+  | "travel-zone"
+  | "inspect"
+  | "collect"
+  | "gather"
+  | "talk"
+  | "start-battle"
+  | "companion-encounter";
+
 export interface AdventureZoneMarker {
   id: string;
   label: string;
@@ -22,8 +33,11 @@ export interface AdventureZoneMarker {
   y: number;
   radius?: number;
   actionLabel?: string;
+  actionKind?: AdventureMarkerActionKind;
   description?: string;
   target?: string;
+  rewardLabel?: string;
+  encounterFamily?: string;
   isOptional?: boolean;
   devOnly?: boolean;
 }
@@ -91,6 +105,42 @@ export const ADVENTURE_ZONE_ACTION_LABELS: Record<AdventureZoneMarkerType, strin
   "point-of-interest": "Inspect",
 };
 
+export const ADVENTURE_ZONE_ACTION_KIND_LABELS: Record<AdventureMarkerActionKind, string> = {
+  none: "No action",
+  "return-town": "Return to town",
+  "travel-zone": "Travel onward",
+  inspect: "Inspect",
+  collect: "Collect",
+  gather: "Gather",
+  talk: "Talk",
+  "start-battle": "Start challenge",
+  "companion-encounter": "Investigate companion",
+};
+
+export const inferAdventureMarkerActionKind = (type: AdventureZoneMarkerType): AdventureMarkerActionKind => {
+  switch (type) {
+    case "town-return":
+      return "return-town";
+    case "zone-exit":
+      return "travel-zone";
+    case "quest-objective":
+    case "point-of-interest":
+      return "inspect";
+    case "chest":
+      return "collect";
+    case "resource-node":
+      return "gather";
+    case "npc-anchor":
+      return "talk";
+    case "battle-trigger":
+      return "start-battle";
+    case "companion-encounter":
+      return "companion-encounter";
+    default:
+      return "none";
+  }
+};
+
 export const MEADOW_TRAIL_ZONE: AdventureZoneDefinition = {
   id: "meadow-trail-a1",
   name: "Meadow Trail A-1",
@@ -140,6 +190,7 @@ export const MEADOW_TRAIL_ZONE: AdventureZoneDefinition = {
       x: 49,
       y: 82,
       radius: 6,
+      actionKind: "none",
       description: "The safe path back toward the academy town hub.",
     },
     {
@@ -149,6 +200,7 @@ export const MEADOW_TRAIL_ZONE: AdventureZoneDefinition = {
       x: 49,
       y: 88,
       radius: 7,
+      actionKind: "return-town",
       target: "/adventure/realms",
       description: "Head back to the academy town hub.",
     },
@@ -159,6 +211,8 @@ export const MEADOW_TRAIL_ZONE: AdventureZoneDefinition = {
       x: 52,
       y: 50,
       radius: 7,
+      actionKind: "inspect",
+      rewardLabel: "Quest clue found",
       description: "A gentle first objective marker for the starter quest.",
     },
     {
@@ -168,6 +222,8 @@ export const MEADOW_TRAIL_ZONE: AdventureZoneDefinition = {
       x: 23,
       y: 58,
       radius: 6,
+      actionKind: "collect",
+      rewardLabel: "+10 coins",
       isOptional: true,
       description: "A prototype chest reward point.",
     },
@@ -178,6 +234,8 @@ export const MEADOW_TRAIL_ZONE: AdventureZoneDefinition = {
       x: 15,
       y: 70,
       radius: 8,
+      actionKind: "gather",
+      rewardLabel: "Crystal reeds gathered",
       isOptional: true,
       description: "A gentle gathering point near the water edge.",
     },
@@ -188,6 +246,7 @@ export const MEADOW_TRAIL_ZONE: AdventureZoneDefinition = {
       x: 37,
       y: 64,
       radius: 6,
+      actionKind: "talk",
       description: "Future NPC/event guide position.",
     },
     {
@@ -197,7 +256,9 @@ export const MEADOW_TRAIL_ZONE: AdventureZoneDefinition = {
       x: 72,
       y: 44,
       radius: 7,
+      actionKind: "start-battle",
       target: "/battle",
+      encounterFamily: "starter-meadow",
       description: "Marker-driven challenge start. Visible enemies are optional later.",
     },
     {
@@ -207,6 +268,9 @@ export const MEADOW_TRAIL_ZONE: AdventureZoneDefinition = {
       x: 75,
       y: 67,
       radius: 7,
+      actionKind: "companion-encounter",
+      encounterFamily: "meadow-companion",
+      rewardLabel: "Companion encounter discovered",
       isOptional: true,
       description: "Potential companion encounter without requiring a visible sprite yet.",
     },
@@ -217,6 +281,7 @@ export const MEADOW_TRAIL_ZONE: AdventureZoneDefinition = {
       x: 83,
       y: 22,
       radius: 7,
+      actionKind: "travel-zone",
       target: "future-forest-path",
       description: "Future route to the next adventure zone.",
     },
