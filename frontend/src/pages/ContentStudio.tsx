@@ -2696,6 +2696,44 @@ type CompanionGeneratedPreview = {
   provider: string;
 };
 
+type CompanionImageOutputMode =
+  | "full-body-concept"
+  | "transparent-asset"
+  | "shiny-recolor"
+  | "reference-sheet";
+
+const COMPANION_IMAGE_OUTPUT_MODES: { id: CompanionImageOutputMode; label: string; helper: string }[] = [
+  { id: "full-body-concept", label: "Full Body Concept", helper: "Single polished companion concept for review." },
+  { id: "transparent-asset", label: "Transparent Companion Asset", helper: "Game-ready cutout with no background." },
+  { id: "shiny-recolor", label: "Shiny Recolor", helper: "Same creature design, alternate colors only." },
+  { id: "reference-sheet", label: "Companion Reference Sheet", helper: "Small model/reference sheet for consistency." },
+];
+
+const COMPANION_IMAGE_OUTPUT_MODE_IDS = COMPANION_IMAGE_OUTPUT_MODES.map((mode) => mode.id);
+
+const COMPANION_OUTPUT_MODE_RULES: Record<CompanionImageOutputMode, string> = {
+  "full-body-concept": [
+    "Output type: full-body companion concept art.",
+    "Create exactly one companion, centered, full body visible, polished and ready for content review.",
+    "Use a flat pure white removable background or transparent background if supported.",
+  ].join(" "),
+  "transparent-asset": [
+    "Output type: transparent companion game asset.",
+    "Create exactly one isolated full-body companion cutout on transparent PNG background.",
+    "No scenery, no floor shadow, no decorative background, no frame, no labels.",
+  ].join(" "),
+  "shiny-recolor": [
+    "Output type: shiny recolor variant.",
+    "Preserve the exact same creature species, body shape, face feel, markings, silhouette, and proportions as the base companion.",
+    "Only recolor the palette. Do not change stats, anatomy, pose language, species, age read, or role.",
+  ].join(" "),
+  "reference-sheet": [
+    "Output type: companion reference sheet.",
+    "Create a clean reference sheet with one main front full-body pose plus two small detail callouts or simple side/back thumbnails if possible.",
+    "Keep it visually clean for internal art consistency; no text labels, no UI, no watermark.",
+  ].join(" "),
+};
+
 const COMPANION_MOVE_CATEGORIES = ["attack", "support", "defense", "utility"];
 const COMPANION_MOVE_DB = [
   { name: "Pat", affinity: "all", category: "support", defaultLevel: 1, flavor: "gentle comfort move" },
@@ -2743,7 +2781,7 @@ const formatCompanionMoveRows = (rows: { moveName: string; unlockLevel: number; 
     return `Lv ${level} · ${category} · ${m.moveName || "Pat"}`;
   });
 
-const buildCompanionImagePrompt = (draft: Partial<StudioCompanion>): string => {
+const buildCompanionImagePrompt = (draft: Partial<StudioCompanion> & Record<string, any>): string => {
   const name = draft.name?.trim() || "unnamed companion";
   const affinity = draft.affinity || "nature";
   const rarity = draft.rarity || "common";
@@ -2752,24 +2790,30 @@ const buildCompanionImagePrompt = (draft: Partial<StudioCompanion>): string => {
   const personality = draft.personality || "friendly, brave, emotionally appealing";
   const lore = draft.lore || "A kind companion who helps kids feel excited to learn.";
   const moveRows = normalizeCompanionMoveRows(draft.moves);
-  const moves = moveRows.slice(0, 4).map((m) => `Lv ${m.unlockLevel} ${m.category} ${m.moveName}`).join(", ");
+  const moves = moveRows.slice(0, 8).map((m) => `Level ${m.unlockLevel} ${m.category}: ${m.moveName}`).join("; ");
   const palette = draft.palette ?? { from: "#E8F4E1", to: "#86A789" };
-  const shiny = draft.shinyEnabled && draft.shinyPalette
-    ? `Optional shiny recolor palette ${draft.shinyPalette.from} to ${draft.shinyPalette.to}; same design, no stat or shape changes.`
-    : "No shiny variant needed for this image.";
+  const shinyPalette = draft.shinyPalette ?? { from: "#FCE2F0", to: "#D77DA5" };
+  const outputMode = (COMPANION_IMAGE_OUTPUT_MODE_IDS.includes(draft.companionImageOutputMode) ? draft.companionImageOutputMode : "transparent-asset") as CompanionImageOutputMode;
+  const outputRules = COMPANION_OUTPUT_MODE_RULES[outputMode];
+  const shinyRules = outputMode === "shiny-recolor" || draft.shinyEnabled
+    ? `Shiny/recolor rules: use alternate palette ${shinyPalette.from} to ${shinyPalette.to}. This is a recolor only; preserve the exact creature design, silhouette, body shape, markings, face feel, and proportions. No stat or anatomy changes.`
+    : "Shiny/recolor rules: no shiny variant needed for this image.";
 
   return [
-    `Create a Questing Academy companion concept for ${name}.`,
-    `Creature type: cute chibi educational fantasy RPG pet companion, not a human.`,
-    `Affinity/element: ${affinity}. Rarity: ${rarity}. Battle role: ${role}. Academy learning affinity: ${academy}.`,
-    `Personality: ${personality}.`,
-    `Lore: ${lore}.`,
+    `Create one Edu-Mates Academy companion asset for: ${name}.`,
+    "Use this as a production-ready visual content prompt for a K-7 educational fantasy RPG.",
+    `Core identity: cute chibi fantasy pet companion, not a human. Affinity/element: ${affinity}. Rarity: ${rarity}. Battle role: ${role}. Learning/academy affinity: ${academy}.`,
+    `Personality/tone: ${personality}.`,
+    `Lore/context: ${lore}.`,
     `Move inspirations: ${moves}.`,
-    `Use palette from ${palette.from} to ${palette.to}.`,
-    shiny,
-    "Style rules: full body visible, centered in frame, big expressive eyes, rounded soft shapes, cozy storybook watercolor, pastel colors, child-safe for ages 5-12, friendly expression, clean readable silhouette, isolated companion cutout, flat pure white removable background, no scenery behind the pet.",
-    "Negative rules: no text, no watermark, no cropped character, no realistic animal violence, no horror, no weapons, no dark scary mood, no photorealism.",
-  ].join(" ");
+    `Primary palette: ${palette.from} to ${palette.to}.`,
+    shinyRules,
+    "IDENTITY LOCK: the companion must remain one coherent original creature design. Preserve the same creature family, face feel, silhouette, body rhythm, colors, markings, and friendly child-safe personality across any generated variant.",
+    "Style: cute educational fantasy RPG companion art, soft pastel storybook rendering, rounded friendly shapes, large expressive eyes, clean readable silhouette, cozy Edu-Mates Academy tone, polished game-ready asset, readable at small game size.",
+    outputRules,
+    "Output rules: transparent PNG preferred. If transparency is unavailable, use a flat pure white removable background. Full body must be visible and centered with comfortable padding.",
+    "Negative: no text, no labels, no watermark, no logo, no UI, no realistic animal violence, no scary mood, no horror, no weapons, no photorealism, no cropped body, no extra creatures, no background scenery unless explicitly requested.",
+  ].join("\n");
 };
 
 const CompanionsTab: React.FC = () => {
@@ -2777,15 +2821,17 @@ const CompanionsTab: React.FC = () => {
   const addItem = useStudio((s) => s.addItem);
   const [generatedPreview, setGeneratedPreview] = useState<CompanionGeneratedPreview | null>(null);
   const [savedPreview, setSavedPreview] = useState<CompanionGeneratedPreview | null>(null);
-  const [draft, setDraft] = useState<Partial<StudioCompanion>>({
+  const [draft, setDraft] = useState<Partial<StudioCompanion> & Record<string, any>>({
     affinity: "nature", rarity: "common", role: "balanced",
     stats: { hp: 90, attack: 20, defense: 14, speed: 15 },
     palette: { from: "#E8F4E1", to: "#86A789" },
     shinyEnabled: false, shinyPalette: { from: "#FCE2F0", to: "#D77DA5" },
+    companionImageOutputMode: "transparent-asset",
     moves: formatCompanionMoveRows([...DEFAULT_COMPANION_MOVE_ROWS]),
   });
   const update = <K extends keyof StudioCompanion>(k: K, v: StudioCompanion[K]) =>
     setDraft((d) => ({ ...d, [k]: v }));
+  const updateAny = (k: string, v: any) => setDraft((d) => ({ ...d, [k]: v }));
   const moveRows = normalizeCompanionMoveRows(draft.moves);
   const updateMoveRow = (index: number, patch: Partial<{ moveName: string; unlockLevel: number; category: string }>) => {
     const next = moveRows.map((row, i) => i === index ? { ...row, ...patch } : row);
@@ -2876,7 +2922,8 @@ const CompanionsTab: React.FC = () => {
       previewUrl: savedPreview?.url,
       promptUsed: savedPreview?.prompt,
       imageProvider: savedPreview?.provider,
-    };
+      companionImageOutputMode: draft.companionImageOutputMode ?? "transparent-asset",
+    } as StudioCompanion;
     addItem("companions", item);
     setGeneratedPreview(null);
     setSavedPreview(null);
@@ -2905,6 +2952,17 @@ const CompanionsTab: React.FC = () => {
             <Field label="Role"><SelectField testid="companions-input-role" value={draft.role ?? ""} options={COMPANION_ROLES} onChange={(v) => update("role", v as CompanionRole)} /></Field>
             <Field label="Academy affinity"><TextField testid="companions-input-academy" value={draft.academyAffinity ?? ""} onChange={(v) => update("academyAffinity", v)} placeholder="addition / fractions / rhyming…" /></Field>
             <Field label="Emoji glyph"><SelectField testid="companions-input-emoji" value={draft.emoji ?? ""} onChange={(v) => update("emoji", v)} options={["🌱","🔥","💧","🪨","🌬️","✨","🐾","🐣","🦊","🐰","🐢","🐉","🦉","🦋","🫧","🌸"]} placeholder="—" /></Field>
+            <Field label="Image output mode" full>
+              <SelectField
+                testid="companions-image-output-mode"
+                value={draft.companionImageOutputMode ?? "transparent-asset"}
+                onChange={(v) => updateAny("companionImageOutputMode", v)}
+                options={COMPANION_IMAGE_OUTPUT_MODES.map((mode) => mode.id)}
+              />
+              <p className="text-[10px] font-bold text-ink-muted mt-1">
+                {COMPANION_IMAGE_OUTPUT_MODES.find((mode) => mode.id === (draft.companionImageOutputMode ?? "transparent-asset"))?.helper}
+              </p>
+            </Field>
             <Field label="HP"><NumberField testid="companions-stat-hp" value={draft.stats?.hp ?? 0} onChange={(n) => update("stats", { ...(draft.stats!), hp: n })} min={1} max={300} /></Field>
             <Field label="Attack"><NumberField testid="companions-stat-attack" value={draft.stats?.attack ?? 0} onChange={(n) => update("stats", { ...(draft.stats!), attack: n })} min={1} max={120} /></Field>
             <Field label="Defense"><NumberField testid="companions-stat-defense" value={draft.stats?.defense ?? 0} onChange={(n) => update("stats", { ...(draft.stats!), defense: n })} min={1} max={120} /></Field>
@@ -2987,6 +3045,7 @@ const CompanionsTab: React.FC = () => {
             onDiscard={discardGeneratedPreview}
             disabled={false}
             imageClassName="aspect-square"
+            exportFilename={`companion-${draft.name || "unnamed"}-${draft.companionImageOutputMode || "transparent-asset"}`}
           />
 
           <button type="button" data-testid="companions-generate-btn" onClick={submit} className="btn-primary mt-4 !text-base !py-3 !px-6">
@@ -3006,7 +3065,7 @@ const CompanionsTab: React.FC = () => {
               <p className="h-display text-lg truncate">{i.name}</p>
               <p className="text-[10px] font-extrabold uppercase text-ink-muted">{i.affinity} · {i.role} · {i.rarity}</p>
               <p className="text-xs text-ink-muted line-clamp-2 mt-1">{i.lore}</p>
-              {i.previewUrl && <p className="text-[10px] font-extrabold text-sage mt-1">Generated image attached · {i.imageProvider ?? "prototype"}</p>}
+              {i.previewUrl && <p className="text-[10px] font-extrabold text-sage mt-1">Generated image attached · {(i as any).companionImageOutputMode ?? "companion asset"} · {i.imageProvider ?? "prototype"}</p>}
             </div>
           </div>
           <div className="grid grid-cols-4 gap-1.5 mt-2">
@@ -4045,7 +4104,7 @@ type LibraryAsset = {
 type PromptBuilderAssetType =
   | "npc-full-body" | "npc-portrait" | "companion" | "companion-evolution"
   | "avatar-asset" | "ui-icon" | "prop" | "quest-item"
-  | "battle-background" | "realm-overview" | "scene-environment" | "walking-map-environment"
+  | "battle-background" | "realm-overview" | "scene-environment" | "walking-map-environment" | "adventure-walking-map"
   | "walkable-sprite-sheet" | "four-direction-character-sheet" | "idle-walk-frames" | "runtime-12-frame-sprite-sheet";
 
 type CharacterSpriteOutputType = "walkable-sprite-sheet" | "four-direction-character-sheet" | "idle-walk-frames" | "runtime-12-frame-sprite-sheet";
@@ -4054,11 +4113,11 @@ const CHARACTER_SPRITE_OUTPUT_TYPES: CharacterSpriteOutputType[] = ["walkable-sp
 const PROMPT_BUILDER_TYPES: PromptBuilderAssetType[] = [
   "npc-full-body", "npc-portrait", "companion", "companion-evolution",
   "avatar-asset", "ui-icon", "prop", "quest-item",
-  "battle-background", "realm-overview", "scene-environment", "walking-map-environment",
+  "battle-background", "realm-overview", "scene-environment", "walking-map-environment", "adventure-walking-map",
   "walkable-sprite-sheet", "four-direction-character-sheet", "idle-walk-frames", "runtime-12-frame-sprite-sheet",
 ];
 
-const ENVIRONMENT_PROMPT_TYPES: PromptBuilderAssetType[] = ["battle-background", "realm-overview", "scene-environment", "walking-map-environment"];
+const ENVIRONMENT_PROMPT_TYPES: PromptBuilderAssetType[] = ["battle-background", "realm-overview", "scene-environment", "walking-map-environment", "adventure-walking-map"];
 const OBJECT_PROMPT_TYPES: PromptBuilderAssetType[] = ["avatar-asset", "ui-icon", "prop", "quest-item"];
 
 const LOCATION_PRESETS = ["sunlit meadow path", "library interior", "snowy grove", "crystal pond", "academy courtyard", "book bridge", "floating classroom ruins", "custom"];
@@ -4127,6 +4186,17 @@ const getPromptBuilderDefaultFields = (assetType: PromptBuilderAssetType): Recor
     timeOfDay: "afternoon",
     landmarks: "display shelves, warm counter, glowing jars, soft classroom decor",
     visualNotes: "Wide 16:9 scene environment with usable empty space for NPCs and props. No UI or text.",
+  };
+
+  if (assetType === "adventure-walking-map") return {
+    ...base,
+    name: "Meadow Trail A-1",
+    purpose: "out-of-town adventure zone between town hub and first learning battle",
+    location: "bright meadow trail just outside the academy town",
+    mood: "cozy, inviting, adventurous, safe, playful",
+    timeOfDay: "warm afternoon",
+    landmarks: "academy banner at town-return side, wide open meadow clearing, quest-object clearing, optional chest nook, berry/herb node, creek edge, forest exit path",
+    visualNotes: "Heavily favor Prodigy-like open exploration readability: broad empty grass/play space, obvious activity pockets for NPCs, chests, resources, battle triggers, companion encounters, and exits. 70% gameplay space, 30% environment detail. Avoid dense winding illustrated-map clutter.",
   };
 
   if (assetType === "walking-map-environment") return {
@@ -4200,6 +4270,7 @@ const getPromptBuilderRecommendedSpec = (assetType: PromptBuilderAssetType): str
   if (assetType === "realm-overview") return "Recommended output: PNG or WebP, 2048x1152, wide 16:9 realm overview.";
   if (assetType === "scene-environment") return "Recommended output: PNG or WebP, 1920x1080, wide 16:9 scene environment.";
   if (assetType === "walking-map-environment") return "Recommended output: PNG or WebP, 1920x1080, wide 16:9 walking map environment.";
+  if (assetType === "adventure-walking-map") return "Recommended output: PNG or WebP, 1920x1080 or 2048x1152, wide 16:9 adventure walking map.";
   if (assetType === "walkable-sprite-sheet") return "Recommended output: transparent PNG sprite sheet, clean grid, front/back/left/right with idle + 2 walk frames per direction.";
   if (assetType === "four-direction-character-sheet") return "Recommended output: transparent PNG, clean 4-direction character sheet: front, back, left, right.";
   if (assetType === "idle-walk-frames") return "Recommended output: transparent PNG sprite sheet with idle and walk frames, consistent scale and padding.";
@@ -4277,11 +4348,11 @@ const buildAssetPromptOnly = (assetType: PromptBuilderAssetType, fields: Record<
     ].join("\n");
   }
 
-  if (assetType === "battle-background" || assetType === "realm-overview" || assetType === "scene-environment" || assetType === "walking-map-environment") {
+  if (assetType === "battle-background" || assetType === "realm-overview" || assetType === "scene-environment" || assetType === "walking-map-environment" || assetType === "adventure-walking-map") {
     const environmentStyle = "Style: cute educational fantasy RPG environment art, soft pastel storybook rendering, cozy lighting, readable shapes, child-safe Questing Academy tone, polished game background.";
     const envNegative = "Negative: no text, no labels, no watermark, no logo, no UI, no characters unless explicitly requested, no scary mood, no horror, no photorealism.";
     const realm = cleanPromptText(fields.realm || fields.theme, "Questing Academy");
-    const location = cleanPromptText(fields.location || fields.biome, assetType === "realm-overview" ? "sunlit academy grove" : assetType === "scene-environment" ? "cozy academy location" : assetType === "walking-map-environment" ? "cozy academy town hub" : "open academy training field");
+    const location = cleanPromptText(fields.location || fields.biome, assetType === "realm-overview" ? "sunlit academy grove" : assetType === "scene-environment" ? "cozy academy location" : assetType === "adventure-walking-map" ? "bright meadow trail just outside the academy town" : assetType === "walking-map-environment" ? "cozy academy town hub" : "open academy training field");
     const mood = cleanPromptText(fields.mood, "cozy");
     const timeOfDay = cleanPromptText(fields.timeOfDay, "morning");
     const landmarks = cleanPromptText(fields.landmarks, assetType === "realm-overview" ? "academy tower, book bridge, crystal pond" : "soft academy landmarks and readable set pieces");
@@ -4314,6 +4385,29 @@ const buildAssetPromptOnly = (assetType: PromptBuilderAssetType, fields: Record<
         environmentStyle,
         getPromptBuilderRecommendedSpec(assetType),
         "Negative: no text, no labels, no map labels, no watermark, no logo, no UI, no horror, no photorealism.",
+      ].filter(Boolean).join("\n");
+    }
+
+    if (assetType === "adventure-walking-map") {
+      return [
+        `Create one Questing Academy adventure walking map environment: ${name}.`,
+        `Purpose/use case: ${cleanPromptText(fields.purpose, "an out-of-town explorable adventure zone used between the town hub and the first learning battle")}.`,
+        `Realm: ${realm}.`,
+        `Biome/location: ${location}.`,
+        `Mood: ${mood}.`,
+        `Time of day: ${timeOfDay}.`,
+        `Key set pieces / landmarks: ${landmarks}.`,
+        notes ? `Visual notes: ${withPeriod(notes)}` : "",
+        "Design target: heavily inspired by Prodigy-style exploration zone readability, but with original Questing Academy visual identity. This should behave like a playable stage, not a dense scenic illustration.",
+        "Composition: wide 16:9 horizontal adventure route map with a slightly elevated 2D / soft isometric RPG exploration view.",
+        "Gameplay-space rule: roughly 70% usable gameplay space and 30% environment detail. Use large open grass/play areas, broad readable movement lanes, and clear activity pockets rather than dense winding paths.",
+        "Map structure: start near one side, open into a large central meadow, include 2-3 simple branches, one forest exit path, one quest-object clearing, one chest/resource nook, and one creek/bridge or blocked-path feature.",
+        "Marker placement spaces: leave clean empty areas for player start, town return, zone exit, quest objective, chest, resource node, NPC/event NPC anchor, battle trigger, companion encounter, and point of interest markers.",
+        "Encounter presentation: visible enemies/companions are optional. Prefer subtle encounter spaces such as rustling bushes, glowing grass patches, small clearings, mushrooms, or cute tiny non-threatening background creatures only if needed.",
+        "Map-readability rules: traversable ground must be visually obvious, blocked/collision edges must be readable, paths and open areas must be broad enough for a chibi avatar, and interaction points should be obvious without text or UI.",
+        environmentStyle,
+        getPromptBuilderRecommendedSpec(assetType),
+        "Negative: no text, no labels, no UI, no watermark, no logo, no photorealism, no horror, no scary monsters, no combat scene, no battle arena, no close-up illustration, no clutter blocking the main movement space.",
       ].filter(Boolean).join("\n");
     }
 
@@ -4579,21 +4673,8 @@ const AssetLibraryTab: React.FC = () => {
   const [assignTargetId, setAssignTargetId] = useState<string>("");
   const [assignSlot, setAssignSlot] = useState<"previewUrl" | "transparentPreviewUrl" | "imageUrl" | "backgroundUrl">("previewUrl");
   const [promptBuilderOpen, setPromptBuilderOpen] = useState(false);
-  const [promptAssetType, setPromptAssetType] = useState<PromptBuilderAssetType>("npc-full-body");
-  const [promptFields, setPromptFields] = useState<Record<string, string>>({
-    name: "Sage the Cozy",
-    role: "guide",
-    species: "human",
-    ageRead: "teen",
-    silhouette: "cozy",
-    outfit: "librarian cardigan",
-    pose: "friendly wave",
-    personality: "cheerful, patient, encouraging",
-    realm: "Questing Academy",
-    primaryColor: "#9D8DF1",
-    accentColor: "#F4C753",
-    visualNotes: "No background. Single centered game-ready asset.",
-  });
+  const [promptAssetType, setPromptAssetType] = useState<PromptBuilderAssetType>("adventure-walking-map");
+  const [promptFields, setPromptFields] = useState<Record<string, string>>(getPromptBuilderDefaultFields("adventure-walking-map"));
   const [spriteReferenceAssetId, setSpriteReferenceAssetId] = useState("");
   const [spriteOutputType, setSpriteOutputType] = useState<CharacterSpriteOutputType>("walkable-sprite-sheet");
   const [spriteNotes, setSpriteNotes] = useState("Preserve the imported character exactly and make it suitable for a walkable RPG map.");
@@ -4844,12 +4925,12 @@ const AssetLibraryTab: React.FC = () => {
                 </Field>
 
                 <Field label="Name">
-                  <TextField testid="prompt-builder-name" value={promptFields.name || ""} onChange={(v) => updatePromptField("name", v)} placeholder={isCharacterSpritePromptType(promptAssetType) ? "Linden Walkable Sprite Sheet" : isEnvironmentPromptType(promptAssetType) ? "Battle BG 1 / Meadowfall Grove / Sticker Shop" : "Sage the Cozy"} />
+                  <TextField testid="prompt-builder-name" value={promptFields.name || ""} onChange={(v) => updatePromptField("name", v)} placeholder={isCharacterSpritePromptType(promptAssetType) ? "Linden Walkable Sprite Sheet" : promptAssetType === "adventure-walking-map" ? "Meadow Trail A-1" : isEnvironmentPromptType(promptAssetType) ? "Battle BG 1 / Meadowfall Grove / Sticker Shop" : "Sage the Cozy"} />
                 </Field>
 
                 {isEnvironmentPromptType(promptAssetType) ? (
                   <>
-                    {promptAssetType === "scene-environment" && (
+                    {(promptAssetType === "scene-environment" || promptAssetType === "adventure-walking-map") && (
                       <Field label="Purpose / use case">
                         <TextField testid="prompt-builder-purpose" value={promptFields.purpose || ""} onChange={(v) => updatePromptField("purpose", v)} placeholder="town hub interior / quest scene / classroom backdrop" />
                       </Field>
@@ -4957,10 +5038,24 @@ const AssetLibraryTab: React.FC = () => {
                     testid="prompt-builder-visual-notes"
                     value={promptFields.visualNotes || ""}
                     onChange={(v) => updatePromptField("visualNotes", v)}
-                    placeholder={isEnvironmentPromptType(promptAssetType) ? "Wide 16:9 background. No UI or text. Clear readable environment." : "No background. Single centered asset. Transparent preferred."}
+                    placeholder={promptAssetType === "adventure-walking-map" ? "70% gameplay space, open Prodigy-like exploration readability, activity pockets, marker placement areas." : isEnvironmentPromptType(promptAssetType) ? "Wide 16:9 background. No UI or text. Clear readable environment." : "No background. Single centered asset. Transparent preferred."}
                   />
                 </Field>
               </div>
+
+              {promptAssetType === "adventure-walking-map" && (
+                <div className="mt-4 rounded-3xl bg-sage/10 border-2 border-sage/30 p-4">
+                  <p className="h-display text-lg leading-tight">Adventure Walking Map rules</p>
+                  <p className="text-xs text-ink-muted mt-1">
+                    Use this when you need an out-of-town playable exploration zone, not a town hub or scenic realm illustration.
+                  </p>
+                  <div className="grid md:grid-cols-3 gap-2 mt-3 text-xs font-bold text-ink-muted">
+                    <div className="rounded-2xl bg-white/80 border-2 border-white p-3">70% open gameplay space</div>
+                    <div className="rounded-2xl bg-white/80 border-2 border-white p-3">Prodigy-like readability</div>
+                    <div className="rounded-2xl bg-white/80 border-2 border-white p-3">Marker-ready activity pockets</div>
+                  </div>
+                </div>
+              )}
 
               <div className="mt-4">
                 <p className="text-[10px] font-extrabold uppercase text-ink-muted mb-1">Generated prompt</p>
@@ -5487,9 +5582,9 @@ const REALM_BUILDING_MODES = ["none", "partial/cropped entrance", "one building 
 const REALM_MAP_SCALES = ["small room", "single-screen chunk", "town lane", "plaza chunk", "forest path", "building entrance", "cave room", "bridge crossing"];
 const REALM_FANTASY_LEVELS = ["grounded", "magical", "high fantasy"];
 const REALM_EXIT_OPTIONS = ["north gate", "south road", "east bridge", "west forest path", "secret portal", "boat dock", "mountain pass", "academy archway"];
-const REALM_OUTPUT_MODES = ["Playable RPG Screen", "Map Chunk / Room", "Walking Map", "Realm Key Art"];
+const REALM_OUTPUT_MODES = ["Playable RPG Screen", "Map Chunk / Room", "Adventure Walking Map", "Walking Map", "Realm Key Art"];
 type RealmOutputMode = typeof REALM_OUTPUT_MODES[number];
-const REALM_VISUAL_REFERENCE_STYLES = ["cozy browser RPG", "tilemap-inspired", "Prodigy-like outdoor route", "cozy indoor RPG room"];
+const REALM_VISUAL_REFERENCE_STYLES = ["cozy browser RPG", "tilemap-inspired", "Prodigy-like outdoor route", "Prodigy-like open exploration zone", "cozy indoor RPG room"];
 
 const pickRealm = <T,>(arr: readonly T[]): T => arr[Math.floor(Math.random() * arr.length)];
 const makeRealmName = (prefix?: string, type?: string) => `${prefix || pickRealm(REALM_PREFIXES)} ${type || pickRealm(REALM_TYPES)}`.replace(/\b\w/g, (c) => c.toUpperCase());
@@ -5579,18 +5674,44 @@ const buildRealmImagePrompt = (draft: Partial<StudioRealm>): string => {
     negative.push(`No aerial overview, world map, full town, full city, decorative board-game map, cinematic concept art, miniature model-map look.`);
     if (buildingMode === "none") negative.push(`No buildings, houses, rooftops, town hubs, shops, hatcheries, academies, landmarks, doors, windows, or structures.`);
     negative.push(`No photorealism, realistic violence, horror, weapons, dark scary mood.`);
-  } else if (outputMode === "Walking Map") {
-    positive.push(`Create a crisp 1920x1080 Questing Academy playable walking-region background for ${name}.`);
+  } else if (outputMode === "Adventure Walking Map" || outputMode === "Walking Map") {
+    const isAdventureWalkingMap = outputMode === "Adventure Walking Map";
+
+    positive.push(`Create a crisp 1920x1080 Questing Academy ${isAdventureWalkingMap ? "adventure walking map" : "playable walking-region background"} for ${name}.`);
     positive.push(`Realm name: ${name}; biome: ${biome}; tone: ${tone}; fantasy level: ${fantasyLevel}.`);
     positive.push(`Visual reference style: ${visualReferenceStyle}.`);
-    positive.push(`Camera: ${mapCamera}; camera distance: ${cameraDistance}; map scale: ${mapScale}.`);
-    positive.push(`Broader explorable walking terrain with readable zones, clear navigation flow, and open paths.`);
-    if (buildings) positive.push(`Suggested hubs/landmarks: ${buildings}.`);
+    positive.push(`Camera: slightly elevated 2D / soft isometric browser RPG exploration view; camera distance: close-to-medium; map scale: one playable route screen.`);
+    positive.push(`The map should feel close to a Prodigy-style child-friendly exploration zone: big open grass play spaces, clear path lanes, simple readable activity pockets, and obvious places for NPCs, monsters, chests, rewards, and exits.`);
+    positive.push(`This is a gameplay stage for walking and interaction, not a scenic illustration and not a decorative world map.`);
+    positive.push(`Do not generate UI, quest banners, labels, or text. The image is only the background map.`);
+
+    if (buildings && !isAdventureWalkingMap) positive.push(`Suggested hubs/landmarks: ${buildings}.`);
+
+    layout.push(`Wide 16:9 horizontal adventure route map.`);
+    layout.push(`Composition target: roughly 70% readable gameplay space and 30% environment detail.`);
+    layout.push(`Use large open grass or dirt clearings, broad movement lanes, and simple soft-edged terrain shapes.`);
+    layout.push(`Avoid dense winding paths. Prefer open playground-like spaces connected by a few clear paths.`);
     layout.push(`Entrances/exits: ${exits}.`);
+    layout.push(`Zone purpose: ${zonePurpose}.`);
+    layout.push(`Zone contents: ${zoneContents}.`);
     layout.push(`Map notes: ${mapNotes}.`);
     layout.push(`In-map walking notes: ${inMapNotes}.`);
-    style.push(`Clean colorful 2D/2.5D RPG background for kids, Questing Academy warmth, pastel greens, lavender accents, crisp game art.`);
-    negative.push(`No text, labels, UI, logos, watermark, characters, battle scene, object sheet, photorealism, horror, weapons, dark scary mood.`);
+    layout.push(`Leave clean empty placement spaces for runtime markers: player start, town return, zone exit, quest objective, chest, resource node, NPC/event NPC anchor, battle trigger, companion encounter, and point of interest.`);
+    layout.push(`Add obvious but subtle encounter spaces such as rustling grass patches, small clearings, mushroom patches, sparkle plants, or tucked-away chest nooks.`);
+    layout.push(`Blocked edges should be readable using trees, bushes, rocks, water, cliffs, fences, logs, or flower beds.`);
+    layout.push(`Keep the center and major intersections uncluttered enough for a chibi avatar and click/tap movement.`);
+
+    style.push(`Clean colorful 2D/2.5D children's browser RPG background.`);
+    style.push(`Closer to Prodigy-style exploration zone readability than painterly fantasy key art: simple shapes, bright saturated greens, soft candy colors, round trees, readable open lawns, and isolated interaction pockets.`);
+    style.push(`Questing Academy warmth: cream sunlight, pastel greens, soft lavender accents, rounded cozy forms, cheerful kid-safe fantasy.`);
+    style.push(`Crisp game-ready background, readable at mobile/browser scale, no blur, no stretched look, no low-resolution texture.`);
+
+    negative.push(`No text, labels, UI, logos, watermark, fake writing, signs, symbols, corner marks.`);
+    negative.push(`No quest banner, no inventory bar, no currency icons, no menus, no dialogue boxes.`);
+    negative.push(`No characters unless tiny optional background flavor; no required visible enemies; no battle scene; no object sheet; no cards; no UI mockup; no poster; no character portrait.`);
+    negative.push(`No aerial overview, world map, full town, full city, decorative board-game map, cinematic concept art, miniature model-map look.`);
+    negative.push(`No overly dense forest detail, no narrow maze paths, no clutter blocking the main movement lanes.`);
+    negative.push(`No photorealism, realistic violence, horror, weapons, dark scary mood.`);
   } else {
     positive.push(`Create a crisp 1920x1080 Questing Academy realm key art scene for ${name}.`);
     positive.push(`Realm name: ${name}; prefix/type: ${prefix} ${type}; biome: ${biome}; tone: ${tone}; fantasy level: ${fantasyLevel}.`);
@@ -5620,7 +5741,7 @@ const buildRealmImagePrompt = (draft: Partial<StudioRealm>): string => {
 const RealmsTab: React.FC = () => {
   const items = useStudio((s) => s.realms);
   const addItem = useStudio((s) => s.addItem);
-  const [draft, setDraft] = useState<Partial<StudioRealm> & Record<string, any>>({ subjects: ["math"], grades: ["K","1","2"], buildings: ["town-hub","hatchery"], realmPrefix: "Meadowfall", realmType: "meadow", outputMode: "Playable RPG Screen", visualReferenceStyle: "cozy browser RPG", fantasyLevel: "magical", screenFormat: "outdoor route", cameraDistance: "close", boundaryStyle: "trees", buildingMode: "none", buildingCount: "0", mapScale: "single-screen chunk", mapCamera: "fixed 2D browser RPG screen", gridCell: "B2", zonePurpose: "forest transition path", entryExits: "north, east", zoneContents: "wide walkable path, open grass center, trees and flowers only around the edges, one NPC spot, one pet spawn patch", inMapNotes: "Top-down walking terrain with clear paths, open plaza space, NPC interaction zones, pet spawn areas, and readable landmarks." });
+  const [draft, setDraft] = useState<Partial<StudioRealm> & Record<string, any>>({ subjects: ["math"], grades: ["K","1","2"], buildings: ["town-hub","hatchery"], realmPrefix: "Meadowfall", realmType: "meadow", outputMode: "Adventure Walking Map", visualReferenceStyle: "Prodigy-like open exploration zone", fantasyLevel: "magical", screenFormat: "outdoor route", cameraDistance: "close", boundaryStyle: "mixed natural edges", buildingMode: "none", buildingCount: "0", mapScale: "single-screen chunk", mapCamera: "fixed 2D browser RPG screen", gridCell: "A1", zonePurpose: "Meadow Trail A-1 adventure route", entryExits: "town return at bottom-left, forest exit at upper-right, optional bridge path", zoneContents: "large open grass play space, broad readable dirt paths, one NPC spot, one battle trigger clearing, one companion encounter patch, one chest nook, one resource node, one quest-object clearing", inMapNotes: "Prodigy-like outdoor route: big open movement areas, simple readable activity pockets, broad paths, clear blocked edges, room for markers and chibi avatar movement." });
   const [generatedPreview, setGeneratedPreview] = useState<RealmGeneratedPreview | null>(null);
   const [savedPreview, setSavedPreview] = useState<RealmGeneratedPreview | null>(null);
   const update = <K extends keyof StudioRealm>(k: K, v: StudioRealm[K]) => setDraft((d) => ({ ...d, [k]: v }));
@@ -5637,24 +5758,25 @@ const RealmsTab: React.FC = () => {
       realmPrefix: prefix,
       realmType,
       buildingCount,
-      outputMode: "Playable RPG Screen",
-      screenFormat: pickRealm(REALM_SCREEN_FORMATS),
+      outputMode: "Adventure Walking Map",
+      visualReferenceStyle: "Prodigy-like open exploration zone",
+      screenFormat: "outdoor route",
       cameraDistance: "close",
-      boundaryStyle: pickRealm(REALM_BOUNDARY_STYLES),
+      boundaryStyle: "mixed natural edges",
       buildingMode: "none",
       gridCell: `${pickRealm(["A","B","C","D"])}${pickRealm(["1","2","3","4"])}`,
       zonePurpose: pickRealm(["forest transition path", "sunny grass route", "river edge path", "flower clearing", "rocky trail bend", "beach route", "cave mouth route", "woodland path intersection"]),
-      mapScale: pickRealm(REALM_MAP_SCALES),
+      mapScale: "single-screen chunk",
       mapCamera: "fixed 2D browser RPG screen",
       entryExits: exits,
-      zoneContents: "one player-scale screen with large walkable ground, edge boundaries, readable exits, room for NPCs and pets",
+      zoneContents: "large open grass play space, broad readable dirt paths, one NPC spot, one battle trigger clearing, one companion encounter patch, one chest nook, one resource node, one quest-object clearing",
       name: makeRealmName(prefix, realmType),
       biome: `${realmType} ${randomBiome()}`,
       tone: SCENE_MOODS[Math.floor(Math.random() * SCENE_MOODS.length)],
       description: `A cozy ${realmType} realm for ${["K-2","2-5","3-7"][Math.floor(Math.random()*3)]} learners.`,
       buildings: ["town-hub","hatchery","learning-academy","shop","quest-board","guild-hall","companion-habitat","boss-gate"].slice(0, Math.min(parseCount(buildingCount), 8)) as RealmBuilding[],
-      mapNotes: "One playable screen with clear exits and edge boundaries.",
-      inMapNotes: "Playable route screen with wide walking paths, natural boundaries, room for NPCs/pets, and no UI labels.",
+      mapNotes: "One playable Prodigy-like adventure route screen with clear exits, edge boundaries, and obvious activity pockets.",
+      inMapNotes: "Big open movement areas, simple readable activity pockets, broad paths, clear blocked edges, room for markers and chibi avatar movement.",
     }));
   };
 
@@ -5744,6 +5866,18 @@ addItem("realms", item);
             </div>
             <button type="button" data-testid="realms-randomize" onClick={randomize} className="btn-outline !text-sm !py-2 !px-4"><Sparkles size={14} strokeWidth={3} /> Randomize</button>
           </div>
+          {(draft.outputMode === "Adventure Walking Map" || draft.outputMode === "Walking Map") && (
+            <div className="mb-4 rounded-3xl bg-white/75 border-4 border-white p-4 shadow-sm">
+              <p className="text-[10px] font-extrabold uppercase text-primary">TEA-134 Adventure Walking Map Prompt</p>
+              <p className="text-sm text-ink-muted mt-1">Gameplay-first maps should feel closer to Prodigy outdoor exploration zones: big open movement space, simple readable terrain, obvious activity pockets, and clean empty areas for runtime markers.</p>
+              <div className="mt-3 grid sm:grid-cols-3 gap-2 text-[10px] font-extrabold uppercase text-ink-muted">
+                <span className="rounded-full bg-sage/15 text-sage px-3 py-2">70% gameplay space</span>
+                <span className="rounded-full bg-primary/10 text-primary px-3 py-2">30% environment detail</span>
+                <span className="rounded-full bg-white px-3 py-2">No UI / labels / text</span>
+              </div>
+            </div>
+          )}
+
           <div className="grid sm:grid-cols-2 gap-3">
             <Field label="Realm prefix"><SelectField testid="realms-input-prefix" value={draft.realmPrefix ?? ""} options={REALM_PREFIXES} onChange={(v) => setDraft((d) => ({ ...d, realmPrefix: v, name: makeRealmName(v, d.realmType) }))} placeholder="—" /></Field>
             <Field label="Realm type"><SelectField testid="realms-input-type" value={draft.realmType ?? ""} options={REALM_TYPES} onChange={(v) => setDraft((d) => ({ ...d, realmType: v, name: makeRealmName(d.realmPrefix, v), biome: d.biome || `${v} fantasy biome` }))} placeholder="—" /></Field>
@@ -5780,8 +5914,8 @@ addItem("realms", item);
 
           <ImagePreviewWorkflow
             testid="realms-image-generator"
-            title={`Generated realm ${draft.outputMode === "Realm Key Art" ? "key art" : draft.outputMode === "Playable RPG Screen" ? "playable RPG screen" : "walking map"} preview`}
-            helper={draft.outputMode === "Realm Key Art" ? "Generate scenic realm key art for navigation/world identity, then save or discard before sending it to review." : draft.outputMode === "Playable RPG Screen" ? "Generate one player-scale RPG screen, then save, export, or discard before sending it to review." : draft.outputMode === "Map Chunk / Room" ? "Generate one playable grid chunk/room, then save, export, or discard before sending it to review." : "Generate broader playable walking terrain, then save or discard before sending it to review."}
+            title={`Generated realm ${draft.outputMode === "Realm Key Art" ? "key art" : draft.outputMode === "Playable RPG Screen" ? "playable RPG screen" : draft.outputMode === "Adventure Walking Map" ? "adventure walking map" : "walking map"} preview`}
+            helper={draft.outputMode === "Realm Key Art" ? "Generate scenic realm key art for navigation/world identity, then save or discard before sending it to review." : draft.outputMode === "Playable RPG Screen" ? "Generate one player-scale RPG screen, then save, export, or discard before sending it to review." : draft.outputMode === "Map Chunk / Room" ? "Generate one playable grid chunk/room, then save, export, or discard before sending it to review." : draft.outputMode === "Adventure Walking Map" ? "Generate a Prodigy-like adventure route map with open gameplay space, marker pockets, and clear walkable areas." : "Generate broader playable walking terrain, then save or discard before sending it to review."}
             generatedPreview={generatedPreview}
             savedPreview={savedPreview}
             onGenerate={generateImagePreview}
