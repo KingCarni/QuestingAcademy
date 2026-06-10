@@ -11,6 +11,7 @@ import {
   ADVENTURE_ZONE_MARKER_LABELS,
   ADVENTURE_ZONES,
   inferAdventureMarkerActionKind,
+  resolveAdventureZoneDefinition,
   type AdventureCollisionZone,
   type AdventureMarkerActionKind,
   type AdventureZoneMarker,
@@ -85,7 +86,8 @@ const AdventureZone: React.FC = () => {
   const { zoneId } = useParams<{ zoneId: string }>();
   const player = useGame((s) => s.player);
 
-  const zone = useMemo(() => ADVENTURE_ZONES.find((z) => z.id === zoneId) ?? ADVENTURE_ZONES[0], [zoneId]);
+  const baseZone = useMemo(() => ADVENTURE_ZONES.find((z) => z.id === zoneId) ?? ADVENTURE_ZONES[0], [zoneId]);
+  const zone = useMemo(() => resolveAdventureZoneDefinition(baseZone), [baseZone]);
   const startMarker = zone.markers.find((marker) => marker.id === zone.playerStartMarkerId) ?? zone.markers.find((marker) => marker.type === "player-start");
   const bounds = zone.movementBounds ?? { minX: 4, maxX: 96, minY: 8, maxY: 92 };
   const collision = zone.collision ?? { enabled: false };
@@ -112,8 +114,8 @@ const AdventureZone: React.FC = () => {
     setPresentationMode(zone.encounterPresentation);
     setCompletedMarkers({});
     setBlockedPulse(null);
-    setLastAction(`Loaded ${zone.name}.`);
-  }, [zone.id, zone.name, zone.camera?.enabled, zone.encounterPresentation, startMarker?.x, startMarker?.y]);
+    setLastAction(`Loaded ${zone.name} from ${zone.contentSourceLabel}.`);
+  }, [zone.id, zone.name, zone.camera?.enabled, zone.encounterPresentation, zone.contentSourceLabel, startMarker?.x, startMarker?.y]);
 
   const clampToBounds = (x: number, y: number): HeroPosition => ({
     x: clampPercent(x, bounds.minX, bounds.maxX),
@@ -271,11 +273,12 @@ const AdventureZone: React.FC = () => {
         <div className="mx-auto mb-3 max-w-[92rem] rounded-[2rem] bg-white/82 border-2 border-white p-4 shadow-sm" data-testid="adventure-zone-dev-slots">
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div>
-              <p className="text-[10px] font-extrabold uppercase tracking-widest text-primary">TEA-116 walkable zones and collision</p>
-              <p className="text-xs text-ink-muted">Runtime blocks water/blocked zones, respects walkable areas, and requires proximity for marker interactions.</p>
+              <p className="text-[10px] font-extrabold uppercase tracking-widest text-primary">TEA-135 adventure zone scene assignment</p>
+              <p className="text-xs text-ink-muted">Loads assigned map content first, keeps prototype fallback zones/markers, and reports source status.</p>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               <span className="chip bg-primary/10 border-primary/20 text-primary">{zone.mode}</span>
+              <span className={`chip ${zone.contentSource === "prototype" ? "bg-gold/15 border-gold/30 text-ink-muted" : "bg-emerald-100 border-emerald-200 text-emerald-700"}`}>{zone.contentSource === "prototype" ? "fallback" : "assigned"}</span>
               <select value={presentationMode} onChange={(e) => setPresentationMode(e.target.value as EncounterPresentationMode)} className="chip bg-gold/15 border-gold/30 text-ink-muted font-extrabold outline-none">
                 <option value="marker-only">marker-only</option>
                 <option value="visible-chip">visible-chip</option>
@@ -334,6 +337,7 @@ const AdventureZone: React.FC = () => {
                   <p className="text-[10px] font-extrabold uppercase tracking-widest text-primary">Adventure zone</p>
                   <p className="h-display text-xl text-ink">{zone.name}</p>
                   <p className="text-xs text-ink-muted">Hero {hero.x.toFixed(0)}%, {hero.y.toFixed(0)}%</p>
+                  <p className="text-[10px] font-extrabold text-primary uppercase mt-1">Source: {zone.contentSourceLabel}</p>
                   {activeCollisionZone && <p className="text-[10px] font-extrabold text-emerald-700 uppercase mt-1">Zone: {activeCollisionZone.label}</p>}
                 </div>
 
@@ -440,11 +444,18 @@ const AdventureZone: React.FC = () => {
                 </div>
               </div>
               <p className="text-xs text-ink-muted mt-3 leading-snug">{selectedMarker?.description || nearestMarker?.description || "Marker-driven interactions first. Visible creatures/companions are optional presentation modes."}</p>
+              {selectedMarker?.source && <p className="text-[10px] text-primary font-extrabold mt-2 uppercase tracking-wider">Marker source: {selectedMarker.source}</p>}
               {selectedMarker?.encounterFamily && <p className="text-[10px] text-primary font-extrabold mt-2 uppercase tracking-wider">Encounter: {selectedMarker.encounterFamily}</p>}
               {selectedMarker?.rewardLabel && <p className="text-[10px] text-emerald-700 font-extrabold mt-2 uppercase tracking-wider">Reward: {selectedMarker.rewardLabel}</p>}
               <button type="button" onClick={activateSelected} disabled={!selectedMarker} className="btn-primary w-full justify-center mt-4 disabled:opacity-50 disabled:cursor-not-allowed" data-testid="adventure-zone-activate-marker">
                 {selectedMarker ? ADVENTURE_ZONE_ACTION_KIND_LABELS[getMarkerActionKind(selectedMarker)] : "Select marker"}
               </button>
+            </div>
+            <div className="rounded-[1.25rem] bg-white/72 border-2 border-white p-3 mb-4">
+              <p className="text-[10px] font-extrabold uppercase tracking-widest text-ink-muted">Content source</p>
+              <p className="text-xs text-ink-muted mt-1 leading-snug">{zone.contentSourceLabel}</p>
+              <p className="text-[10px] text-ink-muted mt-2">Map: {zone.mapUrl}</p>
+              <p className="text-[10px] text-ink-muted mt-1">Imported: {zone.importedZoneCount} zones · {zone.importedMarkerCount} markers</p>
             </div>
             <div className="rounded-[1.25rem] bg-white/72 border-2 border-white p-3 mb-4">
               <p className="text-[10px] font-extrabold uppercase tracking-widest text-ink-muted">Movement status</p>
@@ -459,7 +470,7 @@ const AdventureZone: React.FC = () => {
                   {collisionZones.map((collisionZone) => (
                     <div key={collisionZone.id} className="rounded-xl bg-bg/80 px-3 py-2 text-xs">
                       <p className="font-extrabold text-ink">{collisionZone.label}</p>
-                      <p className="text-[10px] font-bold uppercase text-ink-muted">{ADVENTURE_COLLISION_ZONE_LABELS[collisionZone.type]} · {collisionZone.points.length} pts</p>
+                      <p className="text-[10px] font-bold uppercase text-ink-muted">{ADVENTURE_COLLISION_ZONE_LABELS[collisionZone.type]} · {collisionZone.points.length} pts{collisionZone.source ? ` · ${collisionZone.source}` : ""}</p>
                     </div>
                   ))}
                 </div>
@@ -475,7 +486,7 @@ const AdventureZone: React.FC = () => {
                     {completed ? <CheckCircle2 size={16} strokeWidth={3} className="text-emerald-600" /> : <Icon size={16} strokeWidth={3} className="text-primary" />}
                     <div className="min-w-0">
                       <p className="h-display text-base truncate">{marker.label}</p>
-                      <p className="text-xs text-ink-muted truncate">{ADVENTURE_ZONE_MARKER_LABELS[marker.type]}</p>
+                      <p className="text-xs text-ink-muted truncate">{ADVENTURE_ZONE_MARKER_LABELS[marker.type]}{marker.source ? ` · ${marker.source}` : ""}</p>
                     </div>
                   </button>
                 );
