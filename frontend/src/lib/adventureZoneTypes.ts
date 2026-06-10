@@ -10,6 +10,10 @@ export type AdventureZoneMarkerType =
   | "companion-encounter"
   | "point-of-interest";
 
+export type AdventureZoneMode = "route" | "open-field" | "forest" | "cave" | "interior-edge";
+
+export type AdventureEncounterPresentation = "marker-only" | "visible-chip" | "visible-creature";
+
 export interface AdventureZoneMarker {
   id: string;
   label: string;
@@ -20,6 +24,18 @@ export interface AdventureZoneMarker {
   actionLabel?: string;
   description?: string;
   target?: string;
+  isOptional?: boolean;
+  devOnly?: boolean;
+}
+
+export interface AdventureZoneExit {
+  id: string;
+  label: string;
+  x: number;
+  y: number;
+  targetZoneId?: string;
+  targetRoute?: string;
+  description?: string;
 }
 
 export interface AdventureZoneDefinition {
@@ -28,8 +44,24 @@ export interface AdventureZoneDefinition {
   subtitle: string;
   biome: string;
   mood: string;
+  mode: AdventureZoneMode;
   mapUrl: string;
   returnRealmId?: string;
+  recommendedStageClassName?: string;
+  encounterPresentation: AdventureEncounterPresentation;
+  playerStartMarkerId?: string;
+  camera?: {
+    enabled: boolean;
+    mode: "static" | "soft-follow";
+    deadZonePercent?: number;
+  };
+  movementBounds?: {
+    minX: number;
+    maxX: number;
+    minY: number;
+    maxY: number;
+  };
+  exits: AdventureZoneExit[];
   markers: AdventureZoneMarker[];
 }
 
@@ -65,8 +97,41 @@ export const MEADOW_TRAIL_ZONE: AdventureZoneDefinition = {
   subtitle: "Questing Academy outskirts",
   biome: "Sunlit meadow path",
   mood: "cozy exploration",
+  mode: "open-field",
   mapUrl: "/assets/adventure-zones/meadow-trail-a1.png",
   returnRealmId: "questing-academy",
+  recommendedStageClassName: "wide-16-9-large-stage",
+  encounterPresentation: "marker-only",
+  playerStartMarkerId: "start-gate",
+  camera: {
+    enabled: true,
+    mode: "soft-follow",
+    deadZonePercent: 12,
+  },
+  movementBounds: {
+    minX: 4,
+    maxX: 96,
+    minY: 8,
+    maxY: 92,
+  },
+  exits: [
+    {
+      id: "return-town-exit",
+      label: "Academy Town Gate",
+      x: 49,
+      y: 88,
+      targetRoute: "/adventure/realms",
+      description: "Returns the player to the current town/realm hub placeholder.",
+    },
+    {
+      id: "north-forest-exit",
+      label: "Forest Path",
+      x: 83,
+      y: 22,
+      targetZoneId: "future-forest-path",
+      description: "Future route to the next adventure zone.",
+    },
+  ],
   markers: [
     {
       id: "start-gate",
@@ -84,7 +149,7 @@ export const MEADOW_TRAIL_ZONE: AdventureZoneDefinition = {
       x: 49,
       y: 88,
       radius: 7,
-      target: "First Town Hub",
+      target: "/adventure/realms",
       description: "Head back to the academy town hub.",
     },
     {
@@ -103,6 +168,7 @@ export const MEADOW_TRAIL_ZONE: AdventureZoneDefinition = {
       x: 23,
       y: 58,
       radius: 6,
+      isOptional: true,
       description: "A prototype chest reward point.",
     },
     {
@@ -112,6 +178,7 @@ export const MEADOW_TRAIL_ZONE: AdventureZoneDefinition = {
       x: 15,
       y: 70,
       radius: 8,
+      isOptional: true,
       description: "A gentle gathering point near the water edge.",
     },
     {
@@ -140,6 +207,7 @@ export const MEADOW_TRAIL_ZONE: AdventureZoneDefinition = {
       x: 75,
       y: 67,
       radius: 7,
+      isOptional: true,
       description: "Potential companion encounter without requiring a visible sprite yet.",
     },
     {
@@ -149,6 +217,7 @@ export const MEADOW_TRAIL_ZONE: AdventureZoneDefinition = {
       x: 83,
       y: 22,
       radius: 7,
+      target: "future-forest-path",
       description: "Future route to the next adventure zone.",
     },
   ],
