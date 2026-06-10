@@ -5,21 +5,25 @@ import { AdventureLayout } from "../../components/adventure/AdventureLayout";
 import { ChibiAvatar } from "../../components/ChibiAvatar";
 import { useGame } from "../../lib/gameStore";
 import {
+  ADVENTURE_COLLISION_ZONE_LABELS,
   ADVENTURE_ZONE_ACTION_KIND_LABELS,
   ADVENTURE_ZONE_ACTION_LABELS,
   ADVENTURE_ZONE_MARKER_LABELS,
   ADVENTURE_ZONES,
   inferAdventureMarkerActionKind,
+  type AdventureCollisionZone,
   type AdventureMarkerActionKind,
   type AdventureZoneMarker,
 } from "../../lib/adventureZoneTypes";
-import { ArrowLeft, Box, CheckCircle2, Leaf, MapPin, MessageCircle, Search, Sparkles, Swords, Trees, Waypoints } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Box, CheckCircle2, Leaf, MapPin, MessageCircle, Search, Sparkles, Swords, Trees, Waypoints } from "lucide-react";
 
 const WALK_DURATION_S = 0.85;
 
 type HeroPosition = { x: number; y: number };
 
 type EncounterPresentationMode = "marker-only" | "visible-chip" | "visible-creature";
+
+type MovementValidation = { ok: true; point: HeroPosition; zone?: AdventureCollisionZone | null } | { ok: false; point: HeroPosition; reason: string; zone?: AdventureCollisionZone | null };
 
 const markerIcon = (type: AdventureZoneMarker["type"]) => {
   switch (type) {
@@ -44,12 +48,36 @@ const distancePercent = (a: HeroPosition, b: HeroPosition) => {
   return Math.sqrt(dx * dx + dy * dy);
 };
 
+const pointInPolygon = (point: HeroPosition, polygon: { x: number; y: number }[]) => {
+  if (polygon.length < 3) return false;
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i].x;
+    const yi = polygon[i].y;
+    const xj = polygon[j].x;
+    const yj = polygon[j].y;
+    const intersects = yi > point.y !== yj > point.y && point.x < ((xj - xi) * (point.y - yi)) / Math.max(0.0001, yj - yi) + xi;
+    if (intersects) inside = !inside;
+  }
+  return inside;
+};
+
+const zoneContainsPoint = (zone: AdventureCollisionZone, point: HeroPosition) => Boolean(zone.closed !== false && pointInPolygon(point, zone.points));
+
 const getMarkerActionKind = (marker: AdventureZoneMarker): AdventureMarkerActionKind => marker.actionKind ?? inferAdventureMarkerActionKind(marker.type);
 
 const getEncounterVisual = (marker: AdventureZoneMarker) => {
   if (marker.type === "battle-trigger") return { emoji: "🌿", label: "Challenge" };
   if (marker.type === "companion-encounter") return { emoji: "✨", label: "Companion" };
   return { emoji: "📍", label: "Marker" };
+};
+
+const collisionZoneClass = (zone: AdventureCollisionZone) => {
+  if (zone.type === "walkable") return "fill-emerald-300/10 stroke-emerald-500/45";
+  if (zone.type === "blocked") return "fill-rose-300/18 stroke-rose-500/55";
+  if (zone.type === "water") return "fill-sky-300/20 stroke-sky-500/55";
+  if (zone.type === "tall-grass") return "fill-lime-300/18 stroke-lime-500/45";
+  return "fill-primary/12 stroke-primary/50";
 };
 
 const AdventureZone: React.FC = () => {
@@ -60,14 +88,18 @@ const AdventureZone: React.FC = () => {
   const zone = useMemo(() => ADVENTURE_ZONES.find((z) => z.id === zoneId) ?? ADVENTURE_ZONES[0], [zoneId]);
   const startMarker = zone.markers.find((marker) => marker.id === zone.playerStartMarkerId) ?? zone.markers.find((marker) => marker.type === "player-start");
   const bounds = zone.movementBounds ?? { minX: 4, maxX: 96, minY: 8, maxY: 92 };
+  const collision = zone.collision ?? { enabled: false };
+  const collisionZones = zone.collisionZones ?? [];
 
   const [hero, setHero] = useState<HeroPosition>(() => ({ x: startMarker?.x ?? 50, y: startMarker?.y ?? 82 }));
   const [selectedMarkerId, setSelectedMarkerId] = useState<string>("");
   const [showDebugMarkers, setShowDebugMarkers] = useState(true);
+  const [showCollisionZones, setShowCollisionZones] = useState(true);
   const [cameraFollow, setCameraFollow] = useState(zone.camera?.enabled ?? true);
   const [presentationMode, setPresentationMode] = useState<EncounterPresentationMode>(zone.encounterPresentation);
   const [completedMarkers, setCompletedMarkers] = useState<Record<string, boolean>>({});
   const [lastAction, setLastAction] = useState("Click anywhere on the meadow to move.");
+  const [blockedPulse, setBlockedPulse] = useState<HeroPosition | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
 
   const selectedMarker = zone.markers.find((marker) => marker.id === selectedMarkerId) ?? null;
@@ -79,6 +111,7 @@ const AdventureZone: React.FC = () => {
     setCameraFollow(zone.camera?.enabled ?? true);
     setPresentationMode(zone.encounterPresentation);
     setCompletedMarkers({});
+    setBlockedPulse(null);
     setLastAction(`Loaded ${zone.name}.`);
   }, [zone.id, zone.name, zone.camera?.enabled, zone.encounterPresentation, startMarker?.x, startMarker?.y]);
 
@@ -87,10 +120,46 @@ const AdventureZone: React.FC = () => {
     y: clampPercent(y, bounds.minY, bounds.maxY),
   });
 
-  const walkTo = (x: number, y: number): Promise<void> => {
-    const next = clampToBounds(x, y);
-    setHero(next);
-    return new Promise((resolve) => setTimeout(resolve, WALK_DURATION_S * 1000));
+  const validateMovement = (point: HeroPosition): MovementValidation => {
+    const next = clampToBounds(point.x, point.y);
+    if (!collision.enabled) return { ok: true, point: next, zone: null };
+
+    const containingZones = collisionZones.filter((candidate) => zoneContainsPoint(candidate, next));
+    const waterZone = containingZones.find((candidate) => candidate.type === "water");
+    if (waterZone && collision.blockWater !== false) {
+      return { ok: false, point: next, reason: collision.waterFeedback || "Water is blocked.", zone: waterZone };
+    }
+
+    const blockedZone = containingZones.find((candidate) => candidate.type === "blocked");
+    if (blockedZone && collision.blockBlocked !== false) {
+      return { ok: false, point: next, reason: collision.blockedFeedback || "That path is blocked.", zone: blockedZone };
+    }
+
+    const walkableZones = collisionZones.filter((candidate) => candidate.type === "walkable");
+    const insideWalkable = walkableZones.some((candidate) => zoneContainsPoint(candidate, next));
+    const insideAllowedSpecial = containingZones.some((candidate) =>
+      (candidate.type === "tall-grass" && collision.allowTallGrass !== false) ||
+      (candidate.type === "interaction" && collision.allowInteractionZones !== false)
+    );
+
+    if (collision.requireWalkableZone && walkableZones.length > 0 && !insideWalkable && !insideAllowedSpecial) {
+      return { ok: false, point: next, reason: collision.outsideWalkableFeedback || "Stay on the walkable route.", zone: null };
+    }
+
+    return { ok: true, point: next, zone: containingZones[0] ?? null };
+  };
+
+  const walkTo = (x: number, y: number): Promise<boolean> => {
+    const validation = validateMovement({ x, y });
+    if (!validation.ok) {
+      setBlockedPulse(validation.point);
+      setLastAction(validation.reason);
+      window.setTimeout(() => setBlockedPulse(null), 900);
+      return Promise.resolve(false);
+    }
+
+    setHero(validation.point);
+    return new Promise((resolve) => setTimeout(() => resolve(true), WALK_DURATION_S * 1000));
   };
 
   const cameraTransform = useMemo(() => {
@@ -110,6 +179,11 @@ const AdventureZone: React.FC = () => {
     return near.distance <= radius + 2 ? near.marker : null;
   }, [hero, zone.markers]);
 
+  const activeCollisionZone = useMemo(() => {
+    if (!collision.enabled) return null;
+    return collisionZones.find((candidate) => zoneContainsPoint(candidate, hero)) ?? null;
+  }, [collision.enabled, collisionZones, hero]);
+
   const handleCanvasClick = (e: React.MouseEvent<HTMLDivElement>) => {
     const c = canvasRef.current;
     if (!c) return;
@@ -118,15 +192,30 @@ const AdventureZone: React.FC = () => {
     const y = ((e.clientY - rect.top) / rect.height) * 100;
     const next = clampToBounds(x, y);
     setSelectedMarkerId("");
-    setLastAction(`Walking to ${next.x.toFixed(0)}%, ${next.y.toFixed(0)}%.`);
-    walkTo(next.x, next.y);
+    const validation = validateMovement(next);
+    if (!validation.ok) {
+      setBlockedPulse(validation.point);
+      setLastAction(validation.reason);
+      window.setTimeout(() => setBlockedPulse(null), 900);
+      return;
+    }
+    setLastAction(`Walking to ${validation.point.x.toFixed(0)}%, ${validation.point.y.toFixed(0)}%.`);
+    walkTo(validation.point.x, validation.point.y);
   };
 
   const selectMarker = async (marker: AdventureZoneMarker, e?: React.MouseEvent) => {
     e?.stopPropagation();
     setSelectedMarkerId(marker.id);
+    const destination = clampToBounds(marker.x, clampPercent(marker.y + 4, bounds.minY, bounds.maxY));
+    const validation = validateMovement(destination);
+    if (!validation.ok) {
+      setLastAction(`${marker.label} is not reachable from the current walkable area yet. ${validation.reason}`);
+      setBlockedPulse(validation.point);
+      window.setTimeout(() => setBlockedPulse(null), 900);
+      return;
+    }
     setLastAction(`Moving toward ${marker.label}.`);
-    await walkTo(marker.x, clampPercent(marker.y + 4, bounds.minY, bounds.maxY));
+    await walkTo(destination.x, destination.y);
   };
 
   const completeMarker = (marker: AdventureZoneMarker, message: string) => {
@@ -136,6 +225,13 @@ const AdventureZone: React.FC = () => {
 
   const activateSelected = () => {
     if (!selectedMarker) return;
+    const radius = selectedMarker.radius ?? 7;
+    const distance = distancePercent(hero, { x: selectedMarker.x, y: selectedMarker.y });
+    if (distance > radius + 3) {
+      setLastAction(`Move closer to ${selectedMarker.label} to interact.`);
+      return;
+    }
+
     const actionKind = getMarkerActionKind(selectedMarker);
     const actionLabel = ADVENTURE_ZONE_ACTION_KIND_LABELS[actionKind] || ADVENTURE_ZONE_ACTION_LABELS[selectedMarker.type];
 
@@ -175,8 +271,8 @@ const AdventureZone: React.FC = () => {
         <div className="mx-auto mb-3 max-w-[92rem] rounded-[2rem] bg-white/82 border-2 border-white p-4 shadow-sm" data-testid="adventure-zone-dev-slots">
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div>
-              <p className="text-[10px] font-extrabold uppercase tracking-widest text-primary">TEA-132 / TEA-133 adventure interactions</p>
-              <p className="text-xs text-ink-muted">Gameplay marker actions, completion states, and optional encounter presentation modes.</p>
+              <p className="text-[10px] font-extrabold uppercase tracking-widest text-primary">TEA-116 walkable zones and collision</p>
+              <p className="text-xs text-ink-muted">Runtime blocks water/blocked zones, respects walkable areas, and requires proximity for marker interactions.</p>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               <span className="chip bg-primary/10 border-primary/20 text-primary">{zone.mode}</span>
@@ -188,6 +284,10 @@ const AdventureZone: React.FC = () => {
               <label className="chip bg-white/80 border-white text-ink-muted cursor-pointer">
                 <input type="checkbox" checked={showDebugMarkers} onChange={(e) => setShowDebugMarkers(e.target.checked)} />
                 Show markers
+              </label>
+              <label className="chip bg-white/80 border-white text-ink-muted cursor-pointer">
+                <input type="checkbox" checked={showCollisionZones} onChange={(e) => setShowCollisionZones(e.target.checked)} />
+                Show collision
               </label>
               <label className="chip bg-white/80 border-white text-ink-muted cursor-pointer">
                 <input type="checkbox" checked={cameraFollow} onChange={(e) => setCameraFollow(e.target.checked)} />
@@ -215,11 +315,41 @@ const AdventureZone: React.FC = () => {
             >
               <motion.div className="absolute inset-0 origin-center" animate={{ transform: cameraTransform }} transition={{ duration: 0.45, ease: "easeOut" }}>
                 <div className="absolute inset-0 bg-gradient-to-b from-white/5 via-transparent to-ink/18 pointer-events-none" />
+
+                {showCollisionZones && collision.enabled && collisionZones.length > 0 && (
+                  <svg className="absolute inset-0 w-full h-full pointer-events-none z-10" viewBox="0 0 100 100" preserveAspectRatio="none" data-testid="adventure-zone-collision-overlay">
+                    {collisionZones.map((zoneShape) => {
+                      const points = zoneShape.points.map((point) => `${point.x},${point.y}`).join(" ");
+                      if (!points) return null;
+                      return (
+                        <polygon key={zoneShape.id} points={points} className={`${collisionZoneClass(zoneShape)} stroke-[0.35]`}>
+                          <title>{zoneShape.label}</title>
+                        </polygon>
+                      );
+                    })}
+                  </svg>
+                )}
+
                 <div className="absolute top-5 left-5 rounded-3xl bg-white/84 backdrop-blur-md border-2 border-white px-4 py-3 shadow-lg pointer-events-none z-30">
                   <p className="text-[10px] font-extrabold uppercase tracking-widest text-primary">Adventure zone</p>
                   <p className="h-display text-xl text-ink">{zone.name}</p>
                   <p className="text-xs text-ink-muted">Hero {hero.x.toFixed(0)}%, {hero.y.toFixed(0)}%</p>
+                  {activeCollisionZone && <p className="text-[10px] font-extrabold text-emerald-700 uppercase mt-1">Zone: {activeCollisionZone.label}</p>}
                 </div>
+
+                {blockedPulse && (
+                  <motion.div
+                    className="absolute z-50 -translate-x-1/2 -translate-y-1/2 pointer-events-none"
+                    style={{ left: `${blockedPulse.x}%`, top: `${blockedPulse.y}%` }}
+                    initial={{ opacity: 0, scale: 0.4 }}
+                    animate={{ opacity: [0, 1, 0], scale: [0.4, 1.1, 1.5] }}
+                    transition={{ duration: 0.85, ease: "easeOut" }}
+                  >
+                    <div className="w-16 h-16 rounded-full border-4 border-rose-400 bg-rose-100/70 grid place-items-center shadow-xl">
+                      <AlertTriangle size={24} strokeWidth={3} className="text-rose-600" />
+                    </div>
+                  </motion.div>
+                )}
 
                 {zone.markers.filter((marker) => marker.type === "battle-trigger" || marker.type === "companion-encounter").map((marker) => {
                   if (presentationMode === "marker-only") return null;
@@ -320,7 +450,21 @@ const AdventureZone: React.FC = () => {
               <p className="text-[10px] font-extrabold uppercase tracking-widest text-ink-muted">Movement status</p>
               <p className="text-xs text-ink-muted mt-1 leading-snug">{lastAction}</p>
               <p className="text-[10px] text-ink-muted mt-2">Bounds: X {bounds.minX}-{bounds.maxX}, Y {bounds.minY}-{bounds.maxY}</p>
+              <p className="text-[10px] text-ink-muted mt-1">Collision: {collision.enabled ? "on" : "off"}{activeCollisionZone ? ` · ${ADVENTURE_COLLISION_ZONE_LABELS[activeCollisionZone.type]}: ${activeCollisionZone.label}` : ""}</p>
             </div>
+            {collisionZones.length > 0 && (
+              <div className="rounded-[1.25rem] bg-white/72 border-2 border-white p-3 mb-4">
+                <p className="text-[10px] font-extrabold uppercase tracking-widest text-ink-muted">Collision zones</p>
+                <div className="mt-2 space-y-1 max-h-36 overflow-auto pr-1">
+                  {collisionZones.map((collisionZone) => (
+                    <div key={collisionZone.id} className="rounded-xl bg-bg/80 px-3 py-2 text-xs">
+                      <p className="font-extrabold text-ink">{collisionZone.label}</p>
+                      <p className="text-[10px] font-bold uppercase text-ink-muted">{ADVENTURE_COLLISION_ZONE_LABELS[collisionZone.type]} · {collisionZone.points.length} pts</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="space-y-2">
               <p className="text-[10px] font-extrabold uppercase tracking-widest text-ink-muted">Zone markers</p>
               {zone.markers.map((marker) => {
