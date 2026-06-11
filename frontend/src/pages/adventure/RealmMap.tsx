@@ -91,44 +91,132 @@ const pointInPolygon = (point: Point, polygon: Point[]): boolean => {
   return inside;
 };
 
-const orientation = (a: Point, b: Point, c: Point): number => {
-  const value = (b.y - a.y) * (c.x - b.x) - (b.x - a.x) * (c.y - b.y);
-  if (Math.abs(value) < 0.000001) return 0;
-  return value > 0 ? 1 : 2;
-};
-
-const onSegment = (a: Point, b: Point, c: Point): boolean =>
-  b.x <= Math.max(a.x, c.x) + 0.000001 &&
-  b.x + 0.000001 >= Math.min(a.x, c.x) &&
-  b.y <= Math.max(a.y, c.y) + 0.000001 &&
-  b.y + 0.000001 >= Math.min(a.y, c.y);
-
-const segmentsIntersect = (a: Point, b: Point, c: Point, d: Point): boolean => {
-  const o1 = orientation(a, b, c);
-  const o2 = orientation(a, b, d);
-  const o3 = orientation(c, d, a);
-  const o4 = orientation(c, d, b);
-  if (o1 !== o2 && o3 !== o4) return true;
-  if (o1 === 0 && onSegment(a, c, b)) return true;
-  if (o2 === 0 && onSegment(a, d, b)) return true;
-  if (o3 === 0 && onSegment(c, a, d)) return true;
-  if (o4 === 0 && onSegment(c, b, d)) return true;
-  return false;
-};
-
-const segmentIntersectsPolygon = (start: Point, end: Point, polygon: Point[]): boolean =>
-  polygon.some((point, index) => segmentsIntersect(start, end, point, polygon[(index + 1) % polygon.length]));
-
 const isBlockingZone = (zone: RuntimeZone): boolean => ["blocked", "blocked-zone", "water", "wall", "collision", "no-walk", "no walk", "no_walk"].includes(zone.type);
 const isWalkableZone = (zone: RuntimeZone): boolean => zone.type === "walkable";
 
-const getMovementBlockReason = (start: Point, end: Point, zones: RuntimeZone[]): string => {
+const isPointBlocked = (point: Point, zones: RuntimeZone[]): boolean => {
   const blockingZones = zones.filter(isBlockingZone);
   const walkableZones = zones.filter(isWalkableZone);
-  const hitBlocked = blockingZones.find((zone) => pointInPolygon(end, zone.points) || segmentIntersectsPolygon(start, end, zone.points));
-  if (hitBlocked) return `${hitBlocked.name || "Blocked zone"} is blocked.`;
-  if (walkableZones.length && !walkableZones.some((zone) => pointInPolygon(end, zone.points))) return "That spot is outside the walkable path.";
-  return "";
+  if (blockingZones.some((zone) => pointInPolygon(point, zone.points))) return true;
+  if (walkableZones.length && !walkableZones.some((zone) => pointInPolygon(point, zone.points))) return true;
+  return false;
+};
+
+const findNearestOpenPoint = (target: Point, zones: RuntimeZone[]): Point | null => {
+  if (!isPointBlocked(target, zones)) return target;
+  const radii = [2, 4, 6, 8, 10, 12];
+  for (const radius of radii) {
+    for (let angle = 0; angle < 360; angle += 22.5) {
+      const radians = (angle * Math.PI) / 180;
+      const candidate = clampDestination({ x: target.x + Math.cos(radians) * radius, y: target.y + Math.sin(radians) * radius });
+      if (!isPointBlocked(candidate, zones)) return candidate;
+    }
+  }
+  return null;
+};
+
+const hasLineOfSight = (start: Point, end: Point, zones: RuntimeZone[]): boolean => {
+  const steps = Math.max(6, Math.ceil(Math.hypot(end.x - start.x, end.y - start.y) / 1.5));
+  for (let i = 1; i <= steps; i += 1) {
+    const t = i / steps;
+    const sample = { x: start.x + (end.x - start.x) * t, y: start.y + (end.y - start.y) * t };
+    if (isPointBlocked(sample, zones)) return false;
+  }
+  return true;
+};
+
+const simplifyPath = (path: Point[], zones: RuntimeZone[]): Point[] => {
+  if (path.length <= 2) return path;
+  const simplified: Point[] = [path[0]];
+  let anchor = 0;
+  while (anchor < path.length - 1) {
+    let next = path.length - 1;
+    while (next > anchor + 1 && !hasLineOfSight(path[anchor], path[next], zones)) next -= 1;
+    simplified.push(path[next]);
+    anchor = next;
+  }
+  return simplified;
+};
+
+const findSmartPath = (startRaw: Point, endRaw: Point, zones: RuntimeZone[]): Point[] | null => {
+  const start = clampDestination(startRaw);
+  const openEnd = findNearestOpenPoint(clampDestination(endRaw), zones);
+  if (!openEnd) return null;
+  if (hasLineOfSight(start, openEnd, zones)) return [start, openEnd];
+
+  const cols = 40;
+  const rows = 28;
+  const toCell = (point: Point) => ({ col: Math.max(0, Math.min(cols - 1, Math.round((point.x / 100) * (cols - 1)))), row: Math.max(0, Math.min(rows - 1, Math.round((point.y / 100) * (rows - 1)))) });
+  const toPoint = (cell: { col: number; row: number }): Point => ({ x: (cell.col / (cols - 1)) * 100, y: (cell.row / (rows - 1)) * 100 });
+  const startCell = toCell(start);
+  const endCell = toCell(openEnd);
+  const key = (cell: { col: number; row: number }) => `${cell.col},${cell.row}`;
+  const blocked = new Set<string>();
+  for (let row = 0; row < rows; row += 1) {
+    for (let col = 0; col < cols; col += 1) {
+      const point = toPoint({ col, row });
+      if (isPointBlocked(point, zones)) blocked.add(`${col},${row}`);
+    }
+  }
+  blocked.delete(key(startCell));
+  blocked.delete(key(endCell));
+
+  type Node = { col: number; row: number; g: number; f: number; parent?: string };
+  const open = new Map<string, Node>();
+  const closed = new Set<string>();
+  const cameFrom = new Map<string, string>();
+  const gScore = new Map<string, number>();
+  const heuristic = (a: { col: number; row: number }, b: { col: number; row: number }) => Math.hypot(a.col - b.col, a.row - b.row);
+  open.set(key(startCell), { ...startCell, g: 0, f: heuristic(startCell, endCell) });
+  gScore.set(key(startCell), 0);
+
+  const dirs = [
+    { col: 1, row: 0 }, { col: -1, row: 0 }, { col: 0, row: 1 }, { col: 0, row: -1 },
+    { col: 1, row: 1 }, { col: 1, row: -1 }, { col: -1, row: 1 }, { col: -1, row: -1 },
+  ];
+
+  while (open.size) {
+    let currentKey = "";
+    let current: Node | null = null;
+    open.forEach((node, nodeKey) => {
+      if (!current || node.f < current.f) { current = node; currentKey = nodeKey; }
+    });
+    if (!current) break;
+    if (current.col === endCell.col && current.row === endCell.row) {
+      const cells: { col: number; row: number }[] = [];
+      let cursor = currentKey;
+      while (cursor) {
+        const [col, row] = cursor.split(",").map(Number);
+        cells.push({ col, row });
+        cursor = cameFrom.get(cursor) || "";
+      }
+      const rawPath = cells.reverse().map(toPoint);
+      rawPath[0] = start;
+      rawPath[rawPath.length - 1] = openEnd;
+      return simplifyPath(rawPath, zones);
+    }
+
+    open.delete(currentKey);
+    closed.add(currentKey);
+
+    for (const dir of dirs) {
+      const neighbor = { col: current.col + dir.col, row: current.row + dir.row };
+      if (neighbor.col < 0 || neighbor.col >= cols || neighbor.row < 0 || neighbor.row >= rows) continue;
+      const neighborKey = key(neighbor);
+      if (closed.has(neighborKey) || blocked.has(neighborKey)) continue;
+      if (dir.col !== 0 && dir.row !== 0) {
+        if (blocked.has(`${current.col + dir.col},${current.row}`) || blocked.has(`${current.col},${current.row + dir.row}`)) continue;
+      }
+      const movementCost = dir.col !== 0 && dir.row !== 0 ? 1.414 : 1;
+      const tentativeG = (gScore.get(currentKey) ?? Infinity) + movementCost;
+      if (tentativeG >= (gScore.get(neighborKey) ?? Infinity)) continue;
+      cameFrom.set(neighborKey, currentKey);
+      gScore.set(neighborKey, tentativeG);
+      open.set(neighborKey, { ...neighbor, g: tentativeG, f: tentativeG + heuristic(neighbor, endCell) });
+    }
+  }
+
+  return null;
 };
 
 const RealmMap: React.FC = () => {
@@ -154,20 +242,23 @@ const RealmMap: React.FC = () => {
   const sceneZones = useMemo(() => getSceneZones(activeScene), [activeScene]);
   const selectedMarker = sceneMarkers.find((m) => m.id === selectedMarkerId) ?? null;
   const [hero, setHero] = useState<{ x: number; y: number }>({ x: 50, y: 82 });
+  const [path, setPath] = useState<Point[]>([{ x: 50, y: 82 }]);
   const [blockedFeedback, setBlockedFeedback] = useState("");
   const canvasRef = useRef<HTMLDivElement | null>(null);
 
   const tryWalkTo = (x: number, y: number): Promise<boolean> => {
     const destination = clampDestination({ x, y });
-    const reason = getMovementBlockReason(hero, destination, sceneZones);
-    if (reason) {
-      setBlockedFeedback(reason);
+    const smartPath = findSmartPath(hero, destination, sceneZones);
+    if (!smartPath || smartPath.length < 2) {
+      setBlockedFeedback("No safe path there.");
       window.setTimeout(() => setBlockedFeedback(""), 1400);
       return Promise.resolve(false);
     }
     setBlockedFeedback("");
-    setHero(destination);
-    return new Promise((resolve) => setTimeout(() => resolve(true), WALK_DURATION_S * 1000));
+    setPath(smartPath);
+    setHero(smartPath[smartPath.length - 1]);
+    const duration = Math.max(WALK_DURATION_S, (smartPath.length - 1) * 0.32);
+    return new Promise((resolve) => setTimeout(() => resolve(true), duration * 1000));
   };
 
   const handleCanvasClick = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -183,7 +274,7 @@ const RealmMap: React.FC = () => {
   const selectMarker = async (marker: RuntimeMarker, e?: React.MouseEvent) => { e?.stopPropagation(); setSelectedMarkerId(marker.id); await tryWalkTo(marker.x, marker.y + 4); };
   const enterSelected = () => { if (selectedRealm) { setActiveRealm(selectedRealm.id); nav(`/adventure/town/${selectedRealm.id}`); } };
 
-  useEffect(() => { setHero({ x: 50, y: 82 }); }, []);
+  useEffect(() => { setHero({ x: 50, y: 82 }); setPath([{ x: 50, y: 82 }]); }, []);
   useEffect(() => { if (!selectedRealmId && live[0]?.id) setSelectedRealmId(live[0].id); }, [live, selectedRealmId]);
 
   return (
@@ -212,9 +303,10 @@ const RealmMap: React.FC = () => {
               {upcoming.map((r: any, i: number) => { const pos = UPCOMING_POSITIONS[i % UPCOMING_POSITIONS.length]; return <div key={r.id} className="absolute -translate-x-1/2 -translate-y-1/2 pointer-events-none z-10 opacity-75" style={pos}><div className="w-20 h-20 rounded-[42%] bg-white/55 border-4 border-white grid place-items-center backdrop-blur-sm"><Lock size={26} strokeWidth={3} className="text-ink-muted" /></div></div>; })}
             </>}
 
+            {path.length > 2 && <svg aria-hidden viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 w-full h-full pointer-events-none z-35"><polyline points={path.map((p) => `${p.x},${p.y}`).join(" ")} fill="none" stroke="white" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" opacity="0.8" /><polyline points={path.map((p) => `${p.x},${p.y}`).join(" ")} fill="none" stroke="#9D8DF1" strokeWidth="0.55" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="1.5 1.2" opacity="0.95" /></svg>}
             {sceneMarkers.map((marker) => { const selected = selectedMarker?.id === marker.id; return <button key={marker.id} type="button" onClick={(e) => selectMarker(marker, e)} className="absolute -translate-x-1/2 -translate-y-1/2 z-30 group" style={{ left: `${marker.x}%`, top: `${marker.y}%` }} data-testid={`realm-marker-${marker.id}`}><div className={`rounded-full border-2 px-3 py-2 shadow-xl backdrop-blur-md flex items-center gap-2 text-xs font-extrabold transition ${selected ? "bg-primary text-white border-white scale-110" : "bg-white/86 text-ink border-white hover:-translate-y-0.5"}`}><Waypoints size={14} strokeWidth={3} /><span className="max-w-[130px] truncate">{marker.label}</span></div><div className="mt-1 text-[10px] font-bold uppercase tracking-wider text-ink-muted bg-white/75 rounded-full px-2 py-0.5 opacity-0 group-hover:opacity-100 transition">{marker.type}</div></button>; })}
 
-            {player && <motion.div data-testid="hero-sprite" className="absolute pointer-events-none z-40" initial={false} animate={{ left: `${hero.x}%`, top: `${hero.y}%` }} transition={{ duration: WALK_DURATION_S, ease: "easeInOut" }} style={{ translateX: "-50%", translateY: "-100%" }}><motion.div animate={{ y: [0, -3, 0, -3, 0] }} transition={{ duration: WALK_DURATION_S, ease: "easeInOut", repeat: 0 }} key={`${hero.x.toFixed(0)}-${hero.y.toFixed(0)}`}><ChibiAvatar config={player.avatar} size={66} /></motion.div></motion.div>}
+            {player && <motion.div data-testid="hero-sprite" className="absolute pointer-events-none z-40" initial={false} animate={{ left: path.map((p) => `${p.x}%`), top: path.map((p) => `${p.y}%`) }} transition={{ duration: Math.max(WALK_DURATION_S, (path.length - 1) * 0.32), ease: "easeInOut" }} style={{ translateX: "-50%", translateY: "-100%" }}><motion.div animate={{ y: [0, -3, 0, -3, 0] }} transition={{ duration: Math.max(WALK_DURATION_S, (path.length - 1) * 0.32), ease: "easeInOut", repeat: 0 }} key={`${hero.x.toFixed(0)}-${hero.y.toFixed(0)}-${path.length}`}><ChibiAvatar config={player.avatar} size={66} /></motion.div></motion.div>}
             </div>
           </div>
 
@@ -222,7 +314,7 @@ const RealmMap: React.FC = () => {
             <div className="mb-4"><p className="text-[10px] font-extrabold uppercase tracking-widest text-primary">Selected Destination</p><h2 className="h-display text-2xl text-ink mt-1">{selectedMarker?.label || selectedRealm?.name || "Choose your path"}</h2><p className="text-sm text-ink-muted mt-2">{selectedMarker ? selectedMarker.type : selectedRealm ? selectedRealm.biome : "Pick a realm or imported marker from the map."}</p></div>
             <div className="rounded-[1.75rem] bg-gradient-to-br from-primary/10 via-white/80 to-gold/15 border-2 border-white p-4 mb-4"><div className="flex items-center gap-4"><div className="w-14 h-14 rounded-2xl bg-white grid place-items-center text-3xl shadow-inner" aria-hidden>{selectedMarker ? "📍" : emojiFor(selectedRealm?.biome || "")}</div><div><p className="text-[10px] font-extrabold uppercase tracking-widest text-ink-muted">{selectedMarker ? "Imported marker" : "Open realm"}</p><p className="h-display text-2xl leading-tight">{selectedMarker?.label || selectedRealm?.name || "No destination"}</p><p className="text-xs text-ink-muted mt-1">{selectedMarker ? "Marker is selectable now. Runtime routing comes next." : "Ready for town, quests, and battles."}</p></div></div><button type="button" onClick={enterSelected} className="btn-primary w-full justify-center mt-4 !py-3" data-testid="realm-enter-selected"><Castle size={18} strokeWidth={3} /> Enter / Travel</button></div>
             <div className="space-y-3"><p className="text-xs font-extrabold uppercase tracking-widest text-ink-muted">Scene markers</p>{sceneMarkers.length ? sceneMarkers.slice(0, 8).map((marker) => <button key={`panel-${marker.id}`} type="button" onClick={() => selectMarker(marker)} className={`w-full card-base !p-3 text-left border-2 flex items-center gap-3 ${selectedMarker?.id === marker.id ? "border-primary bg-primary/10" : "border-white/80"}`}><Waypoints size={16} strokeWidth={3} className="text-primary" /><div className="min-w-0"><p className="h-display text-base truncate">{marker.label}</p><p className="text-xs text-ink-muted truncate">{marker.type}</p></div></button>) : <p className="text-sm text-ink-muted">No exported markers/zones/assets found on this scene yet.</p>}</div>
-            <div className="space-y-2 mt-5"><p className="text-xs font-extrabold uppercase tracking-widest text-ink-muted">Runtime zones</p><p className="text-xs text-ink-muted">Blocking: {sceneZones.filter(isBlockingZone).length} · Walkable: {sceneZones.filter(isWalkableZone).length}</p></div>
+            <div className="space-y-2 mt-5"><p className="text-xs font-extrabold uppercase tracking-widest text-ink-muted">Runtime zones</p><p className="text-xs text-ink-muted">Blocking: {sceneZones.filter(isBlockingZone).length} · Walkable: {sceneZones.filter(isWalkableZone).length}</p><p className="text-[10px] text-ink-muted">Smart pathing is active. The hero routes around blocked zones when a safe route exists.</p></div>
           </aside>
         </div>
       </section>
