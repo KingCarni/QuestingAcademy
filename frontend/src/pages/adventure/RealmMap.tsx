@@ -10,6 +10,8 @@ import { Castle, Lock, MapPin, Waypoints } from "lucide-react";
 type Pos = { left: string; top: string };
 type MapSourceMode = "auto" | "realm" | "scene";
 type RuntimeMarker = { id: string; label: string; type: string; x: number; y: number; source?: any };
+type RuntimeZone = { id: string; name: string; type: string; points: { x: number; y: number }[]; closed: boolean };
+type Point = { x: number; y: number };
 
 const LIVE_POSITIONS: Pos[] = [
   { left: "20%", top: "58%" },
@@ -44,10 +46,11 @@ const normalizeStudioImageUrl = (url?: string): string => {
 
 const getScenePreviewUrl = (scene?: any): string => normalizeStudioImageUrl(scene?.manualComposition?.previewCompositeUrl || scene?.manualComposition?.backgroundUrl || scene?.previewCompositeUrl || scene?.compositeUrl || scene?.previewUrl || scene?.generatedImageUrl || scene?.imageUrl || scene?.backgroundUrl || scene?.url || "");
 const clampPercent = (value: any, fallback: number) => { const n = Number(value); if (!Number.isFinite(n)) return fallback; return Math.max(4, Math.min(96, n)); };
+const clampDestination = (point: Point): Point => ({ x: Math.max(4, Math.min(96, point.x)), y: Math.max(8, Math.min(92, point.y)) });
 
 const getPossibleSceneMarkers = (scene?: any): RuntimeMarker[] => {
   if (!scene) return [];
-  const rawCollections = [scene?.runtimeMarkers, scene?.markers, scene?.manualComposition?.markers, scene?.manualComposition?.exportedMarkers, scene?.manualComposition?.pointsOfInterest, scene?.pointsOfInterest, scene?.zones, scene?.manualComposition?.zones, scene?.assets, scene?.manualComposition?.assets].filter(Array.isArray);
+  const rawCollections = [scene?.runtimeMarkers, scene?.markers, scene?.manualComposition?.markers, scene?.manualComposition?.exportedMarkers, scene?.manualComposition?.pointsOfInterest, scene?.pointsOfInterest, scene?.assets, scene?.manualComposition?.assets].filter(Array.isArray);
   return rawCollections.flat().slice(0, 24).map((marker: any, index: number) => {
     const fallbackX = 18 + ((index * 17) % 64);
     const fallbackY = 22 + ((index * 19) % 52);
@@ -60,6 +63,72 @@ const getPossibleSceneMarkers = (scene?: any): RuntimeMarker[] => {
       source: marker,
     };
   });
+};
+
+const getSceneZones = (scene?: any): RuntimeZone[] => {
+  const rawZones = [scene?.manualComposition?.zones, scene?.runtimeZones, scene?.zones].find(Array.isArray) || [];
+  return rawZones.map((zone: any, index: number) => ({
+    id: String(zone?.id || zone?.name || `zone-${index}`),
+    name: String(zone?.name || `${zone?.type || "zone"} ${index + 1}`),
+    type: String(zone?.type || "interaction").toLowerCase(),
+    points: Array.isArray(zone?.points)
+      ? zone.points.map((point: any) => ({ x: Number(point?.x ?? 0), y: Number(point?.y ?? 0) })).filter((point: Point) => Number.isFinite(point.x) && Number.isFinite(point.y))
+      : [],
+    closed: zone?.closed !== false,
+  })).filter((zone: RuntimeZone) => zone.closed && zone.points.length >= 3);
+};
+
+const pointInPolygon = (point: Point, polygon: Point[]): boolean => {
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i].x;
+    const yi = polygon[i].y;
+    const xj = polygon[j].x;
+    const yj = polygon[j].y;
+    const intersects = yi > point.y !== yj > point.y && point.x < ((xj - xi) * (point.y - yi)) / ((yj - yi) || 0.000001) + xi;
+    if (intersects) inside = !inside;
+  }
+  return inside;
+};
+
+const orientation = (a: Point, b: Point, c: Point): number => {
+  const value = (b.y - a.y) * (c.x - b.x) - (b.x - a.x) * (c.y - b.y);
+  if (Math.abs(value) < 0.000001) return 0;
+  return value > 0 ? 1 : 2;
+};
+
+const onSegment = (a: Point, b: Point, c: Point): boolean =>
+  b.x <= Math.max(a.x, c.x) + 0.000001 &&
+  b.x + 0.000001 >= Math.min(a.x, c.x) &&
+  b.y <= Math.max(a.y, c.y) + 0.000001 &&
+  b.y + 0.000001 >= Math.min(a.y, c.y);
+
+const segmentsIntersect = (a: Point, b: Point, c: Point, d: Point): boolean => {
+  const o1 = orientation(a, b, c);
+  const o2 = orientation(a, b, d);
+  const o3 = orientation(c, d, a);
+  const o4 = orientation(c, d, b);
+  if (o1 !== o2 && o3 !== o4) return true;
+  if (o1 === 0 && onSegment(a, c, b)) return true;
+  if (o2 === 0 && onSegment(a, d, b)) return true;
+  if (o3 === 0 && onSegment(c, a, d)) return true;
+  if (o4 === 0 && onSegment(c, b, d)) return true;
+  return false;
+};
+
+const segmentIntersectsPolygon = (start: Point, end: Point, polygon: Point[]): boolean =>
+  polygon.some((point, index) => segmentsIntersect(start, end, point, polygon[(index + 1) % polygon.length]));
+
+const isBlockingZone = (zone: RuntimeZone): boolean => ["blocked", "blocked-zone", "water", "wall", "collision", "no-walk", "no walk", "no_walk"].includes(zone.type);
+const isWalkableZone = (zone: RuntimeZone): boolean => zone.type === "walkable";
+
+const getMovementBlockReason = (start: Point, end: Point, zones: RuntimeZone[]): string => {
+  const blockingZones = zones.filter(isBlockingZone);
+  const walkableZones = zones.filter(isWalkableZone);
+  const hitBlocked = blockingZones.find((zone) => pointInPolygon(end, zone.points) || segmentIntersectsPolygon(start, end, zone.points));
+  if (hitBlocked) return `${hitBlocked.name || "Blocked zone"} is blocked.`;
+  if (walkableZones.length && !walkableZones.some((zone) => pointInPolygon(end, zone.points))) return "That spot is outside the walkable path.";
+  return "";
 };
 
 const RealmMap: React.FC = () => {
@@ -82,14 +151,36 @@ const RealmMap: React.FC = () => {
   const activeScene = mapMode === "scene" || (mapMode === "auto" && selectedScene) ? selectedScene : null;
   const activeSceneImage = getScenePreviewUrl(activeScene);
   const sceneMarkers = useMemo(() => getPossibleSceneMarkers(activeScene), [activeScene]);
+  const sceneZones = useMemo(() => getSceneZones(activeScene), [activeScene]);
   const selectedMarker = sceneMarkers.find((m) => m.id === selectedMarkerId) ?? null;
   const [hero, setHero] = useState<{ x: number; y: number }>({ x: 50, y: 82 });
+  const [blockedFeedback, setBlockedFeedback] = useState("");
   const canvasRef = useRef<HTMLDivElement | null>(null);
 
-  const walkTo = (x: number, y: number): Promise<void> => { setHero({ x, y }); return new Promise((resolve) => setTimeout(resolve, WALK_DURATION_S * 1000)); };
-  const handleCanvasClick = (e: React.MouseEvent<HTMLDivElement>) => { const c = canvasRef.current; if (!c) return; const rect = c.getBoundingClientRect(); const x = ((e.clientX - rect.left) / rect.width) * 100; const y = ((e.clientY - rect.top) / rect.height) * 100; walkTo(Math.max(4, Math.min(96, x)), Math.max(8, Math.min(92, y))); };
-  const selectRealm = async (realmId: string, pos?: Pos, enter = false) => { setSelectedRealmId(realmId); setSelectedMarkerId(""); if (pos) await walkTo(parseFloat(pos.left), parseFloat(pos.top) + 8); if (enter) { setActiveRealm(realmId); nav(`/adventure/town/${realmId}`); } };
-  const selectMarker = async (marker: RuntimeMarker, e?: React.MouseEvent) => { e?.stopPropagation(); setSelectedMarkerId(marker.id); await walkTo(marker.x, marker.y + 4); };
+  const tryWalkTo = (x: number, y: number): Promise<boolean> => {
+    const destination = clampDestination({ x, y });
+    const reason = getMovementBlockReason(hero, destination, sceneZones);
+    if (reason) {
+      setBlockedFeedback(reason);
+      window.setTimeout(() => setBlockedFeedback(""), 1400);
+      return Promise.resolve(false);
+    }
+    setBlockedFeedback("");
+    setHero(destination);
+    return new Promise((resolve) => setTimeout(() => resolve(true), WALK_DURATION_S * 1000));
+  };
+
+  const handleCanvasClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const c = canvasRef.current;
+    if (!c) return;
+    const rect = c.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * 100;
+    const y = ((e.clientY - rect.top) / rect.height) * 100;
+    tryWalkTo(x, y);
+  };
+
+  const selectRealm = async (realmId: string, pos?: Pos, enter = false) => { setSelectedRealmId(realmId); setSelectedMarkerId(""); if (pos) await tryWalkTo(parseFloat(pos.left), parseFloat(pos.top) + 8); if (enter) { setActiveRealm(realmId); nav(`/adventure/town/${realmId}`); } };
+  const selectMarker = async (marker: RuntimeMarker, e?: React.MouseEvent) => { e?.stopPropagation(); setSelectedMarkerId(marker.id); await tryWalkTo(marker.x, marker.y + 4); };
   const enterSelected = () => { if (selectedRealm) { setActiveRealm(selectedRealm.id); nav(`/adventure/town/${selectedRealm.id}`); } };
 
   useEffect(() => { setHero({ x: 50, y: 82 }); }, []);
@@ -109,10 +200,11 @@ const RealmMap: React.FC = () => {
 
         <div className="relative mx-auto w-full max-w-none min-h-[calc(100vh-11rem)] pr-[18.5rem]">
           <div className="flex justify-center">
-            <div ref={canvasRef} onClick={handleCanvasClick} data-testid="realm-world-canvas" className="relative w-[calc(100vw-21rem)] max-w-[148rem] min-w-[112rem] aspect-[16/9] ... rounded-[2.75rem] overflow-hidden border-[7px] border-white shadow-2xl shadow-indigo-900/20 cursor-pointer select-none ring-4 ring-primary/10" style={{ backgroundImage: activeSceneImage ? `url(${activeSceneImage})` : undefined, backgroundSize: "cover", backgroundPosition: "center", backgroundRepeat: "no-repeat", backgroundColor: "#BFE0F2" }}>
+            <div ref={canvasRef} onClick={handleCanvasClick} data-testid="realm-world-canvas" className="relative w-[calc(100vw-21rem)] max-w-[148rem] min-w-[112rem] aspect-[16/9] rounded-[2.75rem] overflow-hidden border-[7px] border-white shadow-2xl shadow-indigo-900/20 cursor-pointer select-none ring-4 ring-primary/10" style={{ backgroundImage: activeSceneImage ? `url(${activeSceneImage})` : undefined, backgroundSize: "cover", backgroundPosition: "center", backgroundRepeat: "no-repeat", backgroundColor: "#BFE0F2" }}>
             {!activeSceneImage && <div className="absolute inset-0" style={{ background: "radial-gradient(ellipse at 18% 18%, rgba(255,255,255,0.95) 0%, transparent 26%), radial-gradient(ellipse at 78% 20%, rgba(255,246,216,0.9) 0%, transparent 32%), radial-gradient(ellipse at 18% 78%, rgba(205,224,207,0.8) 0%, transparent 34%), linear-gradient(145deg, #BFE0F2 0%, #D7EEF4 38%, #F6EBCB 100%)" }} />}
             <div className="absolute inset-0 bg-gradient-to-b from-white/20 via-transparent to-white/45" />
             <div className="absolute top-5 left-5 rounded-3xl bg-white/80 backdrop-blur-md border-2 border-white px-4 py-3 shadow-lg pointer-events-none z-30"><p className="text-[10px] font-extrabold uppercase tracking-widest text-primary">Runtime map</p><p className="h-display text-xl text-ink">{activeScene ? sceneLabel(activeScene) : "Edu-Mates Atlas"}</p></div>
+            {blockedFeedback && <div className="absolute left-1/2 top-8 -translate-x-1/2 z-50 rounded-full bg-white/95 border-4 border-danger/30 px-5 py-2 text-sm font-extrabold text-danger shadow-xl pointer-events-none">{blockedFeedback}</div>}
 
             {!activeSceneImage && <>
               <svg aria-hidden viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 w-full h-full pointer-events-none z-10"><path d="M 20 66 C 28 42, 38 34, 43 32 S 62 38, 70 60" fill="none" stroke="#9D8DF1" strokeWidth="1.35" strokeDasharray="2.4 2.2" strokeLinecap="round" opacity="0.82" /><path d="M 20 66 C 28 42, 38 34, 43 32 S 62 38, 70 60" fill="none" stroke="white" strokeWidth="2.4" strokeDasharray="2.4 2.2" strokeLinecap="round" opacity="0.35" /></svg>
@@ -130,6 +222,7 @@ const RealmMap: React.FC = () => {
             <div className="mb-4"><p className="text-[10px] font-extrabold uppercase tracking-widest text-primary">Selected Destination</p><h2 className="h-display text-2xl text-ink mt-1">{selectedMarker?.label || selectedRealm?.name || "Choose your path"}</h2><p className="text-sm text-ink-muted mt-2">{selectedMarker ? selectedMarker.type : selectedRealm ? selectedRealm.biome : "Pick a realm or imported marker from the map."}</p></div>
             <div className="rounded-[1.75rem] bg-gradient-to-br from-primary/10 via-white/80 to-gold/15 border-2 border-white p-4 mb-4"><div className="flex items-center gap-4"><div className="w-14 h-14 rounded-2xl bg-white grid place-items-center text-3xl shadow-inner" aria-hidden>{selectedMarker ? "📍" : emojiFor(selectedRealm?.biome || "")}</div><div><p className="text-[10px] font-extrabold uppercase tracking-widest text-ink-muted">{selectedMarker ? "Imported marker" : "Open realm"}</p><p className="h-display text-2xl leading-tight">{selectedMarker?.label || selectedRealm?.name || "No destination"}</p><p className="text-xs text-ink-muted mt-1">{selectedMarker ? "Marker is selectable now. Runtime routing comes next." : "Ready for town, quests, and battles."}</p></div></div><button type="button" onClick={enterSelected} className="btn-primary w-full justify-center mt-4 !py-3" data-testid="realm-enter-selected"><Castle size={18} strokeWidth={3} /> Enter / Travel</button></div>
             <div className="space-y-3"><p className="text-xs font-extrabold uppercase tracking-widest text-ink-muted">Scene markers</p>{sceneMarkers.length ? sceneMarkers.slice(0, 8).map((marker) => <button key={`panel-${marker.id}`} type="button" onClick={() => selectMarker(marker)} className={`w-full card-base !p-3 text-left border-2 flex items-center gap-3 ${selectedMarker?.id === marker.id ? "border-primary bg-primary/10" : "border-white/80"}`}><Waypoints size={16} strokeWidth={3} className="text-primary" /><div className="min-w-0"><p className="h-display text-base truncate">{marker.label}</p><p className="text-xs text-ink-muted truncate">{marker.type}</p></div></button>) : <p className="text-sm text-ink-muted">No exported markers/zones/assets found on this scene yet.</p>}</div>
+            <div className="space-y-2 mt-5"><p className="text-xs font-extrabold uppercase tracking-widest text-ink-muted">Runtime zones</p><p className="text-xs text-ink-muted">Blocking: {sceneZones.filter(isBlockingZone).length} · Walkable: {sceneZones.filter(isWalkableZone).length}</p></div>
           </aside>
         </div>
       </section>
