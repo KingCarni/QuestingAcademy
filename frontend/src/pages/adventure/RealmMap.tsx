@@ -12,6 +12,9 @@ type MapSourceMode = "auto" | "realm" | "scene";
 type RuntimeMarker = { id: string; label: string; type: string; x: number; y: number; source?: any };
 type RuntimeZone = { id: string; name: string; type: string; points: { x: number; y: number }[]; closed: boolean };
 type Point = { x: number; y: number };
+type NavCell = { col: number; row: number };
+
+type NavNode = NavCell & { g: number; f: number };
 
 const LIVE_POSITIONS: Pos[] = [
   { left: "20%", top: "58%" },
@@ -146,11 +149,11 @@ const findSmartPath = (startRaw: Point, endRaw: Point, zones: RuntimeZone[]): Po
 
   const cols = 40;
   const rows = 28;
-  const toCell = (point: Point) => ({ col: Math.max(0, Math.min(cols - 1, Math.round((point.x / 100) * (cols - 1)))), row: Math.max(0, Math.min(rows - 1, Math.round((point.y / 100) * (rows - 1)))) });
-  const toPoint = (cell: { col: number; row: number }): Point => ({ x: (cell.col / (cols - 1)) * 100, y: (cell.row / (rows - 1)) * 100 });
+  const toCell = (point: Point): NavCell => ({ col: Math.max(0, Math.min(cols - 1, Math.round((point.x / 100) * (cols - 1)))), row: Math.max(0, Math.min(rows - 1, Math.round((point.y / 100) * (rows - 1)))) });
+  const toPoint = (cell: NavCell): Point => ({ x: (cell.col / (cols - 1)) * 100, y: (cell.row / (rows - 1)) * 100 });
   const startCell = toCell(start);
   const endCell = toCell(openEnd);
-  const key = (cell: { col: number; row: number }) => `${cell.col},${cell.row}`;
+  const key = (cell: NavCell) => `${cell.col},${cell.row}`;
   const blocked = new Set<string>();
   for (let row = 0; row < rows; row += 1) {
     for (let col = 0; col < cols; col += 1) {
@@ -161,29 +164,25 @@ const findSmartPath = (startRaw: Point, endRaw: Point, zones: RuntimeZone[]): Po
   blocked.delete(key(startCell));
   blocked.delete(key(endCell));
 
-  type Node = { col: number; row: number; g: number; f: number; parent?: string };
-  const open = new Map<string, Node>();
+  const open = new Map<string, NavNode>();
   const closed = new Set<string>();
   const cameFrom = new Map<string, string>();
   const gScore = new Map<string, number>();
-  const heuristic = (a: { col: number; row: number }, b: { col: number; row: number }) => Math.hypot(a.col - b.col, a.row - b.row);
+  const heuristic = (a: NavCell, b: NavCell) => Math.hypot(a.col - b.col, a.row - b.row);
   open.set(key(startCell), { ...startCell, g: 0, f: heuristic(startCell, endCell) });
   gScore.set(key(startCell), 0);
 
-  const dirs = [
+  const dirs: NavCell[] = [
     { col: 1, row: 0 }, { col: -1, row: 0 }, { col: 0, row: 1 }, { col: 0, row: -1 },
     { col: 1, row: 1 }, { col: 1, row: -1 }, { col: -1, row: 1 }, { col: -1, row: -1 },
   ];
 
   while (open.size) {
-    let currentKey = "";
-    let current: Node | null = null;
-    open.forEach((node, nodeKey) => {
-      if (!current || node.f < current.f) { current = node; currentKey = nodeKey; }
-    });
+    const orderedOpen = [...open.entries()].sort((a, b) => a[1].f - b[1].f);
+    const [currentKey, current] = orderedOpen[0];
     if (!current) break;
     if (current.col === endCell.col && current.row === endCell.row) {
-      const cells: { col: number; row: number }[] = [];
+      const cells: NavCell[] = [];
       let cursor = currentKey;
       while (cursor) {
         const [col, row] = cursor.split(",").map(Number);
@@ -200,7 +199,7 @@ const findSmartPath = (startRaw: Point, endRaw: Point, zones: RuntimeZone[]): Po
     closed.add(currentKey);
 
     for (const dir of dirs) {
-      const neighbor = { col: current.col + dir.col, row: current.row + dir.row };
+      const neighbor: NavCell = { col: current.col + dir.col, row: current.row + dir.row };
       if (neighbor.col < 0 || neighbor.col >= cols || neighbor.row < 0 || neighbor.row >= rows) continue;
       const neighborKey = key(neighbor);
       if (closed.has(neighborKey) || blocked.has(neighborKey)) continue;
