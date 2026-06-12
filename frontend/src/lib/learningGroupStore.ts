@@ -128,6 +128,7 @@ interface LearningGroupStore {
   createAssignment: (input: Pick<LearningGroupAssignment, "groupId" | "title" | "subject" | "skill" | "workType" | "questionCount" | "difficulty" | "dueLabel">) => void;
   moveAssignmentToReview: (id: string) => void;
   approveAssignment: (id: string) => void;
+  deleteAssignment: (id: string) => void;
   addLearnerToGroup: (groupId: string, input: Pick<LearningGroupLearner, "name" | "grade" | "avatarEmoji">) => void;
   giveClassPetReward: (groupId: string, amount?: number) => void;
   setClassPet: (groupId: string, petId: string) => void;
@@ -260,6 +261,7 @@ export const useLearningGroupStore = create<LearningGroupStore>()(
       },
       moveAssignmentToReview: (id) => set({ assignments: get().assignments.map((assignment) => assignment.id === id ? { ...assignment, status: "review" } : assignment) }),
       approveAssignment: (id) => set({ assignments: get().assignments.map((assignment) => assignment.id === id ? { ...assignment, status: "approved" } : assignment) }),
+      deleteAssignment: (id) => set({ assignments: get().assignments.filter((assignment) => assignment.id !== id) }),
       addLearnerToGroup: (groupId, input) => {
         const created: LearningGroupLearner = {
           id: makeId("learner"),
