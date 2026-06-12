@@ -4,8 +4,9 @@ import { persist, createJSONStorage } from "zustand/middleware";
 export type EduMatesUserRole = "parent" | "teacher" | "homeschool-parent" | "tutor" | "student" | "admin";
 export type LearningGroupType = "classroom" | "homeschool" | "tutoring" | "pod" | "intervention";
 export type LearningGroupStatus = "active" | "paused" | "archived";
-export type AssignmentStatus = "draft" | "assigned" | "completed";
+export type AssignmentStatus = "draft" | "generated" | "review" | "approved" | "assigned" | "completed";
 export type AssignmentDifficulty = "gentle" | "standard" | "challenge";
+export type AssignmentWorkType = "daily-assignment" | "lightning-quiz" | "basic-quiz" | "mid-term-test" | "final-test" | "review-practice";
 export type ClassPetMood = "happy" | "focused" | "sleepy" | "excited" | "proud";
 
 export const EDU_MATES_ROLE_LABELS: Record<EduMatesUserRole, string> = {
@@ -24,6 +25,41 @@ export const LEARNING_GROUP_TYPE_LABELS: Record<LearningGroupType, string> = {
   pod: "Learning pod",
   intervention: "Intervention group",
 };
+
+export const APPROVED_SUBJECT_SKILLS: Record<string, string[]> = {
+  Math: ["Addition", "Subtraction", "Number sense", "Fractions", "Patterns", "Story problems", "Mental math"],
+  Reading: ["Fluency", "Vocabulary", "Story comprehension", "Phonics", "Main idea", "Inference"],
+  Writing: ["Sentence building", "Paragraphs", "Grammar", "Creative writing", "Revision"],
+  Science: ["Habitats", "Weather", "Plants", "Animals", "Forces", "Observation skills"],
+  "Social Studies": ["Communities", "Maps", "Citizenship", "Local history", "Cultures"],
+};
+
+export const ASSIGNMENT_WORK_TYPE_LABELS: Record<AssignmentWorkType, string> = {
+  "daily-assignment": "Daily assignment",
+  "lightning-quiz": "Lightning quiz",
+  "basic-quiz": "Basic quiz",
+  "mid-term-test": "Mid-term test",
+  "final-test": "Final test",
+  "review-practice": "Review practice",
+};
+
+export const ASSIGNMENT_DUE_OPTIONS = ["Today", "Tomorrow", "Friday", "Next week", "End of unit", "No due date"];
+
+export interface ClassPetOption {
+  id: string;
+  name: string;
+  emoji: string;
+  developerOnly?: boolean;
+  teacherSelectable?: boolean;
+}
+
+export const CLASS_PET_OPTIONS: ClassPetOption[] = [
+  { id: "embercub", name: "Embercub", emoji: "🔥", teacherSelectable: true },
+  { id: "spriggle", name: "Spriggle", emoji: "🌱", teacherSelectable: true },
+  { id: "bubblefin", name: "Bubblefin", emoji: "🐠", teacherSelectable: true },
+  { id: "linden", name: "Linden the Keeper", emoji: "🧙", developerOnly: true },
+  { id: "wyndle", name: "Wyndle", emoji: "🪽", developerOnly: true },
+];
 
 export interface LearningGroupLearner {
   id: string;
@@ -45,12 +81,14 @@ export interface LearningGroupAssignment {
   title: string;
   subject: string;
   skill: string;
+  workType: AssignmentWorkType;
   questionCount: number;
   difficulty: AssignmentDifficulty;
   status: AssignmentStatus;
   dueLabel: string;
   completionPercent: number;
   averageAccuracy: number;
+  generatedSummary: string;
   createdAt: string;
 }
 
@@ -64,7 +102,9 @@ export interface LearningGroup {
   subjectFocus: string[];
   activeQuest: string;
   activeRealm: string;
+  classPetId: string;
   classPetName: string;
+  classPetEmoji: string;
   classPetMood: ClassPetMood;
   classPetLevel: number;
   classPetXp: number;
@@ -85,13 +125,17 @@ interface LearningGroupStore {
   selectGroup: (id: string) => void;
   createGroup: (input: Pick<LearningGroup, "name" | "type" | "ownerRole" | "gradeBand">) => void;
   updateGroup: (id: string, patch: Partial<LearningGroup>) => void;
-  createAssignment: (input: Pick<LearningGroupAssignment, "groupId" | "title" | "subject" | "skill" | "questionCount" | "difficulty" | "dueLabel">) => void;
+  createAssignment: (input: Pick<LearningGroupAssignment, "groupId" | "title" | "subject" | "skill" | "workType" | "questionCount" | "difficulty" | "dueLabel">) => void;
+  moveAssignmentToReview: (id: string) => void;
+  approveAssignment: (id: string) => void;
   addLearnerToGroup: (groupId: string, input: Pick<LearningGroupLearner, "name" | "grade" | "avatarEmoji">) => void;
   giveClassPetReward: (groupId: string, amount?: number) => void;
+  setClassPet: (groupId: string, petId: string) => void;
 }
 
 const nowISO = () => new Date().toISOString();
 const makeId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+const getPetOption = (petId: string) => CLASS_PET_OPTIONS.find((pet) => pet.id === petId) || CLASS_PET_OPTIONS[0];
 
 const seedLearners: LearningGroupLearner[] = [
   { id: "learner-1", name: "Ari", grade: "2", avatarEmoji: "🦊", accuracy: 86, minutesThisWeek: 42, questsCompleted: 4, lastActiveLabel: "Today", streakDays: 5, needsSupport: ["subtraction regrouping"], strengths: ["addition", "story problems"] },
@@ -111,7 +155,9 @@ const seedGroups: LearningGroup[] = [
     subjectFocus: ["Addition", "Reading fluency"],
     activeQuest: "First Friend Forever",
     activeRealm: "Meadowfall Grove",
-    classPetName: "Spriggle",
+    classPetId: "embercub",
+    classPetName: "Embercub",
+    classPetEmoji: "🔥",
     classPetMood: "happy",
     classPetLevel: 2,
     classPetXp: 65,
@@ -131,7 +177,9 @@ const seedGroups: LearningGroup[] = [
     subjectFocus: ["Number sense", "Story comprehension"],
     activeQuest: "Hatchery Helpers",
     activeRealm: "Cozy Hatchery",
+    classPetId: "bubblefin",
     classPetName: "Bubblefin",
+    classPetEmoji: "🐠",
     classPetMood: "excited",
     classPetLevel: 1,
     classPetXp: 35,
@@ -144,9 +192,9 @@ const seedGroups: LearningGroup[] = [
 ];
 
 const seedAssignments: LearningGroupAssignment[] = [
-  { id: "assignment-1", groupId: "group-meadow-class", title: "Meadow Addition Sprint", subject: "Math", skill: "Addition", questionCount: 10, difficulty: "standard", status: "assigned", dueLabel: "Friday", completionPercent: 67, averageAccuracy: 84, createdAt: nowISO() },
-  { id: "assignment-2", groupId: "group-meadow-class", title: "Read With Spriggle", subject: "Reading", skill: "Fluency", questionCount: 8, difficulty: "gentle", status: "draft", dueLabel: "Next week", completionPercent: 0, averageAccuracy: 0, createdAt: nowISO() },
-  { id: "assignment-3", groupId: "group-homeschool-room", title: "Cozy Number Quest", subject: "Math", skill: "Number sense", questionCount: 12, difficulty: "standard", status: "assigned", dueLabel: "Tomorrow", completionPercent: 50, averageAccuracy: 76, createdAt: nowISO() },
+  { id: "assignment-1", groupId: "group-meadow-class", title: "Meadow Addition Sprint", subject: "Math", skill: "Addition", workType: "lightning-quiz", questionCount: 10, difficulty: "standard", status: "assigned", dueLabel: "Friday", completionPercent: 67, averageAccuracy: 84, generatedSummary: "Ten quick addition problems using meadow coins and classroom pet treats.", createdAt: nowISO() },
+  { id: "assignment-2", groupId: "group-meadow-class", title: "Read With Embercub", subject: "Reading", skill: "Fluency", workType: "daily-assignment", questionCount: 8, difficulty: "gentle", status: "review", dueLabel: "Next week", completionPercent: 0, averageAccuracy: 0, generatedSummary: "A gentle fluency read-aloud set themed around Embercub helping in the meadow.", createdAt: nowISO() },
+  { id: "assignment-3", groupId: "group-homeschool-room", title: "Cozy Number Quest", subject: "Math", skill: "Number sense", workType: "basic-quiz", questionCount: 12, difficulty: "standard", status: "assigned", dueLabel: "Tomorrow", completionPercent: 50, averageAccuracy: 76, generatedSummary: "A number sense quiz for mixed-grade homeschool practice.", createdAt: nowISO() },
 ];
 
 export const useLearningGroupStore = create<LearningGroupStore>()(
@@ -160,6 +208,7 @@ export const useLearningGroupStore = create<LearningGroupStore>()(
       setCurrentRole: (role) => set({ currentRole: role }),
       selectGroup: (id) => set({ selectedGroupId: id }),
       createGroup: (input) => {
+        const pet = getPetOption("embercub");
         const created: LearningGroup = {
           id: makeId("group"),
           name: input.name.trim() || "New Edu-Mates group",
@@ -170,7 +219,9 @@ export const useLearningGroupStore = create<LearningGroupStore>()(
           subjectFocus: ["Math", "Reading"],
           activeQuest: "No assignment yet",
           activeRealm: "Meadowfall Grove",
-          classPetName: "Spriggle",
+          classPetId: pet.id,
+          classPetName: pet.name,
+          classPetEmoji: pet.emoji,
           classPetMood: "focused",
           classPetLevel: 1,
           classPetXp: 0,
@@ -192,12 +243,14 @@ export const useLearningGroupStore = create<LearningGroupStore>()(
           title: input.title.trim() || "New Edu-Mates assignment",
           subject: input.subject.trim() || "Math",
           skill: input.skill.trim() || "Practice",
+          workType: input.workType,
           questionCount: Math.max(1, Math.round(Number(input.questionCount) || 10)),
           difficulty: input.difficulty,
-          status: "assigned",
+          status: "generated",
           dueLabel: input.dueLabel.trim() || "This week",
           completionPercent: 0,
           averageAccuracy: 0,
+          generatedSummary: `${ASSIGNMENT_WORK_TYPE_LABELS[input.workType]} generated for ${input.subject} / ${input.skill}. Review it before assigning to learners.`,
           createdAt: nowISO(),
         };
         set({
@@ -205,6 +258,8 @@ export const useLearningGroupStore = create<LearningGroupStore>()(
           groups: get().groups.map((group) => group.id === input.groupId ? { ...group, activeQuest: created.title, subjectFocus: [created.skill, created.subject], updatedAt: nowISO() } : group),
         });
       },
+      moveAssignmentToReview: (id) => set({ assignments: get().assignments.map((assignment) => assignment.id === id ? { ...assignment, status: "review" } : assignment) }),
+      approveAssignment: (id) => set({ assignments: get().assignments.map((assignment) => assignment.id === id ? { ...assignment, status: "approved" } : assignment) }),
       addLearnerToGroup: (groupId, input) => {
         const created: LearningGroupLearner = {
           id: makeId("learner"),
@@ -239,9 +294,16 @@ export const useLearningGroupStore = create<LearningGroupStore>()(
           };
         }),
       }),
+      setClassPet: (groupId, petId) => set({
+        groups: get().groups.map((group) => {
+          if (group.id !== groupId) return group;
+          const pet = getPetOption(petId);
+          return { ...group, classPetId: pet.id, classPetName: pet.name, classPetEmoji: pet.emoji, updatedAt: nowISO() };
+        }),
+      }),
     }),
     {
-      name: "edu-mates-learning-groups-v2",
+      name: "edu-mates-learning-groups-v3",
       storage: createJSONStorage(() => localStorage),
     }
   )
