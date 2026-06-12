@@ -27,7 +27,6 @@ export const CLASSROOM_GRADE_BAND_OPTIONS = [
 ] as const;
 
 export const CLASSROOM_SUBJECT_OPTIONS: ClassroomSubjectFocus[] = ["Math", "Reading", "Writing", "Science", "Social Studies"];
-
 export const CLASSROOM_ROOM_THEME_OPTIONS: ClassroomRoomTheme[] = ["meadow", "hatchery", "library", "crystal-cave", "sky-dock"];
 
 export const CLASSROOM_ROOM_THEME_LABELS: Record<ClassroomRoomTheme, string> = {
@@ -57,6 +56,7 @@ export interface ClassroomPetState {
   xpGoal: number;
   mood: "happy" | "focused" | "excited" | "proud" | "sleepy";
   treats: number;
+  name?: string;
 }
 
 export interface ClassroomRoomState {
@@ -129,6 +129,9 @@ export interface ClassroomWorld {
   memberIds: string[];
   createdAt: string;
   updatedAt: string;
+  roomName?: string;
+  roomTheme?: ClassroomRoomTheme;
+  members?: ClassroomMember[];
 }
 
 interface ClassroomWorldStore {
@@ -138,21 +141,31 @@ interface ClassroomWorldStore {
   goals: ClassroomGoal[];
   events: ClassroomEvent[];
   selectedClassroomId: string;
-  createClassroom: (input: Pick<ClassroomWorld, "name" | "gradeBand" | "subjectFocus"> & { teacherId?: string; teacherName?: string; roomTheme?: ClassroomRoomTheme; theme?: ClassroomRoomTheme }) => ClassroomWorld;
+  createClassroom: (input: Omit<Pick<ClassroomWorld, "name" | "gradeBand" | "subjectFocus">, "subjectFocus"> & { subjectFocus: ClassroomSubjectFocus | ClassroomSubjectFocus[]; teacherId?: string; teacherName?: string; roomTheme?: ClassroomRoomTheme; theme?: ClassroomRoomTheme }) => ClassroomWorld;
   selectClassroom: (id: string) => void;
   copyJoinCode: (classroomId: string) => string;
-  joinClassroomByCode: (input: { joinCode: string; learnerId: string; displayName: string }, displayNameOverride?: string) => { ok: boolean; message: string; classroomId?: string };
+  joinClassroomByCode: ((input: { joinCode: string; learnerId: string; displayName: string }) => { ok: boolean; message: string; classroomId?: string }) & ((joinCode: string, displayName: string) => { ok: boolean; message: string; classroomId?: string });
   addRewardLog: (input: Pick<ClassroomRewardLog, "classroomId" | "type" | "amount" | "reason"> & { memberId?: string }) => void;
 }
 
 const nowISO = () => new Date().toISOString();
 const makeId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const normalizeCode = (code: string): string => code.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
-const normalizeSubjectFocus = (subjects: Array<string | ClassroomSubjectFocus>): ClassroomSubjectFocus[] => {
+
+const normalizeSubjectFocus = (subjects: ClassroomSubjectFocus | ClassroomSubjectFocus[] | string | string[]): ClassroomSubjectFocus[] => {
+  const input = Array.isArray(subjects) ? subjects : [subjects];
   const valid = new Set<ClassroomSubjectFocus>(CLASSROOM_SUBJECT_OPTIONS);
-  const normalized = subjects.filter((subject): subject is ClassroomSubjectFocus => valid.has(subject as ClassroomSubjectFocus));
+  const normalized = input.filter((subject): subject is ClassroomSubjectFocus => valid.has(subject as ClassroomSubjectFocus));
   return normalized.length ? normalized : ["Math"];
 };
+
+const makeClassroomCompat = (classroom: ClassroomWorld, members: ClassroomMember[]): ClassroomWorld => ({
+  ...classroom,
+  roomName: classroom.room.roomName,
+  roomTheme: classroom.room.theme,
+  pet: { ...classroom.pet, name: classroom.pet.petName },
+  members: members.filter((member) => classroom.memberIds.includes(member.id)),
+});
 
 const makeJoinCode = (existingCodes: string[]): string => {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -177,7 +190,7 @@ const seedClassrooms: ClassroomWorld[] = [
     subjectFocus: ["Math", "Reading"],
     status: "active",
     privacy: { mode: "invite-only", requireTeacherApproval: false, showLeaderboard: false, allowStudentNicknames: true },
-    pet: { petId: "embercub", petName: "Embercub", petEmoji: "🔥", level: 2, xp: 65, xpGoal: 100, mood: "happy", treats: 4 },
+    pet: { petId: "embercub", petName: "Embercub", petEmoji: "🔥", level: 2, xp: 65, xpGoal: 100, mood: "happy", treats: 4, name: "Embercub" },
     room: { theme: "meadow", roomName: "Meadowfall Homeroom", decorationIds: ["rug-leaf", "banner-stars"], lastVisitedAt: nowISO() },
     assignmentRefs: [
       { id: "cw-assignment-1", assignmentId: "assignment-1", title: "Meadow Addition Sprint", subject: "Math", skill: "Addition", status: "assigned" },
@@ -187,6 +200,8 @@ const seedClassrooms: ClassroomWorld[] = [
     memberIds: ["cw-member-1", "cw-member-2"],
     createdAt: nowISO(),
     updatedAt: nowISO(),
+    roomName: "Meadowfall Homeroom",
+    roomTheme: "meadow",
   },
 ];
 
@@ -206,17 +221,18 @@ const seedEvents: ClassroomEvent[] = [
 export const useClassroomWorldStore = create<ClassroomWorldStore>()(
   persist(
     (set, get) => ({
-      classrooms: seedClassrooms,
+      classrooms: seedClassrooms.map((classroom) => makeClassroomCompat(classroom, seedMembers)),
       members: seedMembers,
       rewardLogs: [],
       goals: seedGoals,
       events: seedEvents,
       selectedClassroomId: seedClassrooms[0]?.id || "",
       createClassroom: (input) => {
-        const joinCode = makeJoinCode(get().classrooms.map((classroom) => classroom.joinCode));
+        const state = get();
+        const joinCode = makeJoinCode(state.classrooms.map((classroom) => classroom.joinCode));
         const roomTheme = input.roomTheme || input.theme || "meadow";
         const name = input.name.trim() || "New Classroom World";
-        const created: ClassroomWorld = {
+        const created: ClassroomWorld = makeClassroomCompat({
           id: makeId("classroom"),
           teacherId: input.teacherId || "teacher-demo",
           teacherName: input.teacherName || "Demo Teacher",
@@ -226,7 +242,7 @@ export const useClassroomWorldStore = create<ClassroomWorldStore>()(
           subjectFocus: normalizeSubjectFocus(input.subjectFocus),
           status: "active",
           privacy: { mode: "invite-only", requireTeacherApproval: false, showLeaderboard: false, allowStudentNicknames: true },
-          pet: { petId: "embercub", petName: "Embercub", petEmoji: "🔥", level: 1, xp: 0, xpGoal: 100, mood: "focused", treats: 1 },
+          pet: { petId: "embercub", petName: "Embercub", petEmoji: "🔥", level: 1, xp: 0, xpGoal: 100, mood: "focused", treats: 1, name: "Embercub" },
           room: { theme: roomTheme, roomName: `${name} Homeroom`, decorationIds: [], lastVisitedAt: nowISO() },
           assignmentRefs: [],
           goalIds: [],
@@ -234,8 +250,8 @@ export const useClassroomWorldStore = create<ClassroomWorldStore>()(
           memberIds: [],
           createdAt: nowISO(),
           updatedAt: nowISO(),
-        };
-        set({ classrooms: [created, ...get().classrooms], selectedClassroomId: created.id });
+        }, state.members);
+        set({ classrooms: [created, ...state.classrooms], selectedClassroomId: created.id });
         return created;
       },
       selectClassroom: (id) => set({ selectedClassroomId: id }),
@@ -243,7 +259,10 @@ export const useClassroomWorldStore = create<ClassroomWorldStore>()(
         const classroom = get().classrooms.find((item) => item.id === classroomId);
         return classroom?.joinCode || "";
       },
-      joinClassroomByCode: (input, displayNameOverride) => {
+      joinClassroomByCode: ((inputOrJoinCode: { joinCode: string; learnerId: string; displayName: string } | string, displayNameOverride?: string) => {
+        const input = typeof inputOrJoinCode === "string"
+          ? { joinCode: inputOrJoinCode, learnerId: `local-${String(displayNameOverride || "New student").toLowerCase().replace(/[^a-z0-9]+/g, "-")}`, displayName: displayNameOverride || "New student" }
+          : inputOrJoinCode;
         const normalizedCode = normalizeCode(input.joinCode);
         const displayName = (displayNameOverride || input.displayName || "New student").trim();
         const classroom = get().classrooms.find((item) => normalizeCode(item.joinCode) === normalizedCode);
@@ -260,13 +279,14 @@ export const useClassroomWorldStore = create<ClassroomWorldStore>()(
           status: classroom.privacy.requireTeacherApproval ? "pending" : "active",
           joinedAt: nowISO(),
         };
-        set({
-          members: [createdMember, ...get().members],
-          classrooms: get().classrooms.map((item) => item.id === classroom.id ? { ...item, memberIds: [createdMember.id, ...item.memberIds], updatedAt: nowISO() } : item),
-          selectedClassroomId: classroom.id,
+        const nextMembers = [createdMember, ...get().members];
+        const nextClassrooms = get().classrooms.map((item) => {
+          if (item.id !== classroom.id) return item;
+          return makeClassroomCompat({ ...item, memberIds: [createdMember.id, ...item.memberIds], updatedAt: nowISO() }, nextMembers);
         });
+        set({ members: nextMembers, classrooms: nextClassrooms, selectedClassroomId: classroom.id });
         return { ok: true, message: `${createdMember.displayName} joined ${classroom.name}.`, classroomId: classroom.id };
-      },
+      }) as ClassroomWorldStore["joinClassroomByCode"],
       addRewardLog: (input) => {
         const created: ClassroomRewardLog = { id: makeId("cw-reward"), classroomId: input.classroomId, memberId: input.memberId, type: input.type, amount: input.amount, reason: input.reason, createdAt: nowISO() };
         set({ rewardLogs: [created, ...get().rewardLogs] });
@@ -275,6 +295,10 @@ export const useClassroomWorldStore = create<ClassroomWorldStore>()(
     {
       name: "edu-mates-classroom-world-v1",
       storage: createJSONStorage(() => localStorage),
+      partialize: (state) => ({
+        ...state,
+        classrooms: state.classrooms.map((classroom) => makeClassroomCompat(classroom, state.members)),
+      }),
     }
   )
 );
