@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { TopBar } from "../components/TopBar";
 import { Card } from "../components/Card";
+import { useStudio } from "../lib/studioStore";
 import {
   APPROVED_SUBJECT_SKILLS,
   ASSIGNMENT_DUE_OPTIONS,
@@ -18,7 +19,7 @@ import {
   type EduMatesUserRole,
   type LearningGroupType,
 } from "../lib/learningGroupStore";
-import { BookOpen, Castle, CheckCircle2, ClipboardList, Eye, Gift, GraduationCap, Plus, Sparkles, Users } from "lucide-react";
+import { BookOpen, Castle, CheckCircle2, ClipboardList, Eye, Gift, GraduationCap, Plus, RefreshCw, Sparkles, Users, X } from "lucide-react";
 
 const ROLE_OPTIONS: EduMatesUserRole[] = ["teacher", "parent", "homeschool-parent", "tutor", "admin"];
 const GROUP_TYPE_OPTIONS: LearningGroupType[] = ["classroom", "homeschool", "tutoring", "pod", "intervention"];
@@ -30,6 +31,118 @@ const ASSIGNMENT_STATUS_LABELS: Record<AssignmentStatus, string> = {
   approved: "Approved",
   assigned: "Assigned",
   completed: "Completed",
+};
+
+
+type ReviewQuestion = {
+  id: string;
+  prompt: string;
+  choices: string[];
+  correctAnswer: string;
+  explanation: string;
+};
+
+const buildMockQuestion = (assignment: any, index: number, variant = 0): ReviewQuestion => {
+  const subject = assignment?.subject || "Math";
+  const skill = assignment?.skill || "Addition";
+  const base = index + 1 + variant;
+
+  if (subject === "Math") {
+    const left = base + 3;
+    const right = variant + index + 2;
+    const answer = String(left + right);
+    return {
+      id: `${assignment?.id || "assignment"}-q-${index}-${variant}`,
+      prompt: `Solve: ${left} + ${right}`,
+      choices: [String(left + right - 1), answer, String(left + right + 1), String(left + right + 2)],
+      correctAnswer: answer,
+      explanation: `${left} plus ${right} equals ${answer}. This checks ${skill.toLowerCase()}.`,
+    };
+  }
+
+  return {
+    id: `${assignment?.id || "assignment"}-q-${index}-${variant}`,
+    prompt: `Which answer best demonstrates ${skill}?`,
+    choices: [`A clear ${skill} example`, `An unrelated detail`, `A repeated guess`, `A missing answer`],
+    correctAnswer: `A clear ${skill} example`,
+    explanation: `The correct answer directly practices ${skill} in ${subject}.`,
+  };
+};
+
+const buildMockQuestions = (assignment: any): ReviewQuestion[] => {
+  const count = Math.min(5, Math.max(3, Number(assignment?.questionCount || 5)));
+  return Array.from({ length: count }, (_, index) => buildMockQuestion(assignment, index));
+};
+
+
+const normalizeStudioImageUrl = (url?: string): string => {
+  if (!url) return "";
+  const trimmed = url.trim();
+  if (trimmed.startsWith("data:image/")) return trimmed;
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) return trimmed;
+  if (trimmed.startsWith("/api/studio/image")) return `http://localhost:5050${trimmed}`;
+  if (trimmed.startsWith("api/studio/image")) return `http://localhost:5050/${trimmed}`;
+  if (trimmed.startsWith("/studio/image")) return `http://localhost:5050/api${trimmed}`;
+  if (trimmed.startsWith("studio/image")) return `http://localhost:5050/api/${trimmed}`;
+  if (trimmed.startsWith("/uploads/")) return `http://localhost:5050${trimmed}`;
+  if (trimmed.startsWith("uploads/")) return `http://localhost:5050/${trimmed}`;
+  return trimmed;
+};
+
+const getStudioAssetImageUrl = (item?: any): string => normalizeStudioImageUrl(
+  item?.transparentUrl ||
+  item?.transparentPreviewUrl ||
+  item?.companionPreviewUrl ||
+  item?.previewCompositeUrl ||
+  item?.previewUrl ||
+  item?.generatedImageUrl ||
+  item?.imageUrl ||
+  item?.url ||
+  item?.assetUrl ||
+  item?.localUrl ||
+  item?.dataUrl ||
+  ""
+);
+
+const normalizeMatchText = (value?: string): string => String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+
+const findClassPetAsset = (petId: string, petName: string, collections: any[][]): any | null => {
+  const normalizedPetId = normalizeMatchText(petId);
+  const normalizedPetName = normalizeMatchText(petName);
+  const sourceIdBridge = normalizedPetId === "embercub" ? "scmp2" : "";
+  const allItems = collections.flat().filter(Boolean);
+  const hasImage = (item: any): boolean => Boolean(getStudioAssetImageUrl(item));
+
+  const exactSourceIdMatches = allItems.filter((item: any) => {
+    const sourceId = normalizeMatchText(item?.sourceId);
+    return sourceIdBridge && sourceId === sourceIdBridge;
+  });
+
+  const exactNameMatches = allItems.filter((item: any) => {
+    const name = normalizeMatchText(item?.name || item?.title || item?.assetName || item?.companionName || item?.label);
+    return name === normalizedPetName || name === normalizedPetId;
+  });
+
+  const exactIdMatches = allItems.filter((item: any) => {
+    const id = normalizeMatchText(item?.id);
+    return id === normalizedPetId || id === sourceIdBridge;
+  });
+
+  const rankedMatches = [
+    ...exactSourceIdMatches,
+    ...exactNameMatches,
+    ...exactIdMatches,
+  ];
+
+  const seen = new Set<string>();
+  const dedupedMatches = rankedMatches.filter((item: any) => {
+    const key = [item?.id, item?.sourceId, item?.name, getStudioAssetImageUrl(item)].map((value) => String(value || "")).join("|");
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  return dedupedMatches.find(hasImage) || dedupedMatches[0] || null;
 };
 
 const ParentTeacherDashboard: React.FC = () => {
@@ -44,9 +157,13 @@ const ParentTeacherDashboard: React.FC = () => {
   const createAssignment = useLearningGroupStore((s) => s.createAssignment);
   const moveAssignmentToReview = useLearningGroupStore((s) => s.moveAssignmentToReview);
   const approveAssignment = useLearningGroupStore((s) => s.approveAssignment);
+  const deleteAssignment = useLearningGroupStore((s) => (s as any).deleteAssignment);
   const addLearnerToGroup = useLearningGroupStore((s) => s.addLearnerToGroup);
   const giveClassPetReward = useLearningGroupStore((s) => s.giveClassPetReward);
   const setClassPet = useLearningGroupStore((s) => s.setClassPet);
+  const studioCompanions = useStudio((s) => (s as any).companions || []);
+  const studioAssets = useStudio((s) => (s as any).assets || []);
+  const studioAvatars = useStudio((s) => (s as any).avatars || []);
 
   const subjectOptions = Object.keys(APPROVED_SUBJECT_SKILLS);
   const [newGroupName, setNewGroupName] = useState("New Edu-Mates Group");
@@ -62,6 +179,8 @@ const ParentTeacherDashboard: React.FC = () => {
   const [learnerName, setLearnerName] = useState("New learner");
   const [learnerGrade, setLearnerGrade] = useState("2");
   const [learnerEmoji, setLearnerEmoji] = useState("🧒");
+  const [reviewAssignmentId, setReviewAssignmentId] = useState<string | null>(null);
+  const [questionVariants, setQuestionVariants] = useState<Record<string, number>>({});
 
   const selectedGroup = groups.find((group) => group.id === selectedGroupId) || groups[0] || null;
   const groupLearners = useMemo(() => getGroupLearners(selectedGroup, learners), [selectedGroup, learners]);
@@ -71,6 +190,18 @@ const ParentTeacherDashboard: React.FC = () => {
   const avgAccuracy = groupLearners.length ? Math.round(groupLearners.reduce((sum, learner) => sum + learner.accuracy, 0) / groupLearners.length) : 0;
   const weeklyMinutes = groupLearners.reduce((sum, learner) => sum + learner.minutesThisWeek, 0);
   const activeAssignment = groupAssignments.find((assignment) => assignment.status === "assigned") || groupAssignments[0] || null;
+  const selectedPetId = selectedGroup?.classPetId || "embercub";
+  const selectedPetName = selectedGroup?.classPetName || "Embercub";
+  const selectedPetAsset = useMemo(() => findClassPetAsset(selectedPetId, selectedPetName, [studioAssets, studioCompanions, studioAvatars]), [selectedPetId, selectedPetName, studioAssets, studioCompanions, studioAvatars]);
+  const selectedPetImageUrl = getStudioAssetImageUrl(selectedPetAsset);
+  const reviewAssignment = groupAssignments.find((assignment) => assignment.id === reviewAssignmentId) || null;
+  const reviewQuestions = useMemo(() => {
+    if (!reviewAssignment) return [];
+    return buildMockQuestions(reviewAssignment).map((question, index) => {
+      const variant = questionVariants[`${reviewAssignment.id}-${index}`] || 0;
+      return buildMockQuestion(reviewAssignment, index, variant);
+    });
+  }, [reviewAssignment, questionVariants]);
 
   useEffect(() => {
     const options = APPROVED_SUBJECT_SKILLS[assignmentSubject] || [];
@@ -101,6 +232,34 @@ const ParentTeacherDashboard: React.FC = () => {
     if (!selectedGroup) return;
     addLearnerToGroup(selectedGroup.id, { name: learnerName, grade: learnerGrade, avatarEmoji: learnerEmoji });
     setLearnerName("New learner");
+  };
+
+  const handleOpenReview = (assignmentId: string) => {
+    moveAssignmentToReview(assignmentId);
+    setReviewAssignmentId(assignmentId);
+  };
+
+  const handleRegenerateQuestion = (assignmentId: string, index: number) => {
+    const key = `${assignmentId}-${index}`;
+    setQuestionVariants((current) => ({ ...current, [key]: (current[key] || 0) + 1 }));
+  };
+
+  const handleApproveReviewAssignment = () => {
+    if (!reviewAssignment) return;
+    approveAssignment(reviewAssignment.id);
+    setReviewAssignmentId(null);
+  };
+
+  const handleDenyReviewAssignment = () => {
+    setReviewAssignmentId(null);
+  };
+
+  const handleDeleteAssignment = (assignmentId: string) => {
+    const assignment = assignments.find((item) => item.id === assignmentId);
+    const confirmed = window.confirm(`Delete "${assignment?.title || "this assignment"}"? This cannot be undone.`);
+    if (!confirmed) return;
+    if (reviewAssignmentId === assignmentId) setReviewAssignmentId(null);
+    deleteAssignment(assignmentId);
   };
 
   return (
@@ -202,8 +361,14 @@ const ParentTeacherDashboard: React.FC = () => {
                 <Card>
                   <p className="text-xs font-extrabold uppercase tracking-widest text-ink-muted">Class pet</p>
                   <div className="mt-3 rounded-[2rem] bg-gradient-to-br from-primary/10 via-white to-gold/20 border-2 border-white p-4 text-center">
-                    <div className="text-5xl mb-2">{selectedGroup?.classPetEmoji || "🔥"}</div>
-                    <h3 className="h-display text-2xl">{selectedGroup?.classPetName || "Embercub"}</h3>
+                    {selectedPetImageUrl ? (
+                      <div className="mx-auto mb-3 w-28 h-28 rounded-[2rem] bg-white/80 border-2 border-white shadow-inner p-2 grid place-items-center overflow-hidden">
+                        <img src={selectedPetImageUrl} alt={selectedPetName} className="max-w-full max-h-full object-contain drop-shadow-sm" />
+                      </div>
+                    ) : (
+                      <div className="text-5xl mb-2">{selectedGroup?.classPetEmoji || "🔥"}</div>
+                    )}
+                    <h3 className="h-display text-2xl">{selectedPetName}</h3>
                     <p className="text-sm font-bold text-ink-muted capitalize">Mood: {selectedGroup?.classPetMood || "focused"} · Level {selectedGroup?.classPetLevel || 1}</p>
                     <label className="block text-left mt-3"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Teacher companion</span><select className="input mt-1" value={selectedGroup?.classPetId || "embercub"} onChange={(e) => selectedGroup && setClassPet(selectedGroup.id, e.target.value)}>{selectablePets.map((pet) => <option key={pet.id} value={pet.id}>{pet.name}</option>)}</select></label>
                     <div className="mt-3 h-3 rounded-full bg-white border border-white overflow-hidden"><div className="h-full bg-gold" style={{ width: `${selectedGroup ? Math.min(100, Math.round((selectedGroup.classPetXp / selectedGroup.classPetXpGoal) * 100)) : 0}%` }} /></div>
@@ -242,8 +407,9 @@ const ParentTeacherDashboard: React.FC = () => {
                       <p className="text-xs text-ink-muted mt-2">Due {assignment.dueLabel} · {assignment.difficulty} · {assignment.completionPercent}% complete</p>
                       <p className="text-xs text-ink-muted mt-2">{assignment.generatedSummary}</p>
                       <div className="mt-3 flex flex-wrap gap-2">
-                        <button type="button" className="btn-outline !py-2 !px-3 !text-xs" onClick={() => moveAssignmentToReview(assignment.id)} disabled={assignment.status === "review" || assignment.status === "approved" || assignment.status === "assigned" || assignment.status === "completed"}><Eye size={13} strokeWidth={3} /> Review</button>
+                        <button type="button" className="btn-outline !py-2 !px-3 !text-xs" onClick={() => handleOpenReview(assignment.id)} disabled={assignment.status === "review" || assignment.status === "approved" || assignment.status === "assigned" || assignment.status === "completed"}><Eye size={13} strokeWidth={3} /> Review</button>
                         <button type="button" className="btn-primary !py-2 !px-3 !text-xs" onClick={() => approveAssignment(assignment.id)} disabled={assignment.status === "approved" || assignment.status === "assigned" || assignment.status === "completed"}><CheckCircle2 size={13} strokeWidth={3} /> Approve</button>
+                        <button type="button" className="btn-outline !py-2 !px-3 !text-xs !text-red-500 hover:!border-red-300" onClick={() => handleDeleteAssignment(assignment.id)}>Delete</button>
                       </div>
                     </div>
                   )) : <p className="text-sm text-ink-muted">No assignments yet.</p>}
@@ -268,6 +434,46 @@ const ParentTeacherDashboard: React.FC = () => {
           </section>
         </section>
       </main>
+        {reviewAssignment && (
+          <div className="fixed inset-0 z-50 bg-ink/40 backdrop-blur-sm px-4 py-6 flex items-center justify-center">
+            <div className="w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-[2rem] bg-white shadow-2xl border-2 border-white p-5 md:p-7">
+              <div className="flex items-start justify-between gap-4 border-b border-bg pb-4">
+                <div>
+                  <p className="text-xs font-extrabold uppercase tracking-widest text-primary">Teacher review modal</p>
+                  <h2 className="h-display text-3xl text-ink mt-1">{reviewAssignment.title}</h2>
+                  <p className="text-sm text-ink-muted mt-1">{ASSIGNMENT_WORK_TYPE_LABELS[reviewAssignment.workType]} · {reviewAssignment.subject} · {reviewAssignment.skill} · {reviewAssignment.questionCount} questions · Due {reviewAssignment.dueLabel}</p>
+                </div>
+                <button type="button" className="btn-outline !p-3" onClick={() => setReviewAssignmentId(null)} aria-label="Close review modal"><X size={18} strokeWidth={3} /></button>
+              </div>
+
+              <div className="mt-5 space-y-4">
+                {reviewQuestions.map((question, index) => (
+                  <div key={question.id} className="rounded-3xl bg-bg border-2 border-white p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Question {index + 1}</p>
+                        <p className="h-display text-xl mt-1">{question.prompt}</p>
+                      </div>
+                      <button type="button" className="btn-outline !py-2 !px-3 !text-xs" onClick={() => handleRegenerateQuestion(reviewAssignment.id, index)}><RefreshCw size={13} strokeWidth={3} /> Regenerate</button>
+                    </div>
+                    <div className="mt-3 grid sm:grid-cols-2 gap-2">
+                      {question.choices.map((choice) => (
+                        <div key={choice} className={`rounded-2xl border-2 p-3 text-sm font-bold ${choice === question.correctAnswer ? "border-sage bg-sage/10 text-ink" : "border-white bg-white text-ink-muted"}`}>{choice}</div>
+                      ))}
+                    </div>
+                    <p className="text-xs text-ink-muted mt-3"><span className="font-extrabold text-ink">Answer:</span> {question.correctAnswer}</p>
+                    <p className="text-xs text-ink-muted mt-1"><span className="font-extrabold text-ink">Explanation:</span> {question.explanation}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-5 flex flex-wrap justify-end gap-2 border-t border-bg pt-4">
+                <button type="button" className="btn-outline" onClick={handleDenyReviewAssignment}>Deny / send back</button>
+                <button type="button" className="btn-primary" onClick={handleApproveReviewAssignment}><CheckCircle2 size={16} strokeWidth={3} /> Approve assignment</button>
+              </div>
+            </div>
+          </div>
+        )}
     </div>
   );
 };
