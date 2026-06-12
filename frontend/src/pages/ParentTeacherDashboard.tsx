@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { TopBar } from "../components/TopBar";
 import { Card } from "../components/Card";
 import { useStudio } from "../lib/studioStore";
-import { useClassroomWorldStore, CLASSROOM_SUBJECT_OPTIONS, CLASSROOM_ROOM_THEME_OPTIONS, type ClassroomRoomTheme, type ClassroomSubjectFocus } from "../lib/classroomWorldStore";
+import { useClassroomWorldStore, CLASSROOM_SUBJECT_OPTIONS, CLASSROOM_ROOM_THEME_OPTIONS, CLASSROOM_GRADE_BAND_OPTIONS, CLASSROOM_ROOM_THEME_LABELS, type ClassroomRoomTheme, type ClassroomSubjectFocus } from "../lib/classroomWorldStore";
 import {
   APPROVED_SUBJECT_SKILLS,
   ASSIGNMENT_DUE_OPTIONS,
@@ -23,7 +23,7 @@ import {
   type MasteryLevel,
   type ParentReport,
 } from "../lib/learningGroupStore";
-import { BookOpen, Castle, CheckCircle2, ClipboardList, Eye, Gift, GraduationCap, Plus, RefreshCw, Sparkles, Target, TrendingUp, Users, X, UserPlus } from "lucide-react";
+import { BookOpen, Castle, CheckCircle2, ClipboardList, Copy, Eye, Gift, GraduationCap, Plus, RefreshCw, Sparkles, Target, TrendingUp, Users, X, UserPlus } from "lucide-react";
 
 const ROLE_OPTIONS: EduMatesUserRole[] = ["teacher", "parent", "homeschool-parent", "tutor", "admin"];
 const GROUP_TYPE_OPTIONS: LearningGroupType[] = ["classroom", "homeschool", "tutoring", "pod", "intervention"];
@@ -174,10 +174,12 @@ const ParentTeacherDashboard: React.FC = () => {
   const giveClassPetReward = useLearningGroupStore((s) => s.giveClassPetReward);
   const setClassPet = useLearningGroupStore((s) => s.setClassPet);
   const classrooms = useClassroomWorldStore((s) => s.classrooms);
+  const classroomMembers = useClassroomWorldStore((s) => s.members);
   const selectedClassroomId = useClassroomWorldStore((s) => s.selectedClassroomId);
   const createClassroom = useClassroomWorldStore((s) => s.createClassroom);
   const selectClassroom = useClassroomWorldStore((s) => s.selectClassroom);
   const joinClassroomByCode = useClassroomWorldStore((s) => s.joinClassroomByCode);
+  const copyJoinCode = useClassroomWorldStore((s) => s.copyJoinCode);
   const studioCompanions = useStudio((s) => (s as any).companions || []);
   const studioAssets = useStudio((s) => (s as any).assets || []);
   const studioAvatars = useStudio((s) => (s as any).avatars || []);
@@ -208,9 +210,11 @@ const ParentTeacherDashboard: React.FC = () => {
   const [joinCodeInput, setJoinCodeInput] = useState("MEADOW");
   const [studentJoinName, setStudentJoinName] = useState("New student");
   const [joinMessage, setJoinMessage] = useState("");
+  const [copyMessage, setCopyMessage] = useState("");
 
   const selectedGroup = groups.find((group) => group.id === selectedGroupId) || groups[0] || null;
   const selectedClassroom = classrooms.find((classroom) => classroom.id === selectedClassroomId) || classrooms[0] || null;
+  const selectedClassroomMembers = selectedClassroom ? classroomMembers.filter((member) => selectedClassroom.memberIds.includes(member.id)) : [];
   const groupLearners = useMemo(() => getGroupLearners(selectedGroup, learners), [selectedGroup, learners]);
   const groupAssignments = useMemo(() => getGroupAssignments(selectedGroup, assignments), [selectedGroup, assignments]);
   const groupLearningGoals = useMemo(() => selectedGroup ? (learningGoals as LearningGoal[]).filter((goal) => goal.groupId === selectedGroup.id) : [], [selectedGroup, learningGoals]);
@@ -284,6 +288,19 @@ const ParentTeacherDashboard: React.FC = () => {
       roomTheme: classroomRoomTheme,
     });
     setJoinCodeInput(created.joinCode);
+    setClassroomName("Meadow Rangers");
+    setCopyMessage(`Created ${created.name} with code ${created.joinCode}.`);
+  };
+
+  const handleCopyJoinCode = async () => {
+    if (!selectedClassroom) return;
+    const code = copyJoinCode(selectedClassroom.id);
+    try {
+      await navigator.clipboard?.writeText(code);
+      setCopyMessage(`Copied ${code}.`);
+    } catch {
+      setCopyMessage(`Code ${code} ready to copy.`);
+    }
   };
 
   const handleJoinClassroom = () => {
@@ -365,7 +382,7 @@ const ParentTeacherDashboard: React.FC = () => {
               <div className="space-y-3">
                 <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Group name</span><input className="input mt-1" value={newGroupName} onChange={(e) => setNewGroupName(e.target.value)} data-testid="dashboard-new-group-name" /></label>
                 <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Group type</span><select className="input mt-1" value={newGroupType} onChange={(e) => setNewGroupType(e.target.value as LearningGroupType)}>{GROUP_TYPE_OPTIONS.map((type) => <option key={type} value={type}>{LEARNING_GROUP_TYPE_LABELS[type]}</option>)}</select></label>
-                <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Grade band</span><input className="input mt-1" value={newGroupGradeBand} onChange={(e) => setNewGroupGradeBand(e.target.value)} /></label>
+                <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Grade band</span><select className="input mt-1" value={newGroupGradeBand} onChange={(e) => setNewGroupGradeBand(e.target.value)}>{CLASSROOM_GRADE_BAND_OPTIONS.map((grade) => <option key={grade} value={grade}>{grade}</option>)}</select></label>
                 <button type="button" className="btn-primary w-full justify-center" onClick={handleCreateGroup} data-testid="dashboard-create-group"><Plus size={16} strokeWidth={3} /> Create group</button>
               </div>
             </Card>
@@ -432,6 +449,75 @@ const ParentTeacherDashboard: React.FC = () => {
                     <div className="mt-3 h-3 rounded-full bg-white border border-white overflow-hidden"><div className="h-full bg-gold" style={{ width: `${selectedGroup ? Math.min(100, Math.round((selectedGroup.classPetXp / selectedGroup.classPetXpGoal) * 100)) : 0}%` }} /></div>
                     <p className="text-xs text-ink-muted mt-1">{selectedGroup?.classPetXp || 0}/{selectedGroup?.classPetXpGoal || 100} XP · {selectedGroup?.classPetTreats || 0} treats</p>
                     <button type="button" className="btn-primary !py-2 !px-4 !text-sm mt-3" onClick={() => selectedGroup && giveClassPetReward(selectedGroup.id, 15)}><Gift size={14} strokeWidth={3} /> Give class reward</button>
+                  </div>
+                </Card>
+              </div>
+            </section>
+
+            <section className="grid xl:grid-cols-[1.15fr_0.85fr] gap-5">
+              <Card>
+                <div className="flex items-start justify-between gap-4 flex-wrap">
+                  <div>
+                    <p className="text-xs font-extrabold uppercase tracking-widest text-primary">Classroom World Hub</p>
+                    <h2 className="h-display text-4xl text-ink mt-1">{selectedClassroom?.name || "No classroom selected"}</h2>
+                    <p className="text-sm text-ink-muted mt-1">{selectedClassroom?.gradeBand || "No grade band"} · {selectedClassroom?.subjectFocus?.join(", ") || "No subject"}</p>
+                  </div>
+                  <div className="rounded-3xl bg-primary/10 border-2 border-primary/20 px-5 py-3 min-w-[12rem]">
+                    <p className="text-[10px] font-extrabold uppercase tracking-wider text-primary">Join code</p>
+                    <p className="h-display text-3xl text-ink tracking-widest">{selectedClassroom?.joinCode || "—"}</p>
+                    <button type="button" className="btn-outline !py-2 !px-3 !text-xs mt-2 w-full justify-center" onClick={handleCopyJoinCode} disabled={!selectedClassroom}><Copy size={13} strokeWidth={3} /> Copy code</button>
+                  </div>
+                </div>
+                {copyMessage && <p className="text-xs font-bold text-primary mt-3">{copyMessage}</p>}
+                <div className="mt-5 grid sm:grid-cols-3 gap-3">
+                  <div className="rounded-3xl bg-bg border-2 border-white p-4"><p className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Room</p><p className="h-display text-xl mt-1">{selectedClassroom?.roomName || selectedClassroom?.room.roomName || "Not set"}</p><p className="text-xs font-bold text-ink-muted">{CLASSROOM_ROOM_THEME_LABELS[selectedClassroom?.roomTheme || selectedClassroom?.room.theme || "meadow"]}</p></div>
+                  <div className="rounded-3xl bg-bg border-2 border-white p-4"><p className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Class pet</p><p className="h-display text-xl mt-1">{selectedClassroom?.pet.name || selectedClassroom?.pet.petName || "None"}</p><p className="text-xs font-bold text-ink-muted">{selectedClassroom?.pet.xp || 0}/{selectedClassroom?.pet.xpGoal || 100} XP</p></div>
+                  <div className="rounded-3xl bg-bg border-2 border-white p-4"><p className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Roster</p><p className="h-display text-xl mt-1">{selectedClassroomMembers.length} students</p><p className="text-xs font-bold text-ink-muted">{selectedClassroom?.privacy.requireTeacherApproval ? "Approval required" : "Instant join"}</p></div>
+                </div>
+                <div className="mt-5 grid md:grid-cols-[0.85fr_1.15fr] gap-4">
+                  <div>
+                    <p className="text-xs font-extrabold uppercase tracking-widest text-ink-muted mb-2">Classrooms</p>
+                    <div className="space-y-2">
+                      {classrooms.map((classroom) => (
+                        <button key={classroom.id} type="button" onClick={() => selectClassroom(classroom.id)} className={`w-full rounded-2xl border-2 p-3 text-left ${selectedClassroom?.id === classroom.id ? "border-primary bg-primary/10" : "border-white bg-bg hover:border-primary/30"}`}>
+                          <p className="h-display text-lg">{classroom.name}</p>
+                          <p className="text-xs font-bold text-ink-muted">{classroom.joinCode} · {classroom.gradeBand} · {classroom.memberIds.length} students</p>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-xs font-extrabold uppercase tracking-widest text-ink-muted mb-2">Roster preview</p>
+                    <div className="rounded-3xl bg-bg border-2 border-white p-4 min-h-[9rem]">
+                      {selectedClassroomMembers.length ? selectedClassroomMembers.slice(0, 6).map((member) => <p key={member.id} className="text-sm font-bold text-ink mt-1">{member.displayName} · {member.status}</p>) : <p className="text-sm text-ink-muted">No students yet. Share the join code or use the student join test.</p>}
+                    </div>
+                  </div>
+                </div>
+              </Card>
+
+              <div className="space-y-5">
+                <Card>
+                  <div className="flex items-center gap-2"><Plus size={18} strokeWidth={3} className="text-primary" /><p className="text-xs font-extrabold uppercase tracking-widest text-ink-muted">Teacher create flow</p></div>
+                  <p className="text-sm text-ink-muted mt-2">Controlled fields, unique join code, and cleaner classroom setup.</p>
+                  <div className="mt-4 space-y-3">
+                    <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Class name</span><input className="input mt-1" value={classroomName} onChange={(e) => setClassroomName(e.target.value)} /></label>
+                    <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Grade band</span><select className="input mt-1" value={classroomGradeBand} onChange={(e) => setClassroomGradeBand(e.target.value)}>{CLASSROOM_GRADE_BAND_OPTIONS.map((grade) => <option key={grade} value={grade}>{grade}</option>)}</select></label>
+                    <div className="grid sm:grid-cols-2 gap-3">
+                      <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Subject focus</span><select className="input mt-1" value={classroomSubjectFocus} onChange={(e) => setClassroomSubjectFocus(e.target.value as ClassroomSubjectFocus)}>{CLASSROOM_SUBJECT_OPTIONS.map((subject) => <option key={subject} value={subject}>{subject}</option>)}</select></label>
+                      <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Room theme</span><select className="input mt-1" value={classroomRoomTheme} onChange={(e) => setClassroomRoomTheme(e.target.value as ClassroomRoomTheme)}>{CLASSROOM_ROOM_THEME_OPTIONS.map((theme) => <option key={theme} value={theme}>{CLASSROOM_ROOM_THEME_LABELS[theme]}</option>)}</select></label>
+                    </div>
+                    <button type="button" className="btn-primary w-full justify-center min-h-[4.25rem]" onClick={handleCreateClassroom}><Plus size={16} strokeWidth={3} /> Create classroom</button>
+                  </div>
+                </Card>
+
+                <Card>
+                  <div className="flex items-center gap-2"><UserPlus size={18} strokeWidth={3} className="text-primary" /><p className="text-xs font-extrabold uppercase tracking-widest text-ink-muted">Student join flow</p></div>
+                  <p className="text-sm text-ink-muted mt-2">Validate a join code and preview duplicate protection.</p>
+                  <div className="mt-4 space-y-3">
+                    <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Join code</span><input className="input mt-1 uppercase tracking-widest" value={joinCodeInput} onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())} /></label>
+                    <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Student display name</span><input className="input mt-1" value={studentJoinName} onChange={(e) => setStudentJoinName(e.target.value)} /></label>
+                    <button type="button" className="btn-outline w-full justify-center min-h-[4.25rem]" onClick={handleJoinClassroom}><Users size={16} strokeWidth={3} /> Join classroom</button>
+                    {joinMessage && <p className="text-xs font-bold text-ink-muted">{joinMessage}</p>}
                   </div>
                 </Card>
               </div>
@@ -520,51 +606,6 @@ const ParentTeacherDashboard: React.FC = () => {
               </Card>
             </section>
 
-            <section className="grid xl:grid-cols-3 gap-5">
-              <Card>
-                <p className="text-xs font-extrabold uppercase tracking-widest text-primary">Classroom world model</p>
-                <h3 className="h-display text-2xl mt-2">{selectedClassroom?.name || "No classroom"}</h3>
-                <p className="text-sm font-bold text-ink-muted mt-1">Code {selectedClassroom?.joinCode || "—"} · {selectedClassroom?.gradeBand || "No grade band"}</p>
-                <p className="text-xs text-ink-muted mt-2">Room: {selectedClassroom?.roomName || "Not set"} · Theme {selectedClassroom?.roomTheme || "meadow"}</p>
-                <p className="text-xs text-ink-muted mt-1">Class pet: {selectedClassroom?.pet.name || "None"} · {selectedClassroom?.pet.xp || 0}/{selectedClassroom?.pet.xpGoal || 100} XP</p>
-                <div className="mt-3 space-y-2">
-                  {classrooms.map((classroom) => (
-                    <button key={classroom.id} type="button" onClick={() => selectClassroom(classroom.id)} className={`w-full rounded-2xl border-2 p-3 text-left ${selectedClassroom?.id === classroom.id ? "border-primary bg-primary/10" : "border-white bg-bg"}`}>
-                      <p className="h-display text-lg">{classroom.name}</p>
-                      <p className="text-xs font-bold text-ink-muted">{classroom.joinCode} · {classroom.memberIds.length} students</p>
-                    </button>
-                  ))}
-                </div>
-              </Card>
-
-              <Card>
-                <p className="text-xs font-extrabold uppercase tracking-widest text-ink-muted">Teacher class creation</p>
-                <p className="text-sm text-ink-muted mt-2">Create a persistent class with a safe join code.</p>
-                <div className="mt-3 space-y-3">
-                  <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Class name</span><input className="input mt-1" value={classroomName} onChange={(e) => setClassroomName(e.target.value)} /></label>
-                  <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Grade band</span><input className="input mt-1" value={classroomGradeBand} onChange={(e) => setClassroomGradeBand(e.target.value)} /></label>
-                  <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Subject focus</span><select className="input mt-1" value={classroomSubjectFocus} onChange={(e) => setClassroomSubjectFocus(e.target.value as ClassroomSubjectFocus)}>{CLASSROOM_SUBJECT_OPTIONS.map((subject) => <option key={subject} value={subject}>{subject}</option>)}</select></label>
-                  <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Room theme</span><select className="input mt-1" value={classroomRoomTheme} onChange={(e) => setClassroomRoomTheme(e.target.value as ClassroomRoomTheme)}>{CLASSROOM_ROOM_THEME_OPTIONS.map((theme) => <option key={theme} value={theme}>{theme[0].toUpperCase() + theme.slice(1)}</option>)}</select></label>
-                  <button type="button" className="btn-primary w-full justify-center" onClick={handleCreateClassroom}><Plus size={15} strokeWidth={3} /> Create classroom</button>
-                </div>
-              </Card>
-
-              <Card>
-                <p className="text-xs font-extrabold uppercase tracking-widest text-ink-muted">Student join class</p>
-                <p className="text-sm text-ink-muted mt-2">Test a safe student join-code flow with duplicate protection.</p>
-                <div className="mt-3 space-y-3">
-                  <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Join code</span><input className="input mt-1 uppercase" value={joinCodeInput} onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())} /></label>
-                  <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Student display name</span><input className="input mt-1" value={studentJoinName} onChange={(e) => setStudentJoinName(e.target.value)} /></label>
-                  <button type="button" className="btn-outline w-full justify-center" onClick={handleJoinClassroom}><UserPlus size={15} strokeWidth={3} /> Join classroom</button>
-                  {joinMessage && <p className="text-xs font-bold text-ink-muted">{joinMessage}</p>}
-                  <div className="rounded-3xl bg-bg border-2 border-white p-3">
-                    <p className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Roster preview</p>
-                    {(selectedClassroom?.members || []).slice(0, 4).map((member) => <p key={member.id} className="text-xs font-bold text-ink-muted mt-1">{member.displayName} · {member.status}</p>)}
-                  </div>
-                </div>
-              </Card>
-            </section>
-
             <Card>
               <p className="text-xs font-extrabold uppercase tracking-widest text-ink-muted">Quick actions</p>
               <div className="mt-3 grid sm:grid-cols-2 xl:grid-cols-4 gap-3">
@@ -582,46 +623,46 @@ const ParentTeacherDashboard: React.FC = () => {
           </section>
         </section>
       </main>
-        {reviewAssignment && (
-          <div className="fixed inset-0 z-50 bg-ink/40 backdrop-blur-sm px-4 py-6 flex items-center justify-center">
-            <div className="w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-[2rem] bg-white shadow-2xl border-2 border-white p-5 md:p-7">
-              <div className="flex items-start justify-between gap-4 border-b border-bg pb-4">
-                <div>
-                  <p className="text-xs font-extrabold uppercase tracking-widest text-primary">Teacher review modal</p>
-                  <h2 className="h-display text-3xl text-ink mt-1">{reviewAssignment.title}</h2>
-                  <p className="text-sm text-ink-muted mt-1">{ASSIGNMENT_WORK_TYPE_LABELS[reviewAssignment.workType]} · {reviewAssignment.subject} · {reviewAssignment.skill} · {reviewAssignment.questionCount} questions · Due {reviewAssignment.dueLabel}</p>
-                </div>
-                <button type="button" className="btn-outline !p-3" onClick={() => setReviewAssignmentId(null)} aria-label="Close review modal"><X size={18} strokeWidth={3} /></button>
+      {reviewAssignment && (
+        <div className="fixed inset-0 z-50 bg-ink/40 backdrop-blur-sm px-4 py-6 flex items-center justify-center">
+          <div className="w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-[2rem] bg-white shadow-2xl border-2 border-white p-5 md:p-7">
+            <div className="flex items-start justify-between gap-4 border-b border-bg pb-4">
+              <div>
+                <p className="text-xs font-extrabold uppercase tracking-widest text-primary">Teacher review modal</p>
+                <h2 className="h-display text-3xl text-ink mt-1">{reviewAssignment.title}</h2>
+                <p className="text-sm text-ink-muted mt-1">{ASSIGNMENT_WORK_TYPE_LABELS[reviewAssignment.workType]} · {reviewAssignment.subject} · {reviewAssignment.skill} · {reviewAssignment.questionCount} questions · Due {reviewAssignment.dueLabel}</p>
               </div>
+              <button type="button" className="btn-outline !p-3" onClick={() => setReviewAssignmentId(null)} aria-label="Close review modal"><X size={18} strokeWidth={3} /></button>
+            </div>
 
-              <div className="mt-5 space-y-4">
-                {reviewQuestions.map((question, index) => (
-                  <div key={question.id} className="rounded-3xl bg-bg border-2 border-white p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Question {index + 1}</p>
-                        <p className="h-display text-xl mt-1">{question.prompt}</p>
-                      </div>
-                      <button type="button" className="btn-outline !py-2 !px-3 !text-xs" onClick={() => handleRegenerateQuestion(reviewAssignment.id, index)}><RefreshCw size={13} strokeWidth={3} /> Regenerate</button>
+            <div className="mt-5 space-y-4">
+              {reviewQuestions.map((question, index) => (
+                <div key={question.id} className="rounded-3xl bg-bg border-2 border-white p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Question {index + 1}</p>
+                      <p className="h-display text-xl mt-1">{question.prompt}</p>
                     </div>
-                    <div className="mt-3 grid sm:grid-cols-2 gap-2">
-                      {question.choices.map((choice) => (
-                        <div key={choice} className={`rounded-2xl border-2 p-3 text-sm font-bold ${choice === question.correctAnswer ? "border-sage bg-sage/10 text-ink" : "border-white bg-white text-ink-muted"}`}>{choice}</div>
-                      ))}
-                    </div>
-                    <p className="text-xs text-ink-muted mt-3"><span className="font-extrabold text-ink">Answer:</span> {question.correctAnswer}</p>
-                    <p className="text-xs text-ink-muted mt-1"><span className="font-extrabold text-ink">Explanation:</span> {question.explanation}</p>
+                    <button type="button" className="btn-outline !py-2 !px-3 !text-xs" onClick={() => handleRegenerateQuestion(reviewAssignment.id, index)}><RefreshCw size={13} strokeWidth={3} /> Regenerate</button>
                   </div>
-                ))}
-              </div>
+                  <div className="mt-3 grid sm:grid-cols-2 gap-2">
+                    {question.choices.map((choice) => (
+                      <div key={choice} className={`rounded-2xl border-2 p-3 text-sm font-bold ${choice === question.correctAnswer ? "border-sage bg-sage/10 text-ink" : "border-white bg-white text-ink-muted"}`}>{choice}</div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-ink-muted mt-3"><span className="font-extrabold text-ink">Answer:</span> {question.correctAnswer}</p>
+                  <p className="text-xs text-ink-muted mt-1"><span className="font-extrabold text-ink">Explanation:</span> {question.explanation}</p>
+                </div>
+              ))}
+            </div>
 
-              <div className="mt-5 flex flex-wrap justify-end gap-2 border-t border-bg pt-4">
-                <button type="button" className="btn-outline" onClick={handleDenyReviewAssignment}>Deny / send back</button>
-                <button type="button" className="btn-primary" onClick={handleApproveReviewAssignment}><CheckCircle2 size={16} strokeWidth={3} /> Approve assignment</button>
-              </div>
+            <div className="mt-5 flex flex-wrap justify-end gap-2 border-t border-bg pt-4">
+              <button type="button" className="btn-outline" onClick={handleDenyReviewAssignment}>Deny / send back</button>
+              <button type="button" className="btn-primary" onClick={handleApproveReviewAssignment}><CheckCircle2 size={16} strokeWidth={3} /> Approve assignment</button>
             </div>
           </div>
-        )}
+        </div>
+      )}
     </div>
   );
 };
