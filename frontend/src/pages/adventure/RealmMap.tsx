@@ -5,11 +5,25 @@ import { AdventureLayout } from "../../components/adventure/AdventureLayout";
 import { ChibiAvatar } from "../../components/ChibiAvatar";
 import { useStudio } from "../../lib/studioStore";
 import { useGame } from "../../lib/gameStore";
-import { Castle, Lock, MapPin, Waypoints } from "lucide-react";
+import { Castle, Lock, MapPin, MessageCircle, Waypoints, X } from "lucide-react";
 
 type Pos = { left: string; top: string };
 type MapSourceMode = "auto" | "realm" | "scene";
-type RuntimeMarker = { id: string; label: string; type: string; x: number; y: number; source?: any };
+type MarkerActionType = "none" | "travel" | "reward" | "start-battle" | "dialogue" | "quest-progress" | "fast-travel";
+type MarkerActionPayload = { coins?: number; xp?: number; itemId?: string; message?: string };
+type RuntimeMarker = {
+  id: string;
+  label: string;
+  type: string;
+  x: number;
+  y: number;
+  actionType: MarkerActionType;
+  actionTargetCollection?: string;
+  actionTargetId?: string;
+  actionTargetLabel?: string;
+  actionPayload?: MarkerActionPayload;
+  source?: any;
+};
 type RuntimeZone = { id: string; name: string; type: string; points: { x: number; y: number }[]; closed: boolean };
 type Point = { x: number; y: number };
 type NavCell = { col: number; row: number };
@@ -61,6 +75,16 @@ const getPossibleSceneMarkers = (scene?: any): RuntimeMarker[] => {
       id: String(marker?.id || marker?.assetId || marker?.name || `marker-${index}`),
       label: marker?.label || marker?.name || marker?.title || marker?.assetName || `Marker ${index + 1}`,
       type: marker?.type || marker?.kind || marker?.role || marker?.category || marker?.markerType || "point of interest",
+      actionType: (marker?.actionType || marker?.action || "none") as MarkerActionType,
+      actionTargetCollection: marker?.actionTargetCollection || marker?.targetCollection || marker?.linkedCollection || "",
+      actionTargetId: marker?.actionTargetId || marker?.targetId || marker?.linkedId || "",
+      actionTargetLabel: marker?.actionTargetLabel || marker?.targetLabel || marker?.linkedLabel || "",
+      actionPayload: marker?.actionPayload || {
+        coins: Number(marker?.rewardCoins || 0) || undefined,
+        xp: Number(marker?.rewardXp || 0) || undefined,
+        itemId: marker?.rewardItemId || undefined,
+        message: marker?.message || undefined,
+      },
       x: clampPercent(marker?.x ?? marker?.left ?? marker?.position?.x ?? marker?.anchor?.x ?? marker?.center?.x, fallbackX),
       y: clampPercent(marker?.y ?? marker?.top ?? marker?.position?.y ?? marker?.anchor?.y ?? marker?.center?.y, fallbackY),
       source: marker,
@@ -218,10 +242,97 @@ const findSmartPath = (startRaw: Point, endRaw: Point, zones: RuntimeZone[]): Po
   return null;
 };
 
+const markerActionLabel = (marker?: RuntimeMarker | null): string => {
+  if (!marker || !marker.actionType || marker.actionType === "none") return "Inspect";
+  return String(marker.actionType).replace(/-/g, " ");
+};
+
+const getMarkerClaimKey = (sceneId: string, marker: RuntimeMarker): string =>
+  `qa-marker-claimed:${sceneId || "scene"}:${marker.id}`;
+
+const getMarkerRewardText = (marker: RuntimeMarker): string => {
+  const payload = marker.actionPayload || {};
+  const parts = [
+    Number(payload.coins || 0) > 0 ? `${payload.coins} coins` : "",
+    Number(payload.xp || 0) > 0 ? `${payload.xp} XP` : "",
+    payload.itemId ? `item ${payload.itemId}` : "",
+  ].filter(Boolean);
+  return parts.length ? parts.join(" + ") : "reward";
+};
+
+
+type DialogueState = { speaker: string; body: string; marker: RuntimeMarker } | null;
+
+const getStudioItemTitle = (item?: any): string =>
+  item?.name || item?.title || item?.evolutionName || item?.realm || item?.environment || item?.id || "Unknown";
+
+const findStudioItemByMarker = (marker: RuntimeMarker, studio: { npcs: any[]; companions: any[]; avatars: any[]; quests: any[]; assets: any[]; scenes: any[]; realms: any[]; battleBgs: any[] }) => {
+  const collection = marker.actionTargetCollection || marker.source?.linkedCollection || marker.source?.targetCollection || "";
+  const id = marker.actionTargetId || marker.source?.linkedId || marker.source?.targetId || "";
+  const items = (studio as any)[collection] || [];
+  return items.find((item: any) => item?.id === id) || null;
+};
+
+const normalizeCollectionName = (value?: string): string => String(value || "").trim();
+
+const markerTypeLabel = (type?: string): string => String(type || "marker").replace(/-/g, " ");
+
+const buildFallbackDialogueLine = (marker: RuntimeMarker, speaker: string): string => {
+  const collection = normalizeCollectionName(marker.actionTargetCollection || marker.source?.linkedCollection || marker.source?.targetCollection);
+  const markerType = String(marker.type || "").toLowerCase();
+
+  if (collection === "companions" || markerType.includes("companion")) return `${speaker} chirps happily and waits for your next move.`;
+  if (collection === "npcs" || markerType.includes("npc")) return `Hello, adventurer. I'm ${speaker}.`;
+  if (collection === "quests" || markerType.includes("quest")) return `You inspect ${speaker}. It looks important for your quest.`;
+  if (markerType.includes("door") || markerType.includes("exit") || markerType.includes("fast-travel")) return `This path leads somewhere else.`;
+  if (collection === "assets" || markerType.includes("object") || markerType.includes("shop")) return `You inspect ${speaker}.`;
+
+  return `You found ${speaker}.`;
+};
+
+const buildDialogueForMarker = (marker: RuntimeMarker, linkedItem?: any): DialogueState => {
+  const source = marker.source || {};
+  const collection = normalizeCollectionName(marker.actionTargetCollection || source.linkedCollection || source.targetCollection);
+  const targetLabel = marker.actionTargetLabel || source.targetLabel || source.linkedLabel || "";
+  const itemTitle = getStudioItemTitle(linkedItem);
+
+  const speaker =
+    collection === "companions" ? (targetLabel || linkedItem?.name || marker.label || "Companion") :
+    collection === "npcs" ? (targetLabel || linkedItem?.name || marker.label || "NPC") :
+    collection === "quests" ? (targetLabel || linkedItem?.title || linkedItem?.name || marker.label || "Quest Object") :
+    collection === "assets" ? (targetLabel || linkedItem?.name || marker.label || "Object") :
+    targetLabel || source.speaker || (linkedItem ? itemTitle : "") || marker.label || "Someone";
+
+  const candidateLines = [
+    marker.actionPayload?.message,
+    source.actionNotes,
+    source.notes,
+    source.dialogue,
+    source.message,
+    collection === "npcs" ? linkedItem?.dialogue : undefined,
+    collection === "companions" ? linkedItem?.personality : undefined,
+    collection === "companions" ? linkedItem?.lore : undefined,
+    linkedItem?.greeting,
+    linkedItem?.description,
+    linkedItem?.lore,
+    linkedItem?.visualPrompt,
+  ];
+
+  const foundLine = candidateLines.find((line) => typeof line === "string" && line.trim());
+  const body = String(foundLine || buildFallbackDialogueLine(marker, speaker));
+  return { speaker, body, marker };
+};
+
 const RealmMap: React.FC = () => {
   const nav = useNavigate();
   const realms = useStudio((s) => s.realms);
   const scenes = useStudio((s) => s.scenes);
+  const npcs = useStudio((s) => s.npcs);
+  const companions = useStudio((s) => s.companions);
+  const avatars = useStudio((s) => s.avatars);
+  const quests = useStudio((s) => s.quests);
+  const assets = useStudio((s) => s.assets);
+  const battleBgs = useStudio((s) => s.battleBgs);
   const setActiveRealm = useGame((s) => s.setActiveRealm);
   const player = useGame((s) => s.player);
 
@@ -243,6 +354,8 @@ const RealmMap: React.FC = () => {
   const [hero, setHero] = useState<{ x: number; y: number }>({ x: 50, y: 82 });
   const [path, setPath] = useState<Point[]>([{ x: 50, y: 82 }]);
   const [blockedFeedback, setBlockedFeedback] = useState("");
+  const [actionFeedback, setActionFeedback] = useState("");
+  const [dialogue, setDialogue] = useState<DialogueState>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
 
   const tryWalkTo = (x: number, y: number): Promise<boolean> => {
@@ -270,7 +383,68 @@ const RealmMap: React.FC = () => {
   };
 
   const selectRealm = async (realmId: string, pos?: Pos, enter = false) => { setSelectedRealmId(realmId); setSelectedMarkerId(""); if (pos) await tryWalkTo(parseFloat(pos.left), parseFloat(pos.top) + 8); if (enter) { setActiveRealm(realmId); nav(`/adventure/town/${realmId}`); } };
-  const selectMarker = async (marker: RuntimeMarker, e?: React.MouseEvent) => { e?.stopPropagation(); setSelectedMarkerId(marker.id); await tryWalkTo(marker.x, marker.y + 4); };
+  const runMarkerAction = (marker: RuntimeMarker) => {
+    const actionType = marker.actionType || "none";
+    if (actionType === "travel" || actionType === "fast-travel") {
+      if (marker.actionTargetCollection === "realms" && marker.actionTargetId) {
+        setActiveRealm(marker.actionTargetId);
+        nav(`/adventure/town/${marker.actionTargetId}`);
+        return;
+      }
+      if (marker.actionTargetCollection === "scenes" && marker.actionTargetId) {
+        setSelectedSceneId(marker.actionTargetId);
+        setMapMode("scene");
+        setSelectedMarkerId("");
+        setActionFeedback(`Travelled to ${marker.actionTargetLabel || "linked scene"}.`);
+        window.setTimeout(() => setActionFeedback(""), 1600);
+        return;
+      }
+      setActionFeedback("Travel target is missing.");
+      window.setTimeout(() => setActionFeedback(""), 1600);
+      return;
+    }
+
+    if (actionType === "reward") {
+      const claimKey = getMarkerClaimKey(activeScene?.id || selectedSceneId, marker);
+      if (window.localStorage.getItem(claimKey)) {
+        setActionFeedback("Reward already claimed.");
+      } else {
+        window.localStorage.setItem(claimKey, new Date().toISOString());
+        setActionFeedback(`Claimed ${getMarkerRewardText(marker)}.`);
+      }
+      window.setTimeout(() => setActionFeedback(""), 1800);
+      return;
+    }
+
+    if (actionType === "start-battle") {
+      setActionFeedback(`Battle hook: ${marker.actionTargetLabel || marker.actionTargetId || "no battle target set"}.`);
+      window.setTimeout(() => setActionFeedback(""), 1800);
+      return;
+    }
+
+    if (actionType === "dialogue") {
+      const linkedItem = findStudioItemByMarker(marker, { npcs, companions, avatars, quests, assets, scenes, realms, battleBgs });
+      setDialogue(buildDialogueForMarker(marker, linkedItem));
+      setActionFeedback("");
+      return;
+    }
+
+    if (actionType === "quest-progress") {
+      setActionFeedback(`Quest hook: ${marker.actionTargetLabel || marker.actionTargetId || marker.label}.`);
+      window.setTimeout(() => setActionFeedback(""), 1800);
+      return;
+    }
+
+    setActionFeedback(`${marker.label}: no action assigned.`);
+    window.setTimeout(() => setActionFeedback(""), 1400);
+  };
+
+  const selectMarker = async (marker: RuntimeMarker, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setSelectedMarkerId(marker.id);
+    const arrived = await tryWalkTo(marker.x, marker.y + 4);
+    if (arrived) runMarkerAction(marker);
+  };
   const enterSelected = () => { if (selectedRealm) { setActiveRealm(selectedRealm.id); nav(`/adventure/town/${selectedRealm.id}`); } };
 
   useEffect(() => { setHero({ x: 50, y: 82 }); setPath([{ x: 50, y: 82 }]); }, []);
@@ -295,6 +469,7 @@ const RealmMap: React.FC = () => {
             <div className="absolute inset-0 bg-gradient-to-b from-white/20 via-transparent to-white/45" />
             <div className="absolute top-5 left-5 rounded-3xl bg-white/80 backdrop-blur-md border-2 border-white px-4 py-3 shadow-lg pointer-events-none z-30"><p className="text-[10px] font-extrabold uppercase tracking-widest text-primary">Runtime map</p><p className="h-display text-xl text-ink">{activeScene ? sceneLabel(activeScene) : "Edu-Mates Atlas"}</p></div>
             {blockedFeedback && <div className="absolute left-1/2 top-8 -translate-x-1/2 z-50 rounded-full bg-white/95 border-4 border-danger/30 px-5 py-2 text-sm font-extrabold text-danger shadow-xl pointer-events-none">{blockedFeedback}</div>}
+            {actionFeedback && <div className="absolute left-1/2 top-20 -translate-x-1/2 z-50 rounded-full bg-white/95 border-4 border-primary/30 px-5 py-2 text-sm font-extrabold text-primary shadow-xl pointer-events-none">{actionFeedback}</div>}
 
             {!activeSceneImage && <>
               <svg aria-hidden viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 w-full h-full pointer-events-none z-10"><path d="M 20 66 C 28 42, 38 34, 43 32 S 62 38, 70 60" fill="none" stroke="#9D8DF1" strokeWidth="1.35" strokeDasharray="2.4 2.2" strokeLinecap="round" opacity="0.82" /><path d="M 20 66 C 28 42, 38 34, 43 32 S 62 38, 70 60" fill="none" stroke="white" strokeWidth="2.4" strokeDasharray="2.4 2.2" strokeLinecap="round" opacity="0.35" /></svg>
@@ -303,19 +478,43 @@ const RealmMap: React.FC = () => {
             </>}
 
             {path.length > 2 && <svg aria-hidden viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 w-full h-full pointer-events-none z-35"><polyline points={path.map((p) => `${p.x},${p.y}`).join(" ")} fill="none" stroke="white" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" opacity="0.8" /><polyline points={path.map((p) => `${p.x},${p.y}`).join(" ")} fill="none" stroke="#9D8DF1" strokeWidth="0.55" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="1.5 1.2" opacity="0.95" /></svg>}
-            {sceneMarkers.map((marker) => { const selected = selectedMarker?.id === marker.id; return <button key={marker.id} type="button" onClick={(e) => selectMarker(marker, e)} className="absolute -translate-x-1/2 -translate-y-1/2 z-30 group" style={{ left: `${marker.x}%`, top: `${marker.y}%` }} data-testid={`realm-marker-${marker.id}`}><div className={`rounded-full border-2 px-3 py-2 shadow-xl backdrop-blur-md flex items-center gap-2 text-xs font-extrabold transition ${selected ? "bg-primary text-white border-white scale-110" : "bg-white/86 text-ink border-white hover:-translate-y-0.5"}`}><Waypoints size={14} strokeWidth={3} /><span className="max-w-[130px] truncate">{marker.label}</span></div><div className="mt-1 text-[10px] font-bold uppercase tracking-wider text-ink-muted bg-white/75 rounded-full px-2 py-0.5 opacity-0 group-hover:opacity-100 transition">{marker.type}</div></button>; })}
+            {sceneMarkers.map((marker) => { const selected = selectedMarker?.id === marker.id; return <button key={marker.id} type="button" onClick={(e) => selectMarker(marker, e)} className="absolute -translate-x-1/2 -translate-y-1/2 z-30 group" style={{ left: `${marker.x}%`, top: `${marker.y}%` }} data-testid={`realm-marker-${marker.id}`}><div className={`rounded-full border-2 px-3 py-2 shadow-xl backdrop-blur-md flex items-center gap-2 text-xs font-extrabold transition ${selected ? "bg-primary text-white border-white scale-110" : "bg-white/86 text-ink border-white hover:-translate-y-0.5"}`}><Waypoints size={14} strokeWidth={3} /><span className="max-w-[130px] truncate">{marker.label}</span></div><div className="mt-1 text-[10px] font-bold uppercase tracking-wider text-ink-muted bg-white/75 rounded-full px-2 py-0.5 opacity-0 group-hover:opacity-100 transition">{marker.type} · {markerActionLabel(marker)}</div></button>; })}
 
             {player && <motion.div data-testid="hero-sprite" className="absolute pointer-events-none z-40" initial={false} animate={{ left: path.map((p) => `${p.x}%`), top: path.map((p) => `${p.y}%`) }} transition={{ duration: Math.max(WALK_DURATION_S, (path.length - 1) * 0.32), ease: "easeInOut" }} style={{ translateX: "-50%", translateY: "-100%" }}><motion.div animate={{ y: [0, -3, 0, -3, 0] }} transition={{ duration: Math.max(WALK_DURATION_S, (path.length - 1) * 0.32), ease: "easeInOut", repeat: 0 }} key={`${hero.x.toFixed(0)}-${hero.y.toFixed(0)}-${path.length}`}><ChibiAvatar config={player.avatar} size={66} /></motion.div></motion.div>}
             </div>
           </div>
 
           <aside className="fixed right-3 top-24 z-40 w-[17.5rem] rounded-[2.25rem] border-[4px] border-white bg-white/86 backdrop-blur-md shadow-2xl shadow-indigo-900/10 p-4 max-h-[calc(100vh-6.5rem)] overflow-y-auto" data-testid="realm-legend">
-            <div className="mb-4"><p className="text-[10px] font-extrabold uppercase tracking-widest text-primary">Selected Destination</p><h2 className="h-display text-2xl text-ink mt-1">{selectedMarker?.label || selectedRealm?.name || "Choose your path"}</h2><p className="text-sm text-ink-muted mt-2">{selectedMarker ? selectedMarker.type : selectedRealm ? selectedRealm.biome : "Pick a realm or imported marker from the map."}</p></div>
-            <div className="rounded-[1.75rem] bg-gradient-to-br from-primary/10 via-white/80 to-gold/15 border-2 border-white p-4 mb-4"><div className="flex items-center gap-4"><div className="w-14 h-14 rounded-2xl bg-white grid place-items-center text-3xl shadow-inner" aria-hidden>{selectedMarker ? "📍" : emojiFor(selectedRealm?.biome || "")}</div><div><p className="text-[10px] font-extrabold uppercase tracking-widest text-ink-muted">{selectedMarker ? "Imported marker" : "Open realm"}</p><p className="h-display text-2xl leading-tight">{selectedMarker?.label || selectedRealm?.name || "No destination"}</p><p className="text-xs text-ink-muted mt-1">{selectedMarker ? "Marker is selectable now. Runtime routing comes next." : "Ready for town, quests, and battles."}</p></div></div><button type="button" onClick={enterSelected} className="btn-primary w-full justify-center mt-4 !py-3" data-testid="realm-enter-selected"><Castle size={18} strokeWidth={3} /> Enter / Travel</button></div>
-            <div className="space-y-3"><p className="text-xs font-extrabold uppercase tracking-widest text-ink-muted">Scene markers</p>{sceneMarkers.length ? sceneMarkers.slice(0, 8).map((marker) => <button key={`panel-${marker.id}`} type="button" onClick={() => selectMarker(marker)} className={`w-full card-base !p-3 text-left border-2 flex items-center gap-3 ${selectedMarker?.id === marker.id ? "border-primary bg-primary/10" : "border-white/80"}`}><Waypoints size={16} strokeWidth={3} className="text-primary" /><div className="min-w-0"><p className="h-display text-base truncate">{marker.label}</p><p className="text-xs text-ink-muted truncate">{marker.type}</p></div></button>) : <p className="text-sm text-ink-muted">No exported markers/zones/assets found on this scene yet.</p>}</div>
+            <div className="mb-4"><p className="text-[10px] font-extrabold uppercase tracking-widest text-primary">Selected Destination</p><h2 className="h-display text-2xl text-ink mt-1">{selectedMarker?.label || selectedRealm?.name || "Choose your path"}</h2><p className="text-sm text-ink-muted mt-2">{selectedMarker ? `${selectedMarker.type} · ${markerActionLabel(selectedMarker)}` : selectedRealm ? selectedRealm.biome : "Pick a realm or imported marker from the map."}</p></div>
+            <div className="rounded-[1.75rem] bg-gradient-to-br from-primary/10 via-white/80 to-gold/15 border-2 border-white p-4 mb-4"><div className="flex items-center gap-4"><div className="w-14 h-14 rounded-2xl bg-white grid place-items-center text-3xl shadow-inner" aria-hidden>{selectedMarker ? "📍" : emojiFor(selectedRealm?.biome || "")}</div><div><p className="text-[10px] font-extrabold uppercase tracking-widest text-ink-muted">{selectedMarker ? "Imported marker" : "Open realm"}</p><p className="h-display text-2xl leading-tight">{selectedMarker?.label || selectedRealm?.name || "No destination"}</p><p className="text-xs text-ink-muted mt-1">{selectedMarker ? (selectedMarker.actionType === "dialogue" ? `Talk: ${selectedMarker.actionTargetLabel || selectedMarker.label}` : selectedMarker.actionTargetLabel ? `Target: ${selectedMarker.actionTargetLabel}` : `Action: ${markerActionLabel(selectedMarker)}`) : "Ready for town, quests, and battles."}</p></div></div><button type="button" onClick={enterSelected} className="btn-primary w-full justify-center mt-4 !py-3" data-testid="realm-enter-selected"><Castle size={18} strokeWidth={3} /> Enter / Travel</button></div>
+            <div className="space-y-3"><p className="text-xs font-extrabold uppercase tracking-widest text-ink-muted">Scene markers</p>{sceneMarkers.length ? sceneMarkers.slice(0, 8).map((marker) => <button key={`panel-${marker.id}`} type="button" onClick={() => selectMarker(marker)} className={`w-full card-base !p-3 text-left border-2 flex items-center gap-3 ${selectedMarker?.id === marker.id ? "border-primary bg-primary/10" : "border-white/80"}`}><Waypoints size={16} strokeWidth={3} className="text-primary" /><div className="min-w-0"><p className="h-display text-base truncate">{marker.label}</p><p className="text-xs text-ink-muted truncate">{marker.type} · {markerActionLabel(marker)}</p>{marker.actionTargetLabel ? <p className="text-[10px] text-primary font-extrabold truncate">Target: {marker.actionTargetLabel}</p> : null}</div></button>) : <p className="text-sm text-ink-muted">No exported markers/zones/assets found on this scene yet.</p>}</div>
             <div className="space-y-2 mt-5"><p className="text-xs font-extrabold uppercase tracking-widest text-ink-muted">Runtime zones</p><p className="text-xs text-ink-muted">Blocking: {sceneZones.filter(isBlockingZone).length} · Walkable: {sceneZones.filter(isWalkableZone).length}</p><p className="text-[10px] text-ink-muted">Smart pathing is active. The hero routes around blocked zones when a safe route exists.</p></div>
           </aside>
         </div>
+
+          {dialogue && (
+            <div className="fixed inset-0 z-[70] bg-black/30 p-4 flex items-end md:items-center justify-center" role="dialog" aria-modal="true" data-testid="realm-dialogue-modal">
+              <div className="w-full max-w-2xl rounded-[2rem] border-4 border-white bg-white shadow-2xl p-5 md:p-6">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-14 h-14 rounded-2xl bg-primary/10 border-2 border-primary/20 grid place-items-center text-3xl shrink-0">💬</div>
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-extrabold uppercase tracking-widest text-primary">Dialogue</p>
+                      <h3 className="h-display text-2xl text-ink truncate">{dialogue.speaker}</h3>
+                    </div>
+                  </div>
+                  <button type="button" onClick={() => setDialogue(null)} className="btn-ghost !text-sm !py-2 !px-3" aria-label="Close dialogue"><X size={16} strokeWidth={3} /></button>
+                </div>
+                <div className="mt-4 rounded-3xl bg-bg border-2 border-white p-4">
+                  <p className="text-base md:text-lg font-bold text-ink leading-relaxed whitespace-pre-wrap">{dialogue.body}</p>
+                </div>
+                <div className="mt-4 flex flex-wrap gap-2 justify-end">
+                  <button type="button" onClick={() => setDialogue(null)} className="btn-primary !py-3 !px-5" data-testid="realm-dialogue-continue">Continue</button>
+                </div>
+              </div>
+            </div>
+          )}
+
       </section>
     </AdventureLayout>
   );

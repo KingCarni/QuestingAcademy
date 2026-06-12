@@ -81,11 +81,37 @@ const isImageDataUrl = (value?: string): boolean => !!value && value.startsWith(
 const shouldPersistImageUrl = (value?: string): boolean => !!value && (!isImageDataUrl(value) || value.length <= MAX_INLINE_IMAGE_DATA_URL_LENGTH);
 const getPersistableImageUrl = (value?: string): string | undefined => shouldPersistImageUrl(value) ? value : undefined;
 
-type StudioStorageImageRef = { url?: string; storage?: "inline" | "external" | "session-only"; note?: string };
-const createImageRef = (url?: string): StudioStorageImageRef | undefined => {
+type StudioStorageImageRef = { url?: string; storage?: "inline" | "external" | "session-only" | "local-file"; note?: string; filename?: string; sizeBytes?: number };
+const createImageRef = (url?: string, storage?: StudioStorageImageRef["storage"], extra?: Partial<StudioStorageImageRef>): StudioStorageImageRef | undefined => {
   if (!url) return undefined;
-  if (shouldPersistImageUrl(url)) return { url, storage: isImageDataUrl(url) ? "inline" : "external" };
-  return { storage: "session-only", note: "Large generated image data was not persisted to localStorage. Export or regenerate this asset when needed." };
+  if (storage) return { url, storage, ...extra };
+  if (shouldPersistImageUrl(url)) return { url, storage: isImageDataUrl(url) ? "inline" : "external", ...extra };
+  return { storage: "session-only", note: "Large generated image data was not persisted to localStorage. Export or regenerate this asset when needed.", ...extra };
+};
+
+const persistStudioImageDataUrl = async (imageDataUrl: string, filenameBase: string, contentType = "studio-image"): Promise<StudioStorageImageRef> => {
+  if (!isImageDataUrl(imageDataUrl)) {
+    return { url: normalizeStudioImageUrl(imageDataUrl), storage: "external" };
+  }
+
+  const response = await fetch(`${STUDIO_BACKEND_ORIGIN}/api/studio/persist-image`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ imageDataUrl, filenameBase, contentType, source: "content-studio" }),
+  });
+
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok || !data?.ok || !data?.url) {
+    throw new Error(data?.error || `Image persistence failed (${response.status})`);
+  }
+
+  return {
+    url: normalizeStudioImageUrl(data.url),
+    storage: "local-file",
+    filename: data.filename,
+    sizeBytes: data.sizeBytes,
+  };
 };
 const isOversizedDataUrl = (value?: string): boolean => !!value && value.startsWith("data:image/") && value.length > MAX_STORED_IMAGE_DATA_URL_LENGTH;
 const slugifyForDownload = (value: string): string =>
@@ -540,6 +566,9 @@ type SceneComposerZone = {
 };
 
 type SceneMarkerType = "player-start" | "npc-anchor" | "companion-anchor" | "quest-object" | "shop-point" | "door" | "exit" | "fast-travel" | "point-of-interest";
+type SceneMarkerActionType = "none" | "travel" | "reward" | "start-battle" | "dialogue" | "quest-progress" | "fast-travel";
+type SceneMarkerRewardPayload = { coins?: number; xp?: number; itemId?: string; itemLabel?: string };
+type SceneMarkerActionPayload = SceneMarkerRewardPayload & { dialogueId?: string; questId?: string; sceneId?: string; realmId?: string; battleBgId?: string; notes?: string };
 type SceneComposerMarker = {
   id: string;
   name: string;
@@ -549,9 +578,15 @@ type SceneComposerMarker = {
   linkedCollection?: StudioCollectionKey | "";
   linkedId?: string;
   linkedLabel?: string;
+  actionType?: SceneMarkerActionType;
+  actionTargetCollection?: StudioCollectionKey | "";
+  actionTargetId?: string;
+  actionTargetLabel?: string;
+  actionPayload?: SceneMarkerActionPayload;
 };
 
 const SCENE_MARKER_TYPES: SceneMarkerType[] = ["player-start", "npc-anchor", "companion-anchor", "quest-object", "shop-point", "door", "exit", "fast-travel", "point-of-interest"];
+const SCENE_MARKER_ACTION_TYPES: SceneMarkerActionType[] = ["none", "travel", "reward", "start-battle", "dialogue", "quest-progress", "fast-travel"];
 
 const MARKER_LINK_COLLECTIONS: (StudioCollectionKey | "")[] = ["", "npcs", "companions", "quests", "assets", "scenes", "realms", "battleBgs"];
 const PLAYER_START_LINK_LABEL = "Player";
@@ -656,6 +691,11 @@ const SceneComposerTab: React.FC = () => {
   const [draggingLayerId, setDraggingLayerId] = useState<string | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const addItem = useStudio((s) => s.addItem);
+  const updateItem = useStudio((s) => s.updateItem);
+  const [loadedSourceType, setLoadedSourceType] = useState<SceneComposerBackgroundMode>("scene");
+  const [loadedSourceId, setLoadedSourceId] = useState("");
+  const [loadedSourceLabel, setLoadedSourceLabel] = useState("");
+  const [saveMode, setSaveMode] = useState<"new" | "update">("new");
   const [saveName, setSaveName] = useState("");
   const [saveRealm, setSaveRealm] = useState("Questing Academy");
   const [savePurpose, setSavePurpose] = useState<ScenePurpose>("cutscene");
@@ -726,6 +766,103 @@ const SceneComposerTab: React.FC = () => {
   useEffect(() => {
     setBackgroundId("");
   }, [backgroundMode]);
+
+  type SceneComposerEditSourceOption = { id: string; label: string; sublabel: string; item: any };
+
+  const editSourceOptions = useMemo<SceneComposerEditSourceOption[]>(() => {
+    const sourceMode = loadedSourceType;
+    if (sourceMode === "scene") {
+      return scenes
+        .map((sc) => ({ id: sc.id, label: sc.name, sublabel: `${sc.purpose} · ${sc.realm} · ${sc.status}`, item: sc }))
+        .filter((x) => !!getComposerBackgroundImageUrl(x.item) || !!(x.item as any)?.manualComposition);
+    }
+    if (sourceMode === "realm") {
+      return realms
+        .map((r) => ({ id: r.id, label: r.name, sublabel: `${r.biome || "realm"} · ${r.status}`, item: r }))
+        .filter((x) => !!getComposerBackgroundImageUrl(x.item));
+    }
+    if (sourceMode === "battleBg") {
+      return battleBgs
+        .map((b) => ({ id: b.id, label: b.realm || b.environment || "Battle background", sublabel: `${b.environment || "battle bg"} · ${b.status}`, item: b }))
+        .filter((x) => !!getComposerBackgroundImageUrl(x.item));
+    }
+    return [];
+  }, [loadedSourceType, scenes, realms, battleBgs]);
+
+  const selectedEditSource = editSourceOptions.find((source: SceneComposerEditSourceOption) => source.id === loadedSourceId) ?? null;
+
+  useEffect(() => {
+    setLoadedSourceId("");
+  }, [loadedSourceType]);
+
+  const loadSelectedSourceIntoComposer = () => {
+    if (!selectedEditSource) return;
+    const source = selectedEditSource.item as any;
+    const mc = source.manualComposition || {};
+    const bgMode = (mc.backgroundMode || loadedSourceType) as SceneComposerBackgroundMode;
+    const bgId = mc.backgroundId || source.id || "";
+    const bgUrl = getComposerBackgroundImageUrl(source) || normalizeStudioImageUrl(mc.backgroundUrl || "");
+
+    setBackgroundMode(bgMode === "transparent" || bgMode === "blank" ? bgMode : loadedSourceType);
+    setBackgroundId(bgId);
+    setLoadedSourceLabel(selectedEditSource.label);
+    setSaveName(source.name || selectedEditSource.label);
+    setSaveRealm(source.realm || saveRealm || "Questing Academy");
+    setSavePurpose((source.purpose as ScenePurpose) || savePurpose);
+    setSaveNotes(source.visualPrompt || source.mapNotes || source.prompt || saveNotes || "");
+
+    const loadedLayers: SceneComposerLayer[] = Array.isArray(mc.layers) ? mc.layers.map((layer: any, index: number) => ({
+      id: layer.id || `scene-layer-loaded-${index + 1}`,
+      assetId: layer.assetId || layer.id || `loaded-layer-${index + 1}`,
+      sourceCollection: layer.sourceCollection || "assets",
+      sourceId: layer.sourceId || layer.assetId || "",
+      name: layer.name || layer.label || `Layer ${index + 1}`,
+      kind: layer.assetType || layer.kind || "asset",
+      assetType: layer.assetType || (layer.kind === "pet" ? "companion" : layer.kind === "npc" ? "npc" : "prop"),
+      previewUrl: getManualCompositionLayerImageUrl(layer),
+      x: Number(layer.x ?? 50),
+      y: Number(layer.y ?? 50),
+      scale: Number(layer.scale ?? 1),
+      opacity: Number(layer.opacity ?? 100),
+      flip: !!layer.flip,
+      rotation: Number(layer.rotation ?? 0),
+      zIndex: Number(layer.zIndex ?? index + 1),
+    })) : [];
+
+    setLayers(loadedLayers);
+    setZones(Array.isArray(mc.zones) ? mc.zones.map((zone: any, index: number) => ({
+      id: zone.id || `scene-zone-loaded-${index + 1}`,
+      name: zone.name || `${zone.type || "interaction"} zone ${index + 1}`,
+      type: (zone.type || "interaction") as SceneZoneType,
+      points: Array.isArray(zone.points) ? zone.points.map((point: any) => ({ x: Number(point.x ?? 0), y: Number(point.y ?? 0) })) : [],
+      closed: zone.closed !== false,
+    })) : []);
+    setMarkers(Array.isArray(mc.markers) ? mc.markers.map((marker: any, index: number) => ({
+      id: marker.id || `scene-marker-loaded-${index + 1}`,
+      name: marker.name || `${marker.type || "marker"} ${index + 1}`,
+      type: (marker.type || "point-of-interest") as SceneMarkerType,
+      x: Number(marker.x ?? 50),
+      y: Number(marker.y ?? 50),
+      linkedCollection: marker.linkedCollection || "",
+      linkedId: marker.linkedId || "",
+      linkedLabel: marker.linkedLabel || "",
+      actionType: marker.actionType || "none",
+      actionTargetCollection: marker.actionTargetCollection || marker.targetCollection || "",
+      actionTargetId: marker.actionTargetId || marker.targetId || "",
+      actionTargetLabel: marker.actionTargetLabel || marker.targetLabel || "",
+      actionPayload: marker.actionPayload || marker.payload || {},
+    })) : []);
+    setSelectedLayerId(null);
+    setSelectedZoneId(null);
+    setSelectedMarkerId(null);
+    setActiveZoneId(null);
+    setSaveMode(loadedSourceType === "scene" ? "update" : "new");
+
+    if (!mc.backgroundId && bgUrl) {
+      setBackgroundMode(loadedSourceType);
+      window.setTimeout(() => setBackgroundId(source.id), 0);
+    }
+  };
 
   const addAssetToCanvas = (asset: LibraryAsset) => {
     const layer: SceneComposerLayer = {
@@ -883,6 +1020,11 @@ const SceneComposerTab: React.FC = () => {
       linkedCollection: markerType === "player-start" ? "avatars" : "",
       linkedId: markerType === "player-start" ? "player" : "",
       linkedLabel: markerType === "player-start" ? PLAYER_START_LINK_LABEL : "",
+      actionType: markerType === "exit" || markerType === "door" ? "travel" : markerType === "fast-travel" ? "fast-travel" : markerType === "quest-object" ? "quest-progress" : markerType === "npc-anchor" ? "dialogue" : "none",
+      actionTargetCollection: markerType === "exit" || markerType === "door" || markerType === "fast-travel" ? "scenes" : "",
+      actionTargetId: "",
+      actionTargetLabel: "",
+      actionPayload: {},
     };
     setMarkers((current) => [...current, marker]);
     setSelectedMarkerId(marker.id);
@@ -928,6 +1070,42 @@ const SceneComposerTab: React.FC = () => {
     }));
   }, [selectedMarker?.linkedCollection, studio]);
 
+
+  const markerActionTargetOptions = useMemo(() => {
+    const collection = selectedMarker?.actionTargetCollection;
+    if (!collection) return [];
+    const sourceItems = ((studio as any)[collection] || []) as any[];
+    return sourceItems.map((item) => ({
+      id: item.id,
+      label: getStudioItemTitle(item),
+      sublabel: [item.status, item.realm, item.purpose, item.kind, item.role, item.name === getStudioItemTitle(item) ? "" : item.name].filter(Boolean).join(" · "),
+    }));
+  }, [selectedMarker?.actionTargetCollection, studio]);
+
+  const updateSelectedMarkerActionType = (actionType: SceneMarkerActionType) => {
+    const defaultCollection: StudioCollectionKey | "" =
+      actionType === "travel" || actionType === "fast-travel" ? "scenes" :
+      actionType === "start-battle" ? "battleBgs" :
+      actionType === "dialogue" ? "npcs" :
+      actionType === "quest-progress" ? "quests" :
+      actionType === "reward" ? "assets" : "";
+    updateSelectedMarker({ actionType, actionTargetCollection: defaultCollection, actionTargetId: "", actionTargetLabel: "" });
+  };
+
+  const updateSelectedMarkerActionTargetCollection = (collection: StudioCollectionKey | "") => {
+    updateSelectedMarker({ actionTargetCollection: collection, actionTargetId: "", actionTargetLabel: "" });
+  };
+
+  const updateSelectedMarkerActionTargetId = (actionTargetId: string) => {
+    const linked = markerActionTargetOptions.find((option) => option.id === actionTargetId);
+    updateSelectedMarker({ actionTargetId, actionTargetLabel: linked?.label || "" });
+  };
+
+  const updateSelectedMarkerActionPayload = (patch: Partial<SceneMarkerActionPayload>) => {
+    if (!selectedMarkerId) return;
+    setMarkers((current) => current.map((marker) => marker.id === selectedMarkerId ? { ...marker, actionPayload: { ...(marker.actionPayload || {}), ...patch } } : marker));
+  };
+
   const updateSelectedMarkerLinkCollection = (collection: StudioCollectionKey | "") => {
     updateSelectedMarker({ linkedCollection: collection, linkedId: "", linkedLabel: "" });
   };
@@ -943,7 +1121,7 @@ const SceneComposerTab: React.FC = () => {
 
   const sortedLayers = useMemo(() => [...layers].sort((a, b) => a.zIndex - b.zIndex), [layers]);
 
-  const saveCompositionAsScene = async () => {
+  const buildSceneComposerPayload = async () => {
     const sceneName = saveName.trim() || `Scene Composition ${new Date().toLocaleTimeString()}`;
     const bgUrl = selectedBackground?.url ? normalizeStudioImageUrl(selectedBackground.url) : "";
     const manualLayers = layers.map(sceneComposerLayerToManualLayer).filter((layer) => !!layer.url);
@@ -954,7 +1132,8 @@ const SceneComposerTab: React.FC = () => {
         const compositeBlob = await renderManualCompositionToBlob(bgUrl, manualLayers, "16:9", backgroundMode === "transparent");
         const compositeDataUrl = await blobToDataUrl(compositeBlob);
         if (!isOversizedDataUrl(compositeDataUrl)) {
-          previewCompositeUrl = compositeDataUrl;
+          const persistedComposite = await persistStudioImageDataUrl(compositeDataUrl, sceneName, "scene-composer-composite");
+          previewCompositeUrl = persistedComposite.url || compositeDataUrl;
         }
       } catch (err) {
         console.error(err);
@@ -986,6 +1165,7 @@ const SceneComposerTab: React.FC = () => {
         transparentBackground: backgroundMode === "transparent",
         canvasRatio: "16:9",
         previewCompositeUrl: previewCompositeUrl || "",
+        previewCompositeImageRef: createImageRef(previewCompositeUrl, previewCompositeUrl.startsWith(STUDIO_BACKEND_ORIGIN) ? "local-file" : undefined),
         layers: layers.map((layer) => ({
           id: layer.id,
           assetId: layer.assetId,
@@ -1010,6 +1190,11 @@ const SceneComposerTab: React.FC = () => {
           linkedCollection: marker.type === "player-start" ? "avatars" : (marker.linkedCollection || ""),
           linkedId: marker.type === "player-start" ? "player" : (marker.linkedId || ""),
           linkedLabel: marker.type === "player-start" ? PLAYER_START_LINK_LABEL : (marker.linkedLabel || ""),
+          actionType: marker.actionType || "none",
+          actionTargetCollection: marker.actionTargetCollection || "",
+          actionTargetId: marker.actionTargetId || "",
+          actionTargetLabel: marker.actionTargetLabel || "",
+          actionPayload: marker.actionPayload || {},
           x: Number(marker.x.toFixed(3)),
           y: Number(marker.y.toFixed(3)),
         })),
@@ -1033,8 +1218,31 @@ const SceneComposerTab: React.FC = () => {
       createdAt: nowISO(),
       updatedAt: nowISO(),
     };
+    return newScene;
+  };
+
+  const saveCompositionAsScene = async () => {
+    const newScene = await buildSceneComposerPayload();
     addItem("scenes", newScene);
     setLastSavedSceneId(newScene.id);
+    setLoadedSourceId(newScene.id);
+    setLoadedSourceLabel(newScene.name);
+    setSaveMode("update");
+  };
+
+  const updateLoadedSceneComposition = async () => {
+    if (!loadedSourceId || loadedSourceType !== "scene") {
+      alert("Load a Scene card before updating an existing source.");
+      return;
+    }
+    const nextScene = await buildSceneComposerPayload();
+    updateItem("scenes", loadedSourceId, {
+      ...nextScene,
+      id: loadedSourceId,
+      createdAt: scenes.find((scene) => scene.id === loadedSourceId)?.createdAt || nextScene.createdAt,
+      updatedAt: nowISO(),
+    } as any);
+    setLastSavedSceneId(loadedSourceId);
   };
 
   const activeZonePointCount = activeZoneId ? (zones.find((zone) => zone.id === activeZoneId)?.points.length ?? 0) : 0;
@@ -1050,6 +1258,34 @@ const SceneComposerTab: React.FC = () => {
             </p>
           </div>
           <span className="chip">Local only</span>
+        </div>
+
+        <div className="mt-4 rounded-2xl bg-bg border-2 border-white p-3 space-y-3">
+          <div>
+            <p className="h-display text-lg">Load existing</p>
+            <p className="text-xs text-ink-muted">Reopen a saved scene/source, edit zones, markers, and layers, then update or save a variant.</p>
+          </div>
+          <Field label="Source type">
+            <SelectField
+              testid="scene-composer-load-source-type"
+              value={loadedSourceType}
+              onChange={(v) => setLoadedSourceType(v as SceneComposerBackgroundMode)}
+              options={["scene", "realm", "battleBg"]}
+            />
+          </Field>
+          <Field label="Choose source">
+            <SearchSelect
+              testid="scene-composer-load-source-id"
+              value={loadedSourceId}
+              onChange={setLoadedSourceId}
+              options={editSourceOptions.map((source) => ({ id: source.id, label: source.label, sublabel: source.sublabel }))}
+              placeholder="Search existing source..."
+            />
+          </Field>
+          <button type="button" onClick={loadSelectedSourceIntoComposer} disabled={!selectedEditSource} className="btn-primary !text-sm !py-2 !px-4 w-full disabled:opacity-40">
+            Load into composer
+          </button>
+          {loadedSourceLabel && <p className="text-[10px] font-extrabold text-sage">Loaded: {loadedSourceLabel}</p>}
         </div>
 
         <div className="mt-4 rounded-2xl bg-bg border-2 border-white p-3 space-y-3">
@@ -1466,6 +1702,55 @@ const SceneComposerTab: React.FC = () => {
                   />
                 </Field>
               )}
+
+              <div className="rounded-2xl bg-bg border-2 border-white p-3 space-y-2">
+                <p className="text-[10px] font-extrabold uppercase text-ink-muted">Marker action</p>
+                <Field label="Action type">
+                  <SelectField testid="scene-composer-marker-action-type" value={selectedMarker.actionType || "none"} onChange={(v) => updateSelectedMarkerActionType(v as SceneMarkerActionType)} options={SCENE_MARKER_ACTION_TYPES} />
+                </Field>
+                {(selectedMarker.actionType || "none") !== "none" && (
+                  <>
+                    <Field label="Action target type">
+                      <SelectField
+                        testid="scene-composer-marker-action-target-collection"
+                        value={selectedMarker.actionTargetCollection || ""}
+                        onChange={(v) => updateSelectedMarkerActionTargetCollection(v as StudioCollectionKey | "")}
+                        options={MARKER_LINK_COLLECTIONS}
+                        placeholder="No action target"
+                      />
+                    </Field>
+                    {selectedMarker.actionTargetCollection && (
+                      <Field label={`Target ${markerLinkCollectionLabel(selectedMarker.actionTargetCollection)}`}>
+                        <SearchSelect
+                          testid="scene-composer-marker-action-target-id"
+                          value={selectedMarker.actionTargetId || ""}
+                          onChange={updateSelectedMarkerActionTargetId}
+                          options={markerActionTargetOptions}
+                          placeholder="Search target card..."
+                        />
+                      </Field>
+                    )}
+                    {selectedMarker.actionTargetLabel && <p className="text-[10px] font-extrabold text-sage">Action target: {selectedMarker.actionTargetLabel}</p>}
+                    {selectedMarker.actionType === "reward" && (
+                      <div className="grid grid-cols-2 gap-2">
+                        <Field label="Coins">
+                          <NumberField testid="scene-composer-marker-reward-coins" value={Number(selectedMarker.actionPayload?.coins || 0)} onChange={(n) => updateSelectedMarkerActionPayload({ coins: n })} min={0} max={9999} />
+                        </Field>
+                        <Field label="XP">
+                          <NumberField testid="scene-composer-marker-reward-xp" value={Number(selectedMarker.actionPayload?.xp || 0)} onChange={(n) => updateSelectedMarkerActionPayload({ xp: n })} min={0} max={9999} />
+                        </Field>
+                        <Field label="Item ID" full>
+                          <TextField testid="scene-composer-marker-reward-item" value={selectedMarker.actionPayload?.itemId || ""} onChange={(v) => updateSelectedMarkerActionPayload({ itemId: v })} placeholder="Optional asset/item id" />
+                        </Field>
+                      </div>
+                    )}
+                    <Field label="Action notes">
+                      <TextArea testid="scene-composer-marker-action-notes" value={selectedMarker.actionPayload?.notes || ""} onChange={(v) => updateSelectedMarkerActionPayload({ notes: v })} placeholder="Optional runtime notes / designer intent" />
+                    </Field>
+                  </>
+                )}
+              </div>
+
               {selectedMarker.linkedLabel && (
                 <p className="text-[10px] font-extrabold text-sage inline-flex items-center gap-1"><Link2 size={11} strokeWidth={3} /> Linked: {selectedMarker.linkedLabel}</p>
               )}
@@ -1504,9 +1789,24 @@ const SceneComposerTab: React.FC = () => {
           <Field label="Notes">
             <TextArea testid="scene-composer-save-notes" value={saveNotes} onChange={setSaveNotes} placeholder="Short note for this saved scene..." />
           </Field>
-          <button type="button" onClick={saveCompositionAsScene} className="btn-primary !text-sm !py-2 !px-4 w-full">
-            Save as Scene card
-          </button>
+          <Field label="Save mode">
+            <SelectField
+              testid="scene-composer-save-mode"
+              value={saveMode}
+              onChange={(v) => setSaveMode(v as "new" | "update")}
+              options={["new", "update"]}
+            />
+            <p className="text-[10px] font-bold text-ink-muted mt-1">Update is available after loading an existing Scene card. Realms/Battle BGs load as background sources for now.</p>
+          </Field>
+          {saveMode === "update" && loadedSourceType === "scene" && loadedSourceId ? (
+            <button type="button" onClick={updateLoadedSceneComposition} className="btn-primary !text-sm !py-2 !px-4 w-full">
+              Update loaded Scene card
+            </button>
+          ) : (
+            <button type="button" onClick={saveCompositionAsScene} className="btn-primary !text-sm !py-2 !px-4 w-full">
+              Save as Scene card
+            </button>
+          )}
           {lastSavedSceneId && <p className="text-[10px] font-extrabold text-sage">Saved scene card: {lastSavedSceneId}</p>}
         </div>
       </Card>
@@ -2018,6 +2318,11 @@ const buildScenePackageJson = (item: any) => {
       linkedCollection: marker?.linkedCollection || "",
       linkedId: marker?.linkedId || "",
       linkedLabel: marker?.linkedLabel || "",
+      actionType: marker?.actionType || "none",
+      actionTargetCollection: marker?.actionTargetCollection || marker?.targetCollection || "",
+      actionTargetId: marker?.actionTargetId || marker?.targetId || "",
+      actionTargetLabel: marker?.actionTargetLabel || marker?.targetLabel || "",
+      actionPayload: marker?.actionPayload || marker?.payload || {},
     })),
     references: {
       compositionSourceAssets: Array.isArray(item?.compositionSourceAssets) ? item.compositionSourceAssets : [],
@@ -2182,12 +2487,10 @@ const StudioViewEditButton: React.FC<StudioViewEditButtonProps> = ({ collection,
                       </button>
                       <button type="button" onClick={async () => {
                         try {
-                          const transparentPreviewUrl = await createTransparentPngDataUrlFromUrl(displayImageUrl);
-                          if (isOversizedDataUrl(transparentPreviewUrl)) {
-                            alert("Transparent variant is too large for browser storage. Export the transparent PNG and import/use it locally instead.");
-                            return;
-                          }
-                          updateItem(collection, item.id, { transparentPreviewUrl, updatedAt: new Date().toISOString() } as any);
+                          const transparentPreviewDataUrl = await createTransparentPngDataUrlFromUrl(displayImageUrl);
+                          const transparentImageRef = await persistStudioImageDataUrl(transparentPreviewDataUrl, `${exportFilename}-transparent`, `${collection}-transparent`);
+                          const transparentPreviewUrl = transparentImageRef.url || transparentPreviewDataUrl;
+                          updateItem(collection, item.id, { transparentPreviewUrl, transparentImageRef, updatedAt: new Date().toISOString() } as any);
                           alert("Transparent variant saved to this card.");
                         } catch (err) {
                           console.error(err);
@@ -2306,31 +2609,27 @@ const StudioViewEditButton: React.FC<StudioViewEditButtonProps> = ({ collection,
 
 
 
-const makeDurableImagePreview = async (preview: GeneratedImagePreview): Promise<GeneratedImagePreview> => {
+const makeDurableImagePreview = async (preview: GeneratedImagePreview, filenameBase = "studio-generated", contentType = "studio-image"): Promise<GeneratedImagePreview> => {
   if (!preview?.url) return preview;
-  if (preview.url.startsWith("data:image/")) return preview;
 
-  const normalizedUrl = normalizeStudioImageUrl(preview.url);
-  const response = await fetch(normalizedUrl);
-  if (!response.ok) throw new Error(`Image fetch failed: ${response.status}`);
-
-  const blob = await response.blob();
-  if (!blob.type.startsWith("image/")) {
-    throw new Error(`Expected image response, got ${blob.type || "unknown content type"}`);
+  if (preview.url.startsWith("data:image/")) {
+    const imageRef = await persistStudioImageDataUrl(preview.url, filenameBase, contentType);
+    return {
+      ...preview,
+      url: imageRef.url || preview.url,
+      provider: `${preview.provider || "generator"}-local-file`,
+      imageRef,
+    };
   }
 
-  const dataUrl = await blobToDataUrl(blob);
-  if (isOversizedDataUrl(dataUrl)) {
-    throw new Error("Generated image is too large for local browser storage. Export it instead, or move to backend image storage next.");
-  }
-
-  return { ...preview, url: dataUrl, provider: `${preview.provider || "generator"}-inline` };
+  return { ...preview, url: normalizeStudioImageUrl(preview.url) };
 };
 
 type GeneratedImagePreview = {
   url: string;
   prompt: string;
   provider: string;
+  imageRef?: StudioStorageImageRef;
 };
 
 type ImageLoadStatus = "idle" | "generating" | "loading" | "ready" | "error";
@@ -2548,7 +2847,7 @@ const AvatarsTab: React.FC = () => {
   const saveGeneratedPreview = async () => {
     if (!generatedPreview) return;
     try {
-      const durablePreview = await makeDurableImagePreview(generatedPreview);
+      const durablePreview = await makeDurableImagePreview(generatedPreview, draft.name || "avatar-asset", "avatar");
       setSavedPreview(durablePreview);
     } catch (err) {
       console.error(err);
@@ -2889,7 +3188,7 @@ const CompanionsTab: React.FC = () => {
   const saveGeneratedPreview = async () => {
     if (!generatedPreview) return;
     try {
-      const durablePreview = await makeDurableImagePreview(generatedPreview);
+      const durablePreview = await makeDurableImagePreview(generatedPreview, draft.name || "companion", "companion");
       setSavedPreview(durablePreview);
     } catch (err) {
       console.error(err);
@@ -3311,7 +3610,7 @@ const EvolutionsTab: React.FC = () => {
   const saveGeneratedPreview = async () => {
     if (!generatedPreview) return;
     try {
-      const durablePreview = await makeDurableImagePreview(generatedPreview);
+      const durablePreview = await makeDurableImagePreview(generatedPreview, draft.evolutionName || "evolution", "evolution");
       setSavedPreview(durablePreview);
     } catch (err) {
       console.error(err);
@@ -3844,7 +4143,7 @@ const ArtsTab: React.FC = () => {
   const saveGeneratedPreview = async () => {
     if (!generatedPreview) return;
     try {
-      const durablePreview = await makeDurableImagePreview(generatedPreview);
+      const durablePreview = await makeDurableImagePreview(generatedPreview, "studio-generated", "studio-image");
       setSavedPreview(durablePreview);
     } catch (err) {
       console.error(err);
@@ -4104,7 +4403,7 @@ type LibraryAsset = {
 type PromptBuilderAssetType =
   | "npc-full-body" | "npc-portrait" | "companion" | "companion-evolution"
   | "avatar-asset" | "ui-icon" | "prop" | "quest-item"
-  | "battle-background" | "realm-overview" | "scene-environment" | "walking-map-environment" | "adventure-walking-map"
+  | "battle-background" | "realm-overview" | "scene-environment" | "walking-map-environment"
   | "walkable-sprite-sheet" | "four-direction-character-sheet" | "idle-walk-frames" | "runtime-12-frame-sprite-sheet";
 
 type CharacterSpriteOutputType = "walkable-sprite-sheet" | "four-direction-character-sheet" | "idle-walk-frames" | "runtime-12-frame-sprite-sheet";
@@ -4113,11 +4412,11 @@ const CHARACTER_SPRITE_OUTPUT_TYPES: CharacterSpriteOutputType[] = ["walkable-sp
 const PROMPT_BUILDER_TYPES: PromptBuilderAssetType[] = [
   "npc-full-body", "npc-portrait", "companion", "companion-evolution",
   "avatar-asset", "ui-icon", "prop", "quest-item",
-  "battle-background", "realm-overview", "scene-environment", "walking-map-environment", "adventure-walking-map",
+  "battle-background", "realm-overview", "scene-environment", "walking-map-environment",
   "walkable-sprite-sheet", "four-direction-character-sheet", "idle-walk-frames", "runtime-12-frame-sprite-sheet",
 ];
 
-const ENVIRONMENT_PROMPT_TYPES: PromptBuilderAssetType[] = ["battle-background", "realm-overview", "scene-environment", "walking-map-environment", "adventure-walking-map"];
+const ENVIRONMENT_PROMPT_TYPES: PromptBuilderAssetType[] = ["battle-background", "realm-overview", "scene-environment", "walking-map-environment"];
 const OBJECT_PROMPT_TYPES: PromptBuilderAssetType[] = ["avatar-asset", "ui-icon", "prop", "quest-item"];
 
 const LOCATION_PRESETS = ["sunlit meadow path", "library interior", "snowy grove", "crystal pond", "academy courtyard", "book bridge", "floating classroom ruins", "custom"];
@@ -4186,17 +4485,6 @@ const getPromptBuilderDefaultFields = (assetType: PromptBuilderAssetType): Recor
     timeOfDay: "afternoon",
     landmarks: "display shelves, warm counter, glowing jars, soft classroom decor",
     visualNotes: "Wide 16:9 scene environment with usable empty space for NPCs and props. No UI or text.",
-  };
-
-  if (assetType === "adventure-walking-map") return {
-    ...base,
-    name: "Meadow Trail A-1",
-    purpose: "out-of-town adventure zone between town hub and first learning battle",
-    location: "bright meadow trail just outside the academy town",
-    mood: "cozy, inviting, adventurous, safe, playful",
-    timeOfDay: "warm afternoon",
-    landmarks: "academy banner at town-return side, wide open meadow clearing, quest-object clearing, optional chest nook, berry/herb node, creek edge, forest exit path",
-    visualNotes: "Heavily favor Prodigy-like open exploration readability: broad empty grass/play space, obvious activity pockets for NPCs, chests, resources, battle triggers, companion encounters, and exits. 70% gameplay space, 30% environment detail. Avoid dense winding illustrated-map clutter.",
   };
 
   if (assetType === "walking-map-environment") return {
@@ -4270,7 +4558,6 @@ const getPromptBuilderRecommendedSpec = (assetType: PromptBuilderAssetType): str
   if (assetType === "realm-overview") return "Recommended output: PNG or WebP, 2048x1152, wide 16:9 realm overview.";
   if (assetType === "scene-environment") return "Recommended output: PNG or WebP, 1920x1080, wide 16:9 scene environment.";
   if (assetType === "walking-map-environment") return "Recommended output: PNG or WebP, 1920x1080, wide 16:9 walking map environment.";
-  if (assetType === "adventure-walking-map") return "Recommended output: PNG or WebP, 1920x1080 or 2048x1152, wide 16:9 adventure walking map.";
   if (assetType === "walkable-sprite-sheet") return "Recommended output: transparent PNG sprite sheet, clean grid, front/back/left/right with idle + 2 walk frames per direction.";
   if (assetType === "four-direction-character-sheet") return "Recommended output: transparent PNG, clean 4-direction character sheet: front, back, left, right.";
   if (assetType === "idle-walk-frames") return "Recommended output: transparent PNG sprite sheet with idle and walk frames, consistent scale and padding.";
@@ -4348,11 +4635,11 @@ const buildAssetPromptOnly = (assetType: PromptBuilderAssetType, fields: Record<
     ].join("\n");
   }
 
-  if (assetType === "battle-background" || assetType === "realm-overview" || assetType === "scene-environment" || assetType === "walking-map-environment" || assetType === "adventure-walking-map") {
+  if (assetType === "battle-background" || assetType === "realm-overview" || assetType === "scene-environment" || assetType === "walking-map-environment") {
     const environmentStyle = "Style: cute educational fantasy RPG environment art, soft pastel storybook rendering, cozy lighting, readable shapes, child-safe Questing Academy tone, polished game background.";
     const envNegative = "Negative: no text, no labels, no watermark, no logo, no UI, no characters unless explicitly requested, no scary mood, no horror, no photorealism.";
     const realm = cleanPromptText(fields.realm || fields.theme, "Questing Academy");
-    const location = cleanPromptText(fields.location || fields.biome, assetType === "realm-overview" ? "sunlit academy grove" : assetType === "scene-environment" ? "cozy academy location" : assetType === "adventure-walking-map" ? "bright meadow trail just outside the academy town" : assetType === "walking-map-environment" ? "cozy academy town hub" : "open academy training field");
+    const location = cleanPromptText(fields.location || fields.biome, assetType === "realm-overview" ? "sunlit academy grove" : assetType === "scene-environment" ? "cozy academy location" : assetType === "walking-map-environment" ? "cozy academy town hub" : "open academy training field");
     const mood = cleanPromptText(fields.mood, "cozy");
     const timeOfDay = cleanPromptText(fields.timeOfDay, "morning");
     const landmarks = cleanPromptText(fields.landmarks, assetType === "realm-overview" ? "academy tower, book bridge, crystal pond" : "soft academy landmarks and readable set pieces");
@@ -4385,29 +4672,6 @@ const buildAssetPromptOnly = (assetType: PromptBuilderAssetType, fields: Record<
         environmentStyle,
         getPromptBuilderRecommendedSpec(assetType),
         "Negative: no text, no labels, no map labels, no watermark, no logo, no UI, no horror, no photorealism.",
-      ].filter(Boolean).join("\n");
-    }
-
-    if (assetType === "adventure-walking-map") {
-      return [
-        `Create one Questing Academy adventure walking map environment: ${name}.`,
-        `Purpose/use case: ${cleanPromptText(fields.purpose, "an out-of-town explorable adventure zone used between the town hub and the first learning battle")}.`,
-        `Realm: ${realm}.`,
-        `Biome/location: ${location}.`,
-        `Mood: ${mood}.`,
-        `Time of day: ${timeOfDay}.`,
-        `Key set pieces / landmarks: ${landmarks}.`,
-        notes ? `Visual notes: ${withPeriod(notes)}` : "",
-        "Design target: heavily inspired by Prodigy-style exploration zone readability, but with original Questing Academy visual identity. This should behave like a playable stage, not a dense scenic illustration.",
-        "Composition: wide 16:9 horizontal adventure route map with a slightly elevated 2D / soft isometric RPG exploration view.",
-        "Gameplay-space rule: roughly 70% usable gameplay space and 30% environment detail. Use large open grass/play areas, broad readable movement lanes, and clear activity pockets rather than dense winding paths.",
-        "Map structure: start near one side, open into a large central meadow, include 2-3 simple branches, one forest exit path, one quest-object clearing, one chest/resource nook, and one creek/bridge or blocked-path feature.",
-        "Marker placement spaces: leave clean empty areas for player start, town return, zone exit, quest objective, chest, resource node, NPC/event NPC anchor, battle trigger, companion encounter, and point of interest markers.",
-        "Encounter presentation: visible enemies/companions are optional. Prefer subtle encounter spaces such as rustling bushes, glowing grass patches, small clearings, mushrooms, or cute tiny non-threatening background creatures only if needed.",
-        "Map-readability rules: traversable ground must be visually obvious, blocked/collision edges must be readable, paths and open areas must be broad enough for a chibi avatar, and interaction points should be obvious without text or UI.",
-        environmentStyle,
-        getPromptBuilderRecommendedSpec(assetType),
-        "Negative: no text, no labels, no UI, no watermark, no logo, no photorealism, no horror, no scary monsters, no combat scene, no battle arena, no close-up illustration, no clutter blocking the main movement space.",
       ].filter(Boolean).join("\n");
     }
 
@@ -4673,8 +4937,21 @@ const AssetLibraryTab: React.FC = () => {
   const [assignTargetId, setAssignTargetId] = useState<string>("");
   const [assignSlot, setAssignSlot] = useState<"previewUrl" | "transparentPreviewUrl" | "imageUrl" | "backgroundUrl">("previewUrl");
   const [promptBuilderOpen, setPromptBuilderOpen] = useState(false);
-  const [promptAssetType, setPromptAssetType] = useState<PromptBuilderAssetType>("adventure-walking-map");
-  const [promptFields, setPromptFields] = useState<Record<string, string>>(getPromptBuilderDefaultFields("adventure-walking-map"));
+  const [promptAssetType, setPromptAssetType] = useState<PromptBuilderAssetType>("npc-full-body");
+  const [promptFields, setPromptFields] = useState<Record<string, string>>({
+    name: "Sage the Cozy",
+    role: "guide",
+    species: "human",
+    ageRead: "teen",
+    silhouette: "cozy",
+    outfit: "librarian cardigan",
+    pose: "friendly wave",
+    personality: "cheerful, patient, encouraging",
+    realm: "Questing Academy",
+    primaryColor: "#9D8DF1",
+    accentColor: "#F4C753",
+    visualNotes: "No background. Single centered game-ready asset.",
+  });
   const [spriteReferenceAssetId, setSpriteReferenceAssetId] = useState("");
   const [spriteOutputType, setSpriteOutputType] = useState<CharacterSpriteOutputType>("walkable-sprite-sheet");
   const [spriteNotes, setSpriteNotes] = useState("Preserve the imported character exactly and make it suitable for a walkable RPG map.");
@@ -4925,12 +5202,12 @@ const AssetLibraryTab: React.FC = () => {
                 </Field>
 
                 <Field label="Name">
-                  <TextField testid="prompt-builder-name" value={promptFields.name || ""} onChange={(v) => updatePromptField("name", v)} placeholder={isCharacterSpritePromptType(promptAssetType) ? "Linden Walkable Sprite Sheet" : promptAssetType === "adventure-walking-map" ? "Meadow Trail A-1" : isEnvironmentPromptType(promptAssetType) ? "Battle BG 1 / Meadowfall Grove / Sticker Shop" : "Sage the Cozy"} />
+                  <TextField testid="prompt-builder-name" value={promptFields.name || ""} onChange={(v) => updatePromptField("name", v)} placeholder={isCharacterSpritePromptType(promptAssetType) ? "Linden Walkable Sprite Sheet" : isEnvironmentPromptType(promptAssetType) ? "Battle BG 1 / Meadowfall Grove / Sticker Shop" : "Sage the Cozy"} />
                 </Field>
 
                 {isEnvironmentPromptType(promptAssetType) ? (
                   <>
-                    {(promptAssetType === "scene-environment" || promptAssetType === "adventure-walking-map") && (
+                    {promptAssetType === "scene-environment" && (
                       <Field label="Purpose / use case">
                         <TextField testid="prompt-builder-purpose" value={promptFields.purpose || ""} onChange={(v) => updatePromptField("purpose", v)} placeholder="town hub interior / quest scene / classroom backdrop" />
                       </Field>
@@ -5038,24 +5315,10 @@ const AssetLibraryTab: React.FC = () => {
                     testid="prompt-builder-visual-notes"
                     value={promptFields.visualNotes || ""}
                     onChange={(v) => updatePromptField("visualNotes", v)}
-                    placeholder={promptAssetType === "adventure-walking-map" ? "70% gameplay space, open Prodigy-like exploration readability, activity pockets, marker placement areas." : isEnvironmentPromptType(promptAssetType) ? "Wide 16:9 background. No UI or text. Clear readable environment." : "No background. Single centered asset. Transparent preferred."}
+                    placeholder={isEnvironmentPromptType(promptAssetType) ? "Wide 16:9 background. No UI or text. Clear readable environment." : "No background. Single centered asset. Transparent preferred."}
                   />
                 </Field>
               </div>
-
-              {promptAssetType === "adventure-walking-map" && (
-                <div className="mt-4 rounded-3xl bg-sage/10 border-2 border-sage/30 p-4">
-                  <p className="h-display text-lg leading-tight">Adventure Walking Map rules</p>
-                  <p className="text-xs text-ink-muted mt-1">
-                    Use this when you need an out-of-town playable exploration zone, not a town hub or scenic realm illustration.
-                  </p>
-                  <div className="grid md:grid-cols-3 gap-2 mt-3 text-xs font-bold text-ink-muted">
-                    <div className="rounded-2xl bg-white/80 border-2 border-white p-3">70% open gameplay space</div>
-                    <div className="rounded-2xl bg-white/80 border-2 border-white p-3">Prodigy-like readability</div>
-                    <div className="rounded-2xl bg-white/80 border-2 border-white p-3">Marker-ready activity pockets</div>
-                  </div>
-                </div>
-              )}
 
               <div className="mt-4">
                 <p className="text-[10px] font-extrabold uppercase text-ink-muted mb-1">Generated prompt</p>
@@ -5387,7 +5650,7 @@ const AssetsTab: React.FC = () => {
   const saveGeneratedPreview = async () => {
     if (!generatedPreview) return;
     try {
-      const durablePreview = await makeDurableImagePreview(generatedPreview);
+      const durablePreview = await makeDurableImagePreview(generatedPreview, "studio-generated", "studio-image");
       setSavedPreview(durablePreview);
     } catch (err) {
       console.error(err);
@@ -5582,9 +5845,9 @@ const REALM_BUILDING_MODES = ["none", "partial/cropped entrance", "one building 
 const REALM_MAP_SCALES = ["small room", "single-screen chunk", "town lane", "plaza chunk", "forest path", "building entrance", "cave room", "bridge crossing"];
 const REALM_FANTASY_LEVELS = ["grounded", "magical", "high fantasy"];
 const REALM_EXIT_OPTIONS = ["north gate", "south road", "east bridge", "west forest path", "secret portal", "boat dock", "mountain pass", "academy archway"];
-const REALM_OUTPUT_MODES = ["Playable RPG Screen", "Map Chunk / Room", "Adventure Walking Map", "Walking Map", "Realm Key Art"];
+const REALM_OUTPUT_MODES = ["Playable RPG Screen", "Map Chunk / Room", "Walking Map", "Realm Key Art"];
 type RealmOutputMode = typeof REALM_OUTPUT_MODES[number];
-const REALM_VISUAL_REFERENCE_STYLES = ["cozy browser RPG", "tilemap-inspired", "Prodigy-like outdoor route", "Prodigy-like open exploration zone", "cozy indoor RPG room"];
+const REALM_VISUAL_REFERENCE_STYLES = ["cozy browser RPG", "tilemap-inspired", "Prodigy-like outdoor route", "cozy indoor RPG room"];
 
 const pickRealm = <T,>(arr: readonly T[]): T => arr[Math.floor(Math.random() * arr.length)];
 const makeRealmName = (prefix?: string, type?: string) => `${prefix || pickRealm(REALM_PREFIXES)} ${type || pickRealm(REALM_TYPES)}`.replace(/\b\w/g, (c) => c.toUpperCase());
@@ -5674,44 +5937,18 @@ const buildRealmImagePrompt = (draft: Partial<StudioRealm>): string => {
     negative.push(`No aerial overview, world map, full town, full city, decorative board-game map, cinematic concept art, miniature model-map look.`);
     if (buildingMode === "none") negative.push(`No buildings, houses, rooftops, town hubs, shops, hatcheries, academies, landmarks, doors, windows, or structures.`);
     negative.push(`No photorealism, realistic violence, horror, weapons, dark scary mood.`);
-  } else if (outputMode === "Adventure Walking Map" || outputMode === "Walking Map") {
-    const isAdventureWalkingMap = outputMode === "Adventure Walking Map";
-
-    positive.push(`Create a crisp 1920x1080 Questing Academy ${isAdventureWalkingMap ? "adventure walking map" : "playable walking-region background"} for ${name}.`);
+  } else if (outputMode === "Walking Map") {
+    positive.push(`Create a crisp 1920x1080 Questing Academy playable walking-region background for ${name}.`);
     positive.push(`Realm name: ${name}; biome: ${biome}; tone: ${tone}; fantasy level: ${fantasyLevel}.`);
     positive.push(`Visual reference style: ${visualReferenceStyle}.`);
-    positive.push(`Camera: slightly elevated 2D / soft isometric browser RPG exploration view; camera distance: close-to-medium; map scale: one playable route screen.`);
-    positive.push(`The map should feel close to a Prodigy-style child-friendly exploration zone: big open grass play spaces, clear path lanes, simple readable activity pockets, and obvious places for NPCs, monsters, chests, rewards, and exits.`);
-    positive.push(`This is a gameplay stage for walking and interaction, not a scenic illustration and not a decorative world map.`);
-    positive.push(`Do not generate UI, quest banners, labels, or text. The image is only the background map.`);
-
-    if (buildings && !isAdventureWalkingMap) positive.push(`Suggested hubs/landmarks: ${buildings}.`);
-
-    layout.push(`Wide 16:9 horizontal adventure route map.`);
-    layout.push(`Composition target: roughly 70% readable gameplay space and 30% environment detail.`);
-    layout.push(`Use large open grass or dirt clearings, broad movement lanes, and simple soft-edged terrain shapes.`);
-    layout.push(`Avoid dense winding paths. Prefer open playground-like spaces connected by a few clear paths.`);
+    positive.push(`Camera: ${mapCamera}; camera distance: ${cameraDistance}; map scale: ${mapScale}.`);
+    positive.push(`Broader explorable walking terrain with readable zones, clear navigation flow, and open paths.`);
+    if (buildings) positive.push(`Suggested hubs/landmarks: ${buildings}.`);
     layout.push(`Entrances/exits: ${exits}.`);
-    layout.push(`Zone purpose: ${zonePurpose}.`);
-    layout.push(`Zone contents: ${zoneContents}.`);
     layout.push(`Map notes: ${mapNotes}.`);
     layout.push(`In-map walking notes: ${inMapNotes}.`);
-    layout.push(`Leave clean empty placement spaces for runtime markers: player start, town return, zone exit, quest objective, chest, resource node, NPC/event NPC anchor, battle trigger, companion encounter, and point of interest.`);
-    layout.push(`Add obvious but subtle encounter spaces such as rustling grass patches, small clearings, mushroom patches, sparkle plants, or tucked-away chest nooks.`);
-    layout.push(`Blocked edges should be readable using trees, bushes, rocks, water, cliffs, fences, logs, or flower beds.`);
-    layout.push(`Keep the center and major intersections uncluttered enough for a chibi avatar and click/tap movement.`);
-
-    style.push(`Clean colorful 2D/2.5D children's browser RPG background.`);
-    style.push(`Closer to Prodigy-style exploration zone readability than painterly fantasy key art: simple shapes, bright saturated greens, soft candy colors, round trees, readable open lawns, and isolated interaction pockets.`);
-    style.push(`Questing Academy warmth: cream sunlight, pastel greens, soft lavender accents, rounded cozy forms, cheerful kid-safe fantasy.`);
-    style.push(`Crisp game-ready background, readable at mobile/browser scale, no blur, no stretched look, no low-resolution texture.`);
-
-    negative.push(`No text, labels, UI, logos, watermark, fake writing, signs, symbols, corner marks.`);
-    negative.push(`No quest banner, no inventory bar, no currency icons, no menus, no dialogue boxes.`);
-    negative.push(`No characters unless tiny optional background flavor; no required visible enemies; no battle scene; no object sheet; no cards; no UI mockup; no poster; no character portrait.`);
-    negative.push(`No aerial overview, world map, full town, full city, decorative board-game map, cinematic concept art, miniature model-map look.`);
-    negative.push(`No overly dense forest detail, no narrow maze paths, no clutter blocking the main movement lanes.`);
-    negative.push(`No photorealism, realistic violence, horror, weapons, dark scary mood.`);
+    style.push(`Clean colorful 2D/2.5D RPG background for kids, Questing Academy warmth, pastel greens, lavender accents, crisp game art.`);
+    negative.push(`No text, labels, UI, logos, watermark, characters, battle scene, object sheet, photorealism, horror, weapons, dark scary mood.`);
   } else {
     positive.push(`Create a crisp 1920x1080 Questing Academy realm key art scene for ${name}.`);
     positive.push(`Realm name: ${name}; prefix/type: ${prefix} ${type}; biome: ${biome}; tone: ${tone}; fantasy level: ${fantasyLevel}.`);
@@ -5741,7 +5978,7 @@ const buildRealmImagePrompt = (draft: Partial<StudioRealm>): string => {
 const RealmsTab: React.FC = () => {
   const items = useStudio((s) => s.realms);
   const addItem = useStudio((s) => s.addItem);
-  const [draft, setDraft] = useState<Partial<StudioRealm> & Record<string, any>>({ subjects: ["math"], grades: ["K","1","2"], buildings: ["town-hub","hatchery"], realmPrefix: "Meadowfall", realmType: "meadow", outputMode: "Adventure Walking Map", visualReferenceStyle: "Prodigy-like open exploration zone", fantasyLevel: "magical", screenFormat: "outdoor route", cameraDistance: "close", boundaryStyle: "mixed natural edges", buildingMode: "none", buildingCount: "0", mapScale: "single-screen chunk", mapCamera: "fixed 2D browser RPG screen", gridCell: "A1", zonePurpose: "Meadow Trail A-1 adventure route", entryExits: "town return at bottom-left, forest exit at upper-right, optional bridge path", zoneContents: "large open grass play space, broad readable dirt paths, one NPC spot, one battle trigger clearing, one companion encounter patch, one chest nook, one resource node, one quest-object clearing", inMapNotes: "Prodigy-like outdoor route: big open movement areas, simple readable activity pockets, broad paths, clear blocked edges, room for markers and chibi avatar movement." });
+  const [draft, setDraft] = useState<Partial<StudioRealm> & Record<string, any>>({ subjects: ["math"], grades: ["K","1","2"], buildings: ["town-hub","hatchery"], realmPrefix: "Meadowfall", realmType: "meadow", outputMode: "Playable RPG Screen", visualReferenceStyle: "cozy browser RPG", fantasyLevel: "magical", screenFormat: "outdoor route", cameraDistance: "close", boundaryStyle: "trees", buildingMode: "none", buildingCount: "0", mapScale: "single-screen chunk", mapCamera: "fixed 2D browser RPG screen", gridCell: "B2", zonePurpose: "forest transition path", entryExits: "north, east", zoneContents: "wide walkable path, open grass center, trees and flowers only around the edges, one NPC spot, one pet spawn patch", inMapNotes: "Top-down walking terrain with clear paths, open plaza space, NPC interaction zones, pet spawn areas, and readable landmarks." });
   const [generatedPreview, setGeneratedPreview] = useState<RealmGeneratedPreview | null>(null);
   const [savedPreview, setSavedPreview] = useState<RealmGeneratedPreview | null>(null);
   const update = <K extends keyof StudioRealm>(k: K, v: StudioRealm[K]) => setDraft((d) => ({ ...d, [k]: v }));
@@ -5758,25 +5995,24 @@ const RealmsTab: React.FC = () => {
       realmPrefix: prefix,
       realmType,
       buildingCount,
-      outputMode: "Adventure Walking Map",
-      visualReferenceStyle: "Prodigy-like open exploration zone",
-      screenFormat: "outdoor route",
+      outputMode: "Playable RPG Screen",
+      screenFormat: pickRealm(REALM_SCREEN_FORMATS),
       cameraDistance: "close",
-      boundaryStyle: "mixed natural edges",
+      boundaryStyle: pickRealm(REALM_BOUNDARY_STYLES),
       buildingMode: "none",
       gridCell: `${pickRealm(["A","B","C","D"])}${pickRealm(["1","2","3","4"])}`,
       zonePurpose: pickRealm(["forest transition path", "sunny grass route", "river edge path", "flower clearing", "rocky trail bend", "beach route", "cave mouth route", "woodland path intersection"]),
-      mapScale: "single-screen chunk",
+      mapScale: pickRealm(REALM_MAP_SCALES),
       mapCamera: "fixed 2D browser RPG screen",
       entryExits: exits,
-      zoneContents: "large open grass play space, broad readable dirt paths, one NPC spot, one battle trigger clearing, one companion encounter patch, one chest nook, one resource node, one quest-object clearing",
+      zoneContents: "one player-scale screen with large walkable ground, edge boundaries, readable exits, room for NPCs and pets",
       name: makeRealmName(prefix, realmType),
       biome: `${realmType} ${randomBiome()}`,
       tone: SCENE_MOODS[Math.floor(Math.random() * SCENE_MOODS.length)],
       description: `A cozy ${realmType} realm for ${["K-2","2-5","3-7"][Math.floor(Math.random()*3)]} learners.`,
       buildings: ["town-hub","hatchery","learning-academy","shop","quest-board","guild-hall","companion-habitat","boss-gate"].slice(0, Math.min(parseCount(buildingCount), 8)) as RealmBuilding[],
-      mapNotes: "One playable Prodigy-like adventure route screen with clear exits, edge boundaries, and obvious activity pockets.",
-      inMapNotes: "Big open movement areas, simple readable activity pockets, broad paths, clear blocked edges, room for markers and chibi avatar movement.",
+      mapNotes: "One playable screen with clear exits and edge boundaries.",
+      inMapNotes: "Playable route screen with wide walking paths, natural boundaries, room for NPCs/pets, and no UI labels.",
     }));
   };
 
@@ -5799,7 +6035,7 @@ const RealmsTab: React.FC = () => {
   const saveGeneratedPreview = async () => {
     if (!generatedPreview) return;
     try {
-      const durablePreview = await makeDurableImagePreview(generatedPreview);
+      const durablePreview = await makeDurableImagePreview(generatedPreview, "studio-generated", "studio-image");
       setSavedPreview(durablePreview);
     } catch (err) {
       console.error(err);
@@ -5866,18 +6102,6 @@ addItem("realms", item);
             </div>
             <button type="button" data-testid="realms-randomize" onClick={randomize} className="btn-outline !text-sm !py-2 !px-4"><Sparkles size={14} strokeWidth={3} /> Randomize</button>
           </div>
-          {(draft.outputMode === "Adventure Walking Map" || draft.outputMode === "Walking Map") && (
-            <div className="mb-4 rounded-3xl bg-white/75 border-4 border-white p-4 shadow-sm">
-              <p className="text-[10px] font-extrabold uppercase text-primary">TEA-134 Adventure Walking Map Prompt</p>
-              <p className="text-sm text-ink-muted mt-1">Gameplay-first maps should feel closer to Prodigy outdoor exploration zones: big open movement space, simple readable terrain, obvious activity pockets, and clean empty areas for runtime markers.</p>
-              <div className="mt-3 grid sm:grid-cols-3 gap-2 text-[10px] font-extrabold uppercase text-ink-muted">
-                <span className="rounded-full bg-sage/15 text-sage px-3 py-2">70% gameplay space</span>
-                <span className="rounded-full bg-primary/10 text-primary px-3 py-2">30% environment detail</span>
-                <span className="rounded-full bg-white px-3 py-2">No UI / labels / text</span>
-              </div>
-            </div>
-          )}
-
           <div className="grid sm:grid-cols-2 gap-3">
             <Field label="Realm prefix"><SelectField testid="realms-input-prefix" value={draft.realmPrefix ?? ""} options={REALM_PREFIXES} onChange={(v) => setDraft((d) => ({ ...d, realmPrefix: v, name: makeRealmName(v, d.realmType) }))} placeholder="—" /></Field>
             <Field label="Realm type"><SelectField testid="realms-input-type" value={draft.realmType ?? ""} options={REALM_TYPES} onChange={(v) => setDraft((d) => ({ ...d, realmType: v, name: makeRealmName(d.realmPrefix, v), biome: d.biome || `${v} fantasy biome` }))} placeholder="—" /></Field>
@@ -5914,8 +6138,8 @@ addItem("realms", item);
 
           <ImagePreviewWorkflow
             testid="realms-image-generator"
-            title={`Generated realm ${draft.outputMode === "Realm Key Art" ? "key art" : draft.outputMode === "Playable RPG Screen" ? "playable RPG screen" : draft.outputMode === "Adventure Walking Map" ? "adventure walking map" : "walking map"} preview`}
-            helper={draft.outputMode === "Realm Key Art" ? "Generate scenic realm key art for navigation/world identity, then save or discard before sending it to review." : draft.outputMode === "Playable RPG Screen" ? "Generate one player-scale RPG screen, then save, export, or discard before sending it to review." : draft.outputMode === "Map Chunk / Room" ? "Generate one playable grid chunk/room, then save, export, or discard before sending it to review." : draft.outputMode === "Adventure Walking Map" ? "Generate a Prodigy-like adventure route map with open gameplay space, marker pockets, and clear walkable areas." : "Generate broader playable walking terrain, then save or discard before sending it to review."}
+            title={`Generated realm ${draft.outputMode === "Realm Key Art" ? "key art" : draft.outputMode === "Playable RPG Screen" ? "playable RPG screen" : "walking map"} preview`}
+            helper={draft.outputMode === "Realm Key Art" ? "Generate scenic realm key art for navigation/world identity, then save or discard before sending it to review." : draft.outputMode === "Playable RPG Screen" ? "Generate one player-scale RPG screen, then save, export, or discard before sending it to review." : draft.outputMode === "Map Chunk / Room" ? "Generate one playable grid chunk/room, then save, export, or discard before sending it to review." : "Generate broader playable walking terrain, then save or discard before sending it to review."}
             generatedPreview={generatedPreview}
             savedPreview={savedPreview}
             onGenerate={generateImagePreview}
@@ -6011,7 +6235,7 @@ const BattleBgsTab: React.FC = () => {
   const saveGeneratedPreview = async () => {
     if (!generatedPreview) return;
     try {
-      const durablePreview = await makeDurableImagePreview(generatedPreview);
+      const durablePreview = await makeDurableImagePreview(generatedPreview, "studio-generated", "studio-image");
       setSavedPreview(durablePreview);
     } catch (err) {
       console.error(err);
@@ -6172,7 +6396,7 @@ const ScenesTab: React.FC = () => {
   const saveGeneratedPreview = async () => {
     if (!generatedPreview) return;
     try {
-      const durablePreview = await makeDurableImagePreview(generatedPreview);
+      const durablePreview = await makeDurableImagePreview(generatedPreview, "studio-generated", "studio-image");
       setSavedPreview(durablePreview);
     } catch (err) {
       console.error(err);
@@ -6370,7 +6594,7 @@ const NpcsTab: React.FC = () => {
   const saveGeneratedPreview = async () => {
     if (!generatedPreview) return;
     try {
-      const durablePreview = await makeDurableImagePreview(generatedPreview);
+      const durablePreview = await makeDurableImagePreview(generatedPreview, "studio-generated", "studio-image");
       setSavedPreview(durablePreview);
     } catch (err) {
       console.error(err);
