@@ -5,8 +5,38 @@ export type ClassroomWorldStatus = "active" | "paused" | "archived";
 export type ClassroomMemberRole = "student" | "teacher" | "helper";
 export type ClassroomMemberStatus = "active" | "pending" | "removed";
 export type ClassroomRoomTheme = "meadow" | "hatchery" | "library" | "crystal-cave" | "sky-dock";
+export type ClassroomSubjectFocus = "Math" | "Reading" | "Writing" | "Science" | "Social Studies";
 export type ClassroomPrivacyMode = "invite-only" | "school-only" | "closed";
 export type ClassroomRewardType = "xp" | "treat" | "coin" | "badge";
+
+export const CLASSROOM_GRADE_BAND_OPTIONS = [
+  "Kindergarten",
+  "Grade 1",
+  "Grade 2",
+  "Grade 3",
+  "Grade 4",
+  "Grade 5",
+  "Grade 6",
+  "Grade 7",
+  "Grades K-2",
+  "Grades 2-3",
+  "Grades 3-5",
+  "Grades 5-7",
+  "Mixed K-4",
+  "Mixed grades",
+] as const;
+
+export const CLASSROOM_SUBJECT_OPTIONS: ClassroomSubjectFocus[] = ["Math", "Reading", "Writing", "Science", "Social Studies"];
+
+export const CLASSROOM_ROOM_THEME_OPTIONS: ClassroomRoomTheme[] = ["meadow", "hatchery", "library", "crystal-cave", "sky-dock"];
+
+export const CLASSROOM_ROOM_THEME_LABELS: Record<ClassroomRoomTheme, string> = {
+  meadow: "Meadow",
+  hatchery: "Hatchery",
+  library: "Library",
+  "crystal-cave": "Crystal cave",
+  "sky-dock": "Sky dock",
+};
 
 export interface ClassroomMember {
   id: string;
@@ -88,7 +118,7 @@ export interface ClassroomWorld {
   name: string;
   joinCode: string;
   gradeBand: string;
-  subjectFocus: string[];
+  subjectFocus: ClassroomSubjectFocus[];
   status: ClassroomWorldStatus;
   privacy: ClassroomPrivacySettings;
   pet: ClassroomPetState;
@@ -108,22 +138,32 @@ interface ClassroomWorldStore {
   goals: ClassroomGoal[];
   events: ClassroomEvent[];
   selectedClassroomId: string;
-  createClassroom: (input: Pick<ClassroomWorld, "name" | "gradeBand" | "subjectFocus"> & { teacherId?: string; teacherName?: string; theme?: ClassroomRoomTheme }) => ClassroomWorld;
+  createClassroom: (input: Pick<ClassroomWorld, "name" | "gradeBand" | "subjectFocus"> & { teacherId?: string; teacherName?: string; roomTheme?: ClassroomRoomTheme; theme?: ClassroomRoomTheme }) => ClassroomWorld;
   selectClassroom: (id: string) => void;
-  joinClassroomByCode: (input: { joinCode: string; learnerId: string; displayName: string }) => { ok: boolean; message: string; classroomId?: string };
+  copyJoinCode: (classroomId: string) => string;
+  joinClassroomByCode: (input: { joinCode: string; learnerId: string; displayName: string }, displayNameOverride?: string) => { ok: boolean; message: string; classroomId?: string };
   addRewardLog: (input: Pick<ClassroomRewardLog, "classroomId" | "type" | "amount" | "reason"> & { memberId?: string }) => void;
 }
 
 const nowISO = () => new Date().toISOString();
 const makeId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+const normalizeCode = (code: string): string => code.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+const normalizeSubjectFocus = (subjects: Array<string | ClassroomSubjectFocus>): ClassroomSubjectFocus[] => {
+  const valid = new Set<ClassroomSubjectFocus>(CLASSROOM_SUBJECT_OPTIONS);
+  const normalized = subjects.filter((subject): subject is ClassroomSubjectFocus => valid.has(subject as ClassroomSubjectFocus));
+  return normalized.length ? normalized : ["Math"];
+};
 
 const makeJoinCode = (existingCodes: string[]): string => {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const normalizedExisting = new Set(existingCodes.map(normalizeCode));
   for (let attempt = 0; attempt < 50; attempt += 1) {
     const code = Array.from({ length: 6 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join("");
-    if (!existingCodes.includes(code)) return code;
+    if (!normalizedExisting.has(code)) return code;
   }
-  return `QA${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+  let fallback = `QA${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+  while (normalizedExisting.has(fallback)) fallback = `QA${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+  return fallback;
 };
 
 const seedClassrooms: ClassroomWorld[] = [
@@ -174,18 +214,20 @@ export const useClassroomWorldStore = create<ClassroomWorldStore>()(
       selectedClassroomId: seedClassrooms[0]?.id || "",
       createClassroom: (input) => {
         const joinCode = makeJoinCode(get().classrooms.map((classroom) => classroom.joinCode));
+        const roomTheme = input.roomTheme || input.theme || "meadow";
+        const name = input.name.trim() || "New Classroom World";
         const created: ClassroomWorld = {
           id: makeId("classroom"),
           teacherId: input.teacherId || "teacher-demo",
           teacherName: input.teacherName || "Demo Teacher",
-          name: input.name.trim() || "New Classroom World",
+          name,
           joinCode,
           gradeBand: input.gradeBand.trim() || "Mixed grades",
-          subjectFocus: input.subjectFocus.length ? input.subjectFocus : ["Math"],
+          subjectFocus: normalizeSubjectFocus(input.subjectFocus),
           status: "active",
           privacy: { mode: "invite-only", requireTeacherApproval: false, showLeaderboard: false, allowStudentNicknames: true },
           pet: { petId: "embercub", petName: "Embercub", petEmoji: "🔥", level: 1, xp: 0, xpGoal: 100, mood: "focused", treats: 1 },
-          room: { theme: input.theme || "meadow", roomName: `${input.name.trim() || "New"} Homeroom`, decorationIds: [], lastVisitedAt: nowISO() },
+          room: { theme: roomTheme, roomName: `${name} Homeroom`, decorationIds: [], lastVisitedAt: nowISO() },
           assignmentRefs: [],
           goalIds: [],
           eventIds: [],
@@ -197,17 +239,23 @@ export const useClassroomWorldStore = create<ClassroomWorldStore>()(
         return created;
       },
       selectClassroom: (id) => set({ selectedClassroomId: id }),
-      joinClassroomByCode: (input) => {
-        const normalizedCode = input.joinCode.trim().toUpperCase();
-        const classroom = get().classrooms.find((item) => item.joinCode.toUpperCase() === normalizedCode);
+      copyJoinCode: (classroomId) => {
+        const classroom = get().classrooms.find((item) => item.id === classroomId);
+        return classroom?.joinCode || "";
+      },
+      joinClassroomByCode: (input, displayNameOverride) => {
+        const normalizedCode = normalizeCode(input.joinCode);
+        const displayName = (displayNameOverride || input.displayName || "New student").trim();
+        const classroom = get().classrooms.find((item) => normalizeCode(item.joinCode) === normalizedCode);
         if (!classroom) return { ok: false, message: "No classroom found for that code." };
-        const existing = get().members.find((member) => member.classroomId === classroom.id && member.learnerId === input.learnerId && member.status !== "removed");
-        if (existing) return { ok: false, message: `${input.displayName || "Student"} is already in ${classroom.name}.`, classroomId: classroom.id };
+        const learnerId = input.learnerId || `local-${displayName.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+        const existing = get().members.find((member) => member.classroomId === classroom.id && member.learnerId === learnerId && member.status !== "removed");
+        if (existing) return { ok: false, message: `${displayName || "Student"} is already in ${classroom.name}.`, classroomId: classroom.id };
         const createdMember: ClassroomMember = {
           id: makeId("cw-member"),
           classroomId: classroom.id,
-          learnerId: input.learnerId || makeId("learner"),
-          displayName: input.displayName.trim() || "New student",
+          learnerId,
+          displayName,
           role: "student",
           status: classroom.privacy.requireTeacherApproval ? "pending" : "active",
           joinedAt: nowISO(),
