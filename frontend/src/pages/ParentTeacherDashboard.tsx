@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { TopBar } from "../components/TopBar";
 import { Card } from "../components/Card";
 import { useStudio } from "../lib/studioStore";
+import { useClassroomWorldStore, CLASSROOM_SUBJECT_OPTIONS, CLASSROOM_ROOM_THEME_OPTIONS, type ClassroomRoomTheme, type ClassroomSubjectFocus } from "../lib/classroomWorldStore";
 import {
   APPROVED_SUBJECT_SKILLS,
   ASSIGNMENT_DUE_OPTIONS,
@@ -18,8 +19,11 @@ import {
   type AssignmentWorkType,
   type EduMatesUserRole,
   type LearningGroupType,
+  type LearningGoal,
+  type MasteryLevel,
+  type ParentReport,
 } from "../lib/learningGroupStore";
-import { BookOpen, Castle, CheckCircle2, ClipboardList, Eye, Gift, GraduationCap, Plus, RefreshCw, Sparkles, Users, X } from "lucide-react";
+import { BookOpen, Castle, CheckCircle2, ClipboardList, Eye, Gift, GraduationCap, Plus, RefreshCw, Sparkles, Target, TrendingUp, Users, X, UserPlus } from "lucide-react";
 
 const ROLE_OPTIONS: EduMatesUserRole[] = ["teacher", "parent", "homeschool-parent", "tutor", "admin"];
 const GROUP_TYPE_OPTIONS: LearningGroupType[] = ["classroom", "homeschool", "tutoring", "pod", "intervention"];
@@ -33,6 +37,11 @@ const ASSIGNMENT_STATUS_LABELS: Record<AssignmentStatus, string> = {
   completed: "Completed",
 };
 
+const MASTERY_LABELS: Record<MasteryLevel, string> = {
+  secure: "Secure",
+  developing: "Developing",
+  "needs-support": "Needs support",
+};
 
 type ReviewQuestion = {
   id: string;
@@ -73,7 +82,6 @@ const buildMockQuestions = (assignment: any): ReviewQuestion[] => {
   const count = Math.min(5, Math.max(3, Number(assignment?.questionCount || 5)));
   return Array.from({ length: count }, (_, index) => buildMockQuestion(assignment, index));
 };
-
 
 const normalizeStudioImageUrl = (url?: string): string => {
   if (!url) return "";
@@ -150,6 +158,8 @@ const ParentTeacherDashboard: React.FC = () => {
   const groups = useLearningGroupStore((s) => s.groups);
   const learners = useLearningGroupStore((s) => s.learners);
   const assignments = useLearningGroupStore((s) => s.assignments);
+  const learningGoals = useLearningGroupStore((s) => (s as any).learningGoals || []);
+  const parentReports = useLearningGroupStore((s) => (s as any).parentReports || []);
   const selectedGroupId = useLearningGroupStore((s) => s.selectedGroupId);
   const setCurrentRole = useLearningGroupStore((s) => s.setCurrentRole);
   const selectGroup = useLearningGroupStore((s) => s.selectGroup);
@@ -158,9 +168,16 @@ const ParentTeacherDashboard: React.FC = () => {
   const moveAssignmentToReview = useLearningGroupStore((s) => s.moveAssignmentToReview);
   const approveAssignment = useLearningGroupStore((s) => s.approveAssignment);
   const deleteAssignment = useLearningGroupStore((s) => (s as any).deleteAssignment);
+  const addLearningGoal = useLearningGroupStore((s) => (s as any).addLearningGoal);
+  const generateParentReport = useLearningGroupStore((s) => (s as any).generateParentReport);
   const addLearnerToGroup = useLearningGroupStore((s) => s.addLearnerToGroup);
   const giveClassPetReward = useLearningGroupStore((s) => s.giveClassPetReward);
   const setClassPet = useLearningGroupStore((s) => s.setClassPet);
+  const classrooms = useClassroomWorldStore((s) => s.classrooms);
+  const selectedClassroomId = useClassroomWorldStore((s) => s.selectedClassroomId);
+  const createClassroom = useClassroomWorldStore((s) => s.createClassroom);
+  const selectClassroom = useClassroomWorldStore((s) => s.selectClassroom);
+  const joinClassroomByCode = useClassroomWorldStore((s) => s.joinClassroomByCode);
   const studioCompanions = useStudio((s) => (s as any).companions || []);
   const studioAssets = useStudio((s) => (s as any).assets || []);
   const studioAvatars = useStudio((s) => (s as any).avatars || []);
@@ -181,11 +198,25 @@ const ParentTeacherDashboard: React.FC = () => {
   const [learnerEmoji, setLearnerEmoji] = useState("🧒");
   const [reviewAssignmentId, setReviewAssignmentId] = useState<string | null>(null);
   const [questionVariants, setQuestionVariants] = useState<Record<string, number>>({});
+  const [goalSubject, setGoalSubject] = useState(subjectOptions[0] || "Math");
+  const [goalSkill, setGoalSkill] = useState(APPROVED_SUBJECT_SKILLS[subjectOptions[0]]?.[0] || "Addition");
+  const [goalTarget, setGoalTarget] = useState("Reach 90% accuracy with this skill");
+  const [classroomName, setClassroomName] = useState("Meadow Rangers");
+  const [classroomGradeBand, setClassroomGradeBand] = useState("Grades 2-3");
+  const [classroomSubjectFocus, setClassroomSubjectFocus] = useState<ClassroomSubjectFocus>("Math");
+  const [classroomRoomTheme, setClassroomRoomTheme] = useState<ClassroomRoomTheme>("meadow");
+  const [joinCodeInput, setJoinCodeInput] = useState("MEADOW");
+  const [studentJoinName, setStudentJoinName] = useState("New student");
+  const [joinMessage, setJoinMessage] = useState("");
 
   const selectedGroup = groups.find((group) => group.id === selectedGroupId) || groups[0] || null;
+  const selectedClassroom = classrooms.find((classroom) => classroom.id === selectedClassroomId) || classrooms[0] || null;
   const groupLearners = useMemo(() => getGroupLearners(selectedGroup, learners), [selectedGroup, learners]);
   const groupAssignments = useMemo(() => getGroupAssignments(selectedGroup, assignments), [selectedGroup, assignments]);
+  const groupLearningGoals = useMemo(() => selectedGroup ? (learningGoals as LearningGoal[]).filter((goal) => goal.groupId === selectedGroup.id) : [], [selectedGroup, learningGoals]);
+  const groupParentReports = useMemo(() => selectedGroup ? (parentReports as ParentReport[]).filter((report) => report.groupId === selectedGroup.id) : [], [selectedGroup, parentReports]);
   const skillOptions = APPROVED_SUBJECT_SKILLS[assignmentSubject] || [];
+  const goalSkillOptions = APPROVED_SUBJECT_SKILLS[goalSubject] || [];
   const selectablePets = CLASS_PET_OPTIONS.filter((pet) => pet.teacherSelectable);
   const avgAccuracy = groupLearners.length ? Math.round(groupLearners.reduce((sum, learner) => sum + learner.accuracy, 0) / groupLearners.length) : 0;
   const weeklyMinutes = groupLearners.reduce((sum, learner) => sum + learner.minutesThisWeek, 0);
@@ -207,6 +238,11 @@ const ParentTeacherDashboard: React.FC = () => {
     const options = APPROVED_SUBJECT_SKILLS[assignmentSubject] || [];
     if (options.length && !options.includes(assignmentSkill)) setAssignmentSkill(options[0]);
   }, [assignmentSubject, assignmentSkill]);
+
+  useEffect(() => {
+    const options = APPROVED_SUBJECT_SKILLS[goalSubject] || [];
+    if (options.length && !options.includes(goalSkill)) setGoalSkill(options[0]);
+  }, [goalSubject, goalSkill]);
 
   const handleCreateGroup = () => {
     createGroup({ name: newGroupName, type: newGroupType, ownerRole: currentRole, gradeBand: newGroupGradeBand });
@@ -232,6 +268,28 @@ const ParentTeacherDashboard: React.FC = () => {
     if (!selectedGroup) return;
     addLearnerToGroup(selectedGroup.id, { name: learnerName, grade: learnerGrade, avatarEmoji: learnerEmoji });
     setLearnerName("New learner");
+  };
+
+  const handleAddLearningGoal = () => {
+    if (!selectedGroup) return;
+    addLearningGoal({ groupId: selectedGroup.id, subject: goalSubject, skill: goalSkill, target: goalTarget });
+    setGoalTarget("Reach 90% accuracy with this skill");
+  };
+
+  const handleCreateClassroom = () => {
+    const created = createClassroom({
+      name: classroomName,
+      gradeBand: classroomGradeBand,
+      subjectFocus: classroomSubjectFocus,
+      roomTheme: classroomRoomTheme,
+    });
+    setJoinCodeInput(created.joinCode);
+  };
+
+  const handleJoinClassroom = () => {
+    const result = joinClassroomByCode(joinCodeInput, studentJoinName);
+    setJoinMessage(result.message);
+    if (result.ok) setStudentJoinName("New student");
   };
 
   const handleOpenReview = (assignmentId: string) => {
@@ -413,6 +471,96 @@ const ParentTeacherDashboard: React.FC = () => {
                       </div>
                     </div>
                   )) : <p className="text-sm text-ink-muted">No assignments yet.</p>}
+                </div>
+              </Card>
+            </section>
+
+            <section className="grid xl:grid-cols-3 gap-5">
+              <Card>
+                <div className="flex items-center gap-2"><Target size={18} strokeWidth={3} className="text-primary" /><p className="text-xs font-extrabold uppercase tracking-widest text-ink-muted">Curriculum controls</p></div>
+                <p className="text-sm text-ink-muted mt-2">Set teacher-controlled learning goals for the selected group.</p>
+                <div className="mt-3 space-y-3">
+                  <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Subject</span><select className="input mt-1" value={goalSubject} onChange={(e) => setGoalSubject(e.target.value)}>{subjectOptions.map((subject) => <option key={subject} value={subject}>{subject}</option>)}</select></label>
+                  <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Skill</span><select className="input mt-1" value={goalSkill} onChange={(e) => setGoalSkill(e.target.value)}>{goalSkillOptions.map((skill: string) => <option key={skill} value={skill}>{skill}</option>)}</select></label>
+                  <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Goal</span><input className="input mt-1" value={goalTarget} onChange={(e) => setGoalTarget(e.target.value)} /></label>
+                  <button type="button" className="btn-primary w-full justify-center" onClick={handleAddLearningGoal} disabled={!selectedGroup}><Plus size={15} strokeWidth={3} /> Add goal</button>
+                </div>
+              </Card>
+
+              <Card>
+                <div className="flex items-center gap-2"><TrendingUp size={18} strokeWidth={3} className="text-sage" /><p className="text-xs font-extrabold uppercase tracking-widest text-ink-muted">Teacher analytics</p></div>
+                <div className="mt-3 space-y-3">
+                  {groupLearningGoals.length ? groupLearningGoals.map((goal) => (
+                    <div key={goal.id} className="rounded-3xl bg-bg border-2 border-white p-3">
+                      <p className="h-display text-lg">{goal.skill}</p>
+                      <p className="text-xs font-bold text-ink-muted">{goal.subject} · {MASTERY_LABELS[goal.masteryLevel]}</p>
+                      <p className="text-xs text-ink-muted mt-1">{goal.target}</p>
+                    </div>
+                  )) : <p className="text-sm text-ink-muted">No curriculum goals yet.</p>}
+                </div>
+              </Card>
+
+              <Card>
+                <p className="text-xs font-extrabold uppercase tracking-widest text-ink-muted">Parent reports</p>
+                <p className="text-sm text-ink-muted mt-2">Generate simple parent-facing learning summaries from learner progress.</p>
+                <div className="mt-3 space-y-3">
+                  {groupLearners.slice(0, 3).map((learner) => (
+                    <button key={learner.id} type="button" className="w-full rounded-3xl bg-bg border-2 border-white p-3 text-left hover:border-primary/40" onClick={() => selectedGroup && generateParentReport(learner.id, selectedGroup.id)}>
+                      <p className="h-display text-lg">{learner.name}</p>
+                      <p className="text-xs font-bold text-ink-muted">Generate parent snapshot</p>
+                    </button>
+                  ))}
+                  {groupParentReports.slice(0, 2).map((report) => (
+                    <div key={report.id} className="rounded-3xl bg-primary/10 border-2 border-primary/20 p-3">
+                      <p className="h-display text-lg">{report.title}</p>
+                      <p className="text-xs text-ink-muted mt-1">{report.summary}</p>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            </section>
+
+            <section className="grid xl:grid-cols-3 gap-5">
+              <Card>
+                <p className="text-xs font-extrabold uppercase tracking-widest text-primary">Classroom world model</p>
+                <h3 className="h-display text-2xl mt-2">{selectedClassroom?.name || "No classroom"}</h3>
+                <p className="text-sm font-bold text-ink-muted mt-1">Code {selectedClassroom?.joinCode || "—"} · {selectedClassroom?.gradeBand || "No grade band"}</p>
+                <p className="text-xs text-ink-muted mt-2">Room: {selectedClassroom?.roomName || "Not set"} · Theme {selectedClassroom?.roomTheme || "meadow"}</p>
+                <p className="text-xs text-ink-muted mt-1">Class pet: {selectedClassroom?.pet.name || "None"} · {selectedClassroom?.pet.xp || 0}/{selectedClassroom?.pet.xpGoal || 100} XP</p>
+                <div className="mt-3 space-y-2">
+                  {classrooms.map((classroom) => (
+                    <button key={classroom.id} type="button" onClick={() => selectClassroom(classroom.id)} className={`w-full rounded-2xl border-2 p-3 text-left ${selectedClassroom?.id === classroom.id ? "border-primary bg-primary/10" : "border-white bg-bg"}`}>
+                      <p className="h-display text-lg">{classroom.name}</p>
+                      <p className="text-xs font-bold text-ink-muted">{classroom.joinCode} · {classroom.memberIds.length} students</p>
+                    </button>
+                  ))}
+                </div>
+              </Card>
+
+              <Card>
+                <p className="text-xs font-extrabold uppercase tracking-widest text-ink-muted">Teacher class creation</p>
+                <p className="text-sm text-ink-muted mt-2">Create a persistent class with a safe join code.</p>
+                <div className="mt-3 space-y-3">
+                  <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Class name</span><input className="input mt-1" value={classroomName} onChange={(e) => setClassroomName(e.target.value)} /></label>
+                  <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Grade band</span><input className="input mt-1" value={classroomGradeBand} onChange={(e) => setClassroomGradeBand(e.target.value)} /></label>
+                  <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Subject focus</span><select className="input mt-1" value={classroomSubjectFocus} onChange={(e) => setClassroomSubjectFocus(e.target.value as ClassroomSubjectFocus)}>{CLASSROOM_SUBJECT_OPTIONS.map((subject) => <option key={subject} value={subject}>{subject}</option>)}</select></label>
+                  <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Room theme</span><select className="input mt-1" value={classroomRoomTheme} onChange={(e) => setClassroomRoomTheme(e.target.value as ClassroomRoomTheme)}>{CLASSROOM_ROOM_THEME_OPTIONS.map((theme) => <option key={theme} value={theme}>{theme[0].toUpperCase() + theme.slice(1)}</option>)}</select></label>
+                  <button type="button" className="btn-primary w-full justify-center" onClick={handleCreateClassroom}><Plus size={15} strokeWidth={3} /> Create classroom</button>
+                </div>
+              </Card>
+
+              <Card>
+                <p className="text-xs font-extrabold uppercase tracking-widest text-ink-muted">Student join class</p>
+                <p className="text-sm text-ink-muted mt-2">Test a safe student join-code flow with duplicate protection.</p>
+                <div className="mt-3 space-y-3">
+                  <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Join code</span><input className="input mt-1 uppercase" value={joinCodeInput} onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())} /></label>
+                  <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Student display name</span><input className="input mt-1" value={studentJoinName} onChange={(e) => setStudentJoinName(e.target.value)} /></label>
+                  <button type="button" className="btn-outline w-full justify-center" onClick={handleJoinClassroom}><UserPlus size={15} strokeWidth={3} /> Join classroom</button>
+                  {joinMessage && <p className="text-xs font-bold text-ink-muted">{joinMessage}</p>}
+                  <div className="rounded-3xl bg-bg border-2 border-white p-3">
+                    <p className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Roster preview</p>
+                    {(selectedClassroom?.members || []).slice(0, 4).map((member) => <p key={member.id} className="text-xs font-bold text-ink-muted mt-1">{member.displayName} · {member.status}</p>)}
+                  </div>
                 </div>
               </Card>
             </section>
