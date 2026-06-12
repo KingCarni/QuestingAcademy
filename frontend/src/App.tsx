@@ -9,6 +9,7 @@ import EggHatch from "./pages/EggHatch";
 import Collection from "./pages/Collection";
 import Academy from "./pages/Academy";
 import Parent from "./pages/Parent";
+import ParentTeacherDashboard from "./pages/ParentTeacherDashboard";
 import AdminDashboard from "./pages/AdminDashboard";
 import ContentStudio from "./pages/ContentStudio";
 import AdventureHub from "./pages/adventure/AdventureHub";
@@ -44,6 +45,8 @@ const App: React.FC = () => {
       <Route path="/collection" element={<RequirePlayer requireStarter><Collection /></RequirePlayer>} />
       <Route path="/academy" element={<RequirePlayer requireStarter><Academy /></RequirePlayer>} />
       <Route path="/parent" element={<Parent />} />
+      <Route path="/dashboard" element={<ParentTeacherDashboard />} />
+      <Route path="/admin/dashboard" element={<ParentTeacherDashboard />} />
       <Route path="/admin" element={<AdminDashboard />} />
       <Route path="/admin/studio" element={<ContentStudio />} />
       <Route path="/admin/approvals" element={<ContentStudio />} />
