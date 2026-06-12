@@ -1,22 +1,36 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { TopBar } from "../components/TopBar";
 import { Card } from "../components/Card";
 import {
+  APPROVED_SUBJECT_SKILLS,
+  ASSIGNMENT_DUE_OPTIONS,
+  ASSIGNMENT_WORK_TYPE_LABELS,
+  CLASS_PET_OPTIONS,
   EDU_MATES_ROLE_LABELS,
   LEARNING_GROUP_TYPE_LABELS,
   getGroupAssignments,
   getGroupLearners,
   useLearningGroupStore,
   type AssignmentDifficulty,
+  type AssignmentStatus,
+  type AssignmentWorkType,
   type EduMatesUserRole,
   type LearningGroupType,
 } from "../lib/learningGroupStore";
-import { BookOpen, Castle, ClipboardList, Gift, GraduationCap, Plus, Sparkles, Users } from "lucide-react";
+import { BookOpen, Castle, CheckCircle2, ClipboardList, Eye, Gift, GraduationCap, Plus, Sparkles, Users } from "lucide-react";
 
 const ROLE_OPTIONS: EduMatesUserRole[] = ["teacher", "parent", "homeschool-parent", "tutor", "admin"];
 const GROUP_TYPE_OPTIONS: LearningGroupType[] = ["classroom", "homeschool", "tutoring", "pod", "intervention"];
 const DIFFICULTY_OPTIONS: AssignmentDifficulty[] = ["gentle", "standard", "challenge"];
+const ASSIGNMENT_STATUS_LABELS: Record<AssignmentStatus, string> = {
+  draft: "Draft",
+  generated: "Generated",
+  review: "In review",
+  approved: "Approved",
+  assigned: "Assigned",
+  completed: "Completed",
+};
 
 const ParentTeacherDashboard: React.FC = () => {
   const currentRole = useLearningGroupStore((s) => s.currentRole);
@@ -28,18 +42,23 @@ const ParentTeacherDashboard: React.FC = () => {
   const selectGroup = useLearningGroupStore((s) => s.selectGroup);
   const createGroup = useLearningGroupStore((s) => s.createGroup);
   const createAssignment = useLearningGroupStore((s) => s.createAssignment);
+  const moveAssignmentToReview = useLearningGroupStore((s) => s.moveAssignmentToReview);
+  const approveAssignment = useLearningGroupStore((s) => s.approveAssignment);
   const addLearnerToGroup = useLearningGroupStore((s) => s.addLearnerToGroup);
   const giveClassPetReward = useLearningGroupStore((s) => s.giveClassPetReward);
+  const setClassPet = useLearningGroupStore((s) => s.setClassPet);
 
+  const subjectOptions = Object.keys(APPROVED_SUBJECT_SKILLS);
   const [newGroupName, setNewGroupName] = useState("New Edu-Mates Group");
   const [newGroupType, setNewGroupType] = useState<LearningGroupType>("classroom");
   const [newGroupGradeBand, setNewGroupGradeBand] = useState("Grades 2-3");
   const [assignmentTitle, setAssignmentTitle] = useState("Meadow Practice Quest");
-  const [assignmentSubject, setAssignmentSubject] = useState("Math");
-  const [assignmentSkill, setAssignmentSkill] = useState("Addition");
+  const [assignmentSubject, setAssignmentSubject] = useState(subjectOptions[0] || "Math");
+  const [assignmentSkill, setAssignmentSkill] = useState(APPROVED_SUBJECT_SKILLS[subjectOptions[0]]?.[0] || "Addition");
+  const [assignmentWorkType, setAssignmentWorkType] = useState<AssignmentWorkType>("daily-assignment");
   const [assignmentCount, setAssignmentCount] = useState(10);
   const [assignmentDifficulty, setAssignmentDifficulty] = useState<AssignmentDifficulty>("standard");
-  const [assignmentDue, setAssignmentDue] = useState("Friday");
+  const [assignmentDue, setAssignmentDue] = useState(ASSIGNMENT_DUE_OPTIONS[2] || "Friday");
   const [learnerName, setLearnerName] = useState("New learner");
   const [learnerGrade, setLearnerGrade] = useState("2");
   const [learnerEmoji, setLearnerEmoji] = useState("🧒");
@@ -47,23 +66,30 @@ const ParentTeacherDashboard: React.FC = () => {
   const selectedGroup = groups.find((group) => group.id === selectedGroupId) || groups[0] || null;
   const groupLearners = useMemo(() => getGroupLearners(selectedGroup, learners), [selectedGroup, learners]);
   const groupAssignments = useMemo(() => getGroupAssignments(selectedGroup, assignments), [selectedGroup, assignments]);
+  const skillOptions = APPROVED_SUBJECT_SKILLS[assignmentSubject] || [];
+  const selectablePets = CLASS_PET_OPTIONS.filter((pet) => pet.teacherSelectable);
   const avgAccuracy = groupLearners.length ? Math.round(groupLearners.reduce((sum, learner) => sum + learner.accuracy, 0) / groupLearners.length) : 0;
   const weeklyMinutes = groupLearners.reduce((sum, learner) => sum + learner.minutesThisWeek, 0);
-  const questsCompleted = groupLearners.reduce((sum, learner) => sum + learner.questsCompleted, 0);
   const activeAssignment = groupAssignments.find((assignment) => assignment.status === "assigned") || groupAssignments[0] || null;
+
+  useEffect(() => {
+    const options = APPROVED_SUBJECT_SKILLS[assignmentSubject] || [];
+    if (options.length && !options.includes(assignmentSkill)) setAssignmentSkill(options[0]);
+  }, [assignmentSubject, assignmentSkill]);
 
   const handleCreateGroup = () => {
     createGroup({ name: newGroupName, type: newGroupType, ownerRole: currentRole, gradeBand: newGroupGradeBand });
     setNewGroupName("New Edu-Mates Group");
   };
 
-  const handleCreateAssignment = () => {
+  const handleGenerateAssignment = () => {
     if (!selectedGroup) return;
     createAssignment({
       groupId: selectedGroup.id,
       title: assignmentTitle,
       subject: assignmentSubject,
       skill: assignmentSkill,
+      workType: assignmentWorkType,
       questionCount: assignmentCount,
       difficulty: assignmentDifficulty,
       dueLabel: assignmentDue,
@@ -132,7 +158,7 @@ const ParentTeacherDashboard: React.FC = () => {
             <Card>
               <div className="flex items-start justify-between gap-4 flex-wrap">
                 <div>
-                  <p className="text-xs font-extrabold uppercase tracking-widest text-primary">TEA-83 / 85 / 87 Dashboard Pass</p>
+                  <p className="text-xs font-extrabold uppercase tracking-widest text-primary">Dashboard overview</p>
                   <h2 className="h-display text-4xl text-ink mt-1">{selectedGroup?.name || "No group selected"}</h2>
                   <p className="text-ink-muted mt-1">{selectedGroup ? `${LEARNING_GROUP_TYPE_LABELS[selectedGroup.type]} · ${EDU_MATES_ROLE_LABELS[selectedGroup.ownerRole]} · ${selectedGroup.gradeBand}` : "Create or select a group to begin."}</p>
                 </div>
@@ -149,7 +175,7 @@ const ParentTeacherDashboard: React.FC = () => {
 
             <section className="grid xl:grid-cols-3 gap-5">
               <Card className="xl:col-span-2">
-                <p className="text-xs font-extrabold uppercase tracking-widest text-ink-muted">TEA-85 Learner progress tracking</p>
+                <p className="text-xs font-extrabold uppercase tracking-widest text-ink-muted">Learner progress tracking</p>
                 <div className="mt-3 space-y-3">
                   {groupLearners.length ? groupLearners.map((learner) => (
                     <div key={learner.id} className="rounded-3xl bg-bg border-2 border-white p-4 flex items-center gap-4">
@@ -169,16 +195,17 @@ const ParentTeacherDashboard: React.FC = () => {
                 <Card>
                   <p className="text-xs font-extrabold uppercase tracking-widest text-ink-muted">Active assignment</p>
                   <h3 className="h-display text-2xl mt-2">{activeAssignment?.title || selectedGroup?.activeQuest || "No assignment yet"}</h3>
-                  <p className="text-sm text-ink-muted mt-1">{activeAssignment ? `${activeAssignment.subject} · ${activeAssignment.skill} · Due ${activeAssignment.dueLabel}` : `Realm: ${selectedGroup?.activeRealm || "Not set"}`}</p>
+                  <p className="text-sm text-ink-muted mt-1">{activeAssignment ? `${ASSIGNMENT_WORK_TYPE_LABELS[activeAssignment.workType]} · ${activeAssignment.subject} · ${activeAssignment.skill} · Due ${activeAssignment.dueLabel}` : `Realm: ${selectedGroup?.activeRealm || "Not set"}`}</p>
                   {activeAssignment && <div className="mt-3"><div className="h-3 rounded-full bg-bg border border-white overflow-hidden"><div className="h-full bg-primary" style={{ width: `${activeAssignment.completionPercent}%` }} /></div><p className="text-xs text-ink-muted mt-1">{activeAssignment.completionPercent}% complete · {activeAssignment.averageAccuracy}% avg accuracy</p></div>}
                 </Card>
 
                 <Card>
-                  <p className="text-xs font-extrabold uppercase tracking-widest text-ink-muted">TEA-87 Class pet</p>
+                  <p className="text-xs font-extrabold uppercase tracking-widest text-ink-muted">Class pet</p>
                   <div className="mt-3 rounded-[2rem] bg-gradient-to-br from-primary/10 via-white to-gold/20 border-2 border-white p-4 text-center">
-                    <div className="text-5xl mb-2">🌱</div>
-                    <h3 className="h-display text-2xl">{selectedGroup?.classPetName || "Spriggle"}</h3>
+                    <div className="text-5xl mb-2">{selectedGroup?.classPetEmoji || "🔥"}</div>
+                    <h3 className="h-display text-2xl">{selectedGroup?.classPetName || "Embercub"}</h3>
                     <p className="text-sm font-bold text-ink-muted capitalize">Mood: {selectedGroup?.classPetMood || "focused"} · Level {selectedGroup?.classPetLevel || 1}</p>
+                    <label className="block text-left mt-3"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Teacher companion</span><select className="input mt-1" value={selectedGroup?.classPetId || "embercub"} onChange={(e) => selectedGroup && setClassPet(selectedGroup.id, e.target.value)}>{selectablePets.map((pet) => <option key={pet.id} value={pet.id}>{pet.name}</option>)}</select></label>
                     <div className="mt-3 h-3 rounded-full bg-white border border-white overflow-hidden"><div className="h-full bg-gold" style={{ width: `${selectedGroup ? Math.min(100, Math.round((selectedGroup.classPetXp / selectedGroup.classPetXpGoal) * 100)) : 0}%` }} /></div>
                     <p className="text-xs text-ink-muted mt-1">{selectedGroup?.classPetXp || 0}/{selectedGroup?.classPetXpGoal || 100} XP · {selectedGroup?.classPetTreats || 0} treats</p>
                     <button type="button" className="btn-primary !py-2 !px-4 !text-sm mt-3" onClick={() => selectedGroup && giveClassPetReward(selectedGroup.id, 15)}><Gift size={14} strokeWidth={3} /> Give class reward</button>
@@ -189,28 +216,35 @@ const ParentTeacherDashboard: React.FC = () => {
 
             <section className="grid xl:grid-cols-2 gap-5">
               <Card>
-                <p className="text-xs font-extrabold uppercase tracking-widest text-ink-muted">TEA-83 Create assignment</p>
+                <p className="text-xs font-extrabold uppercase tracking-widest text-ink-muted">Create assignment</p>
+                <p className="text-sm text-ink-muted mt-1">Generate an assignment, review it, then approve it for learners.</p>
                 <div className="mt-3 grid sm:grid-cols-2 gap-3">
                   <label className="block sm:col-span-2"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Assignment title</span><input className="input mt-1" value={assignmentTitle} onChange={(e) => setAssignmentTitle(e.target.value)} /></label>
-                  <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Subject</span><input className="input mt-1" value={assignmentSubject} onChange={(e) => setAssignmentSubject(e.target.value)} /></label>
-                  <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Skill</span><input className="input mt-1" value={assignmentSkill} onChange={(e) => setAssignmentSkill(e.target.value)} /></label>
+                  <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Work type</span><select className="input mt-1" value={assignmentWorkType} onChange={(e) => setAssignmentWorkType(e.target.value as AssignmentWorkType)}>{Object.entries(ASSIGNMENT_WORK_TYPE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+                  <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Subject</span><select className="input mt-1" value={assignmentSubject} onChange={(e) => setAssignmentSubject(e.target.value)}>{subjectOptions.map((subject) => <option key={subject} value={subject}>{subject}</option>)}</select></label>
+                  <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Skill</span><select className="input mt-1" value={assignmentSkill} onChange={(e) => setAssignmentSkill(e.target.value)}>{skillOptions.map((skill) => <option key={skill} value={skill}>{skill}</option>)}</select></label>
                   <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Questions</span><input className="input mt-1" type="number" min={1} max={50} value={assignmentCount} onChange={(e) => setAssignmentCount(Number(e.target.value))} /></label>
                   <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Difficulty</span><select className="input mt-1" value={assignmentDifficulty} onChange={(e) => setAssignmentDifficulty(e.target.value as AssignmentDifficulty)}>{DIFFICULTY_OPTIONS.map((difficulty) => <option key={difficulty} value={difficulty}>{difficulty}</option>)}</select></label>
-                  <label className="block sm:col-span-2"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Due</span><input className="input mt-1" value={assignmentDue} onChange={(e) => setAssignmentDue(e.target.value)} /></label>
-                  <button type="button" className="btn-primary justify-center sm:col-span-2" onClick={handleCreateAssignment} disabled={!selectedGroup}><ClipboardList size={16} strokeWidth={3} /> Assign to group</button>
+                  <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Due</span><select className="input mt-1" value={assignmentDue} onChange={(e) => setAssignmentDue(e.target.value)}>{ASSIGNMENT_DUE_OPTIONS.map((due) => <option key={due} value={due}>{due}</option>)}</select></label>
+                  <button type="button" className="btn-primary justify-center sm:col-span-2" onClick={handleGenerateAssignment} disabled={!selectedGroup}><Sparkles size={16} strokeWidth={3} /> Generate assignment draft</button>
                 </div>
               </Card>
 
               <Card>
-                <p className="text-xs font-extrabold uppercase tracking-widest text-ink-muted">Assignment list</p>
+                <p className="text-xs font-extrabold uppercase tracking-widest text-ink-muted">Assignment review queue</p>
                 <div className="mt-3 space-y-3">
                   {groupAssignments.length ? groupAssignments.map((assignment) => (
                     <div key={assignment.id} className="rounded-3xl bg-bg border-2 border-white p-4">
                       <div className="flex items-start justify-between gap-3">
-                        <div><p className="h-display text-xl">{assignment.title}</p><p className="text-xs font-bold text-ink-muted">{assignment.subject} · {assignment.skill} · {assignment.questionCount} questions</p></div>
-                        <span className="chip bg-primary/10 text-primary border-primary/20 capitalize">{assignment.status}</span>
+                        <div><p className="h-display text-xl">{assignment.title}</p><p className="text-xs font-bold text-ink-muted">{ASSIGNMENT_WORK_TYPE_LABELS[assignment.workType]} · {assignment.subject} · {assignment.skill} · {assignment.questionCount} questions</p></div>
+                        <span className="chip bg-primary/10 text-primary border-primary/20 capitalize">{ASSIGNMENT_STATUS_LABELS[assignment.status]}</span>
                       </div>
                       <p className="text-xs text-ink-muted mt-2">Due {assignment.dueLabel} · {assignment.difficulty} · {assignment.completionPercent}% complete</p>
+                      <p className="text-xs text-ink-muted mt-2">{assignment.generatedSummary}</p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <button type="button" className="btn-outline !py-2 !px-3 !text-xs" onClick={() => moveAssignmentToReview(assignment.id)} disabled={assignment.status === "review" || assignment.status === "approved" || assignment.status === "assigned" || assignment.status === "completed"}><Eye size={13} strokeWidth={3} /> Review</button>
+                        <button type="button" className="btn-primary !py-2 !px-3 !text-xs" onClick={() => approveAssignment(assignment.id)} disabled={assignment.status === "approved" || assignment.status === "assigned" || assignment.status === "completed"}><CheckCircle2 size={13} strokeWidth={3} /> Approve</button>
+                      </div>
                     </div>
                   )) : <p className="text-sm text-ink-muted">No assignments yet.</p>}
                 </div>
@@ -220,7 +254,7 @@ const ParentTeacherDashboard: React.FC = () => {
             <Card>
               <p className="text-xs font-extrabold uppercase tracking-widest text-ink-muted">Quick actions</p>
               <div className="mt-3 grid sm:grid-cols-2 xl:grid-cols-4 gap-3">
-                <QuickAction icon={<ClipboardList size={18} strokeWidth={3} />} title="Create assignment" sub="TEA-83 active" />
+                <QuickAction icon={<ClipboardList size={18} strokeWidth={3} />} title="Create assignment" sub="Generate / review / approve" />
                 <QuickAction icon={<Users size={18} strokeWidth={3} />} title="Add learner" sub="Roster v1" onClick={handleAddLearner} />
                 <QuickAction icon={<Gift size={18} strokeWidth={3} />} title="Give reward" sub="Class pet XP" onClick={() => selectedGroup && giveClassPetReward(selectedGroup.id, 15)} />
                 <QuickAction icon={<Castle size={18} strokeWidth={3} />} title="Open classroom world" sub="Edu-Mates realm" to="/adventure/realms" />
