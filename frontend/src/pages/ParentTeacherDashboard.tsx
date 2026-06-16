@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { TopBar } from "../components/TopBar";
 import { Card } from "../components/Card";
 import { useStudio } from "../lib/studioStore";
-import { useClassroomWorldStore, CLASSROOM_SUBJECT_OPTIONS, CLASSROOM_ROOM_THEME_OPTIONS, CLASSROOM_GRADE_BAND_OPTIONS, CLASSROOM_ROOM_THEME_LABELS, type ClassroomRoomTheme, type ClassroomSubjectFocus } from "../lib/classroomWorldStore";
+import { useClassroomWorldStore, CLASSROOM_SUBJECT_OPTIONS, CLASSROOM_ROOM_THEME_OPTIONS, type ClassroomRoomTheme, type ClassroomSubjectFocus } from "../lib/classroomWorldStore";
 import {
   APPROVED_SUBJECT_SKILLS,
   ASSIGNMENT_DUE_OPTIONS,
@@ -23,7 +23,7 @@ import {
   type MasteryLevel,
   type ParentReport,
 } from "../lib/learningGroupStore";
-import { BookOpen, Castle, CheckCircle2, ClipboardList, Copy, Eye, Gift, GraduationCap, Plus, RefreshCw, Sparkles, Target, TrendingUp, Users, X, UserPlus } from "lucide-react";
+import { BookOpen, Castle, CheckCircle2, ClipboardList, Eye, Gift, GraduationCap, Plus, RefreshCw, Sparkles, Target, TrendingUp, Users, X, UserPlus } from "lucide-react";
 
 const ROLE_OPTIONS: EduMatesUserRole[] = ["teacher", "parent", "homeschool-parent", "tutor", "admin"];
 const GROUP_TYPE_OPTIONS: LearningGroupType[] = ["classroom", "homeschool", "tutoring", "pod", "intervention"];
@@ -153,6 +153,24 @@ const findClassPetAsset = (petId: string, petName: string, collections: any[][])
   return dedupedMatches.find(hasImage) || dedupedMatches[0] || null;
 };
 
+const DASHBOARD_TABS = [
+  "Groups",
+  "Student Progress",
+  "Class Pet",
+  "Assignments",
+  "Curriculum",
+  "Analytics",
+  "Parent Reports",
+  "Classroom Hub",
+] as const;
+
+type DashboardTab = typeof DASHBOARD_TABS[number];
+
+const PARENT_TABS = ["Children", "Progress", "Assignments", "Reports", "Rewards"] as const;
+type ParentDashboardTab = typeof PARENT_TABS[number];
+
+const GRADE_BAND_OPTIONS = ["Grades K-1", "Grades 2-3", "Grades 4-5", "Grades 6-8", "Mixed grades"];
+
 const ParentTeacherDashboard: React.FC = () => {
   const currentRole = useLearningGroupStore((s) => s.currentRole);
   const groups = useLearningGroupStore((s) => s.groups);
@@ -174,17 +192,17 @@ const ParentTeacherDashboard: React.FC = () => {
   const giveClassPetReward = useLearningGroupStore((s) => s.giveClassPetReward);
   const setClassPet = useLearningGroupStore((s) => s.setClassPet);
   const classrooms = useClassroomWorldStore((s) => s.classrooms);
-  const classroomMembers = useClassroomWorldStore((s) => s.members);
   const selectedClassroomId = useClassroomWorldStore((s) => s.selectedClassroomId);
   const createClassroom = useClassroomWorldStore((s) => s.createClassroom);
   const selectClassroom = useClassroomWorldStore((s) => s.selectClassroom);
   const joinClassroomByCode = useClassroomWorldStore((s) => s.joinClassroomByCode);
-  const copyJoinCode = useClassroomWorldStore((s) => s.copyJoinCode);
   const studioCompanions = useStudio((s) => (s as any).companions || []);
   const studioAssets = useStudio((s) => (s as any).assets || []);
   const studioAvatars = useStudio((s) => (s as any).avatars || []);
 
   const subjectOptions = Object.keys(APPROVED_SUBJECT_SKILLS);
+  const [teacherTab, setTeacherTab] = useState<DashboardTab>("Groups");
+  const [parentTab, setParentTab] = useState<ParentDashboardTab>("Children");
   const [newGroupName, setNewGroupName] = useState("New Edu-Mates Group");
   const [newGroupType, setNewGroupType] = useState<LearningGroupType>("classroom");
   const [newGroupGradeBand, setNewGroupGradeBand] = useState("Grades 2-3");
@@ -207,14 +225,13 @@ const ParentTeacherDashboard: React.FC = () => {
   const [classroomGradeBand, setClassroomGradeBand] = useState("Grades 2-3");
   const [classroomSubjectFocus, setClassroomSubjectFocus] = useState<ClassroomSubjectFocus>("Math");
   const [classroomRoomTheme, setClassroomRoomTheme] = useState<ClassroomRoomTheme>("meadow");
-  const [joinCodeInput, setJoinCodeInput] = useState("MEADOW");
+  const [joinCodeInput, setJoinCodeInput] = useState("");
   const [studentJoinName, setStudentJoinName] = useState("New student");
   const [joinMessage, setJoinMessage] = useState("");
-  const [copyMessage, setCopyMessage] = useState("");
 
   const selectedGroup = groups.find((group) => group.id === selectedGroupId) || groups[0] || null;
   const selectedClassroom = classrooms.find((classroom) => classroom.id === selectedClassroomId) || classrooms[0] || null;
-  const selectedClassroomMembers = selectedClassroom ? classroomMembers.filter((member) => selectedClassroom.memberIds.includes(member.id)) : [];
+  const selectedClassroomMembers = selectedClassroom?.members || [];
   const groupLearners = useMemo(() => getGroupLearners(selectedGroup, learners), [selectedGroup, learners]);
   const groupAssignments = useMemo(() => getGroupAssignments(selectedGroup, assignments), [selectedGroup, assignments]);
   const groupLearningGoals = useMemo(() => selectedGroup ? (learningGoals as LearningGoal[]).filter((goal) => goal.groupId === selectedGroup.id) : [], [selectedGroup, learningGoals]);
@@ -247,6 +264,9 @@ const ParentTeacherDashboard: React.FC = () => {
     const options = APPROVED_SUBJECT_SKILLS[goalSubject] || [];
     if (options.length && !options.includes(goalSkill)) setGoalSkill(options[0]);
   }, [goalSubject, goalSkill]);
+
+  const isTeacherDashboard = currentRole === "teacher" || currentRole === "tutor" || currentRole === "admin";
+  const dashboardTitle = isTeacherDashboard ? "Teacher Dashboard" : "Parent Dashboard";
 
   const handleCreateGroup = () => {
     createGroup({ name: newGroupName, type: newGroupType, ownerRole: currentRole, gradeBand: newGroupGradeBand });
@@ -287,20 +307,8 @@ const ParentTeacherDashboard: React.FC = () => {
       subjectFocus: classroomSubjectFocus,
       roomTheme: classroomRoomTheme,
     });
-    setJoinCodeInput(created.joinCode);
-    setClassroomName("Meadow Rangers");
-    setCopyMessage(`Created ${created.name} with code ${created.joinCode}.`);
-  };
-
-  const handleCopyJoinCode = async () => {
-    if (!selectedClassroom) return;
-    const code = copyJoinCode(selectedClassroom.id);
-    try {
-      await navigator.clipboard?.writeText(code);
-      setCopyMessage(`Copied ${code}.`);
-    } catch {
-      setCopyMessage(`Code ${code} ready to copy.`);
-    }
+    selectClassroom(created.id);
+    setJoinCodeInput("");
   };
 
   const handleJoinClassroom = () => {
@@ -337,6 +345,262 @@ const ParentTeacherDashboard: React.FC = () => {
     deleteAssignment(assignmentId);
   };
 
+  const groupPicker = (
+    <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-3">
+      {groups.map((group) => (
+        <button type="button" key={group.id} onClick={() => selectGroup(group.id)} className={`rounded-3xl border-2 p-4 text-left transition ${selectedGroup?.id === group.id ? "border-primary bg-primary/10" : "border-white bg-bg hover:border-primary/30"}`}>
+          <p className="h-display text-xl">{group.name}</p>
+          <p className="text-xs font-bold text-ink-muted">{LEARNING_GROUP_TYPE_LABELS[group.type]} · {group.gradeBand}</p>
+        </button>
+      ))}
+    </div>
+  );
+
+  const learnerProgressPanel = (
+    <div className="grid lg:grid-cols-2 gap-4">
+      {groupLearners.length ? groupLearners.map((learner) => (
+        <div key={learner.id} className="rounded-3xl bg-bg border-2 border-white p-4 flex items-center gap-4">
+          <div className="w-12 h-12 rounded-2xl bg-white grid place-items-center text-2xl shadow-inner">{learner.avatarEmoji}</div>
+          <div className="min-w-0 flex-1">
+            <p className="h-display text-xl truncate">{learner.name}</p>
+            <p className="text-xs font-bold text-ink-muted">Grade {learner.grade} · {learner.lastActiveLabel} · {learner.streakDays} day streak</p>
+            <p className="text-[10px] font-bold text-ink-muted truncate">Support: {learner.needsSupport.length ? learner.needsSupport.join(", ") : "none flagged"}</p>
+          </div>
+          <div className="text-right"><p className="h-display text-2xl text-primary">{learner.accuracy}%</p><p className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">accuracy</p></div>
+        </div>
+      )) : <p className="text-sm text-ink-muted">No learners assigned yet.</p>}
+    </div>
+  );
+
+  const classPetPanel = (
+    <div className="grid lg:grid-cols-[18rem_1fr] gap-5">
+      <div className="rounded-[2rem] bg-gradient-to-br from-primary/10 via-white to-gold/20 border-2 border-white p-5 text-center">
+        {selectedPetImageUrl ? (
+          <div className="mx-auto mb-3 w-32 h-32 rounded-[2rem] bg-white/80 border-2 border-white shadow-inner p-2 grid place-items-center overflow-hidden">
+            <img src={selectedPetImageUrl} alt={selectedPetName} className="max-w-full max-h-full object-contain drop-shadow-sm" />
+          </div>
+        ) : <div className="text-5xl mb-2">{selectedGroup?.classPetEmoji || "🔥"}</div>}
+        <h3 className="h-display text-3xl">{selectedPetName}</h3>
+        <p className="text-sm font-bold text-ink-muted capitalize">Mood: {selectedGroup?.classPetMood || "focused"} · Level {selectedGroup?.classPetLevel || 1}</p>
+      </div>
+      <div className="space-y-3">
+        <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Teacher companion</span><select className="input mt-1" value={selectedGroup?.classPetId || "embercub"} onChange={(e) => selectedGroup && setClassPet(selectedGroup.id, e.target.value)}>{selectablePets.map((pet) => <option key={pet.id} value={pet.id}>{pet.name}</option>)}</select></label>
+        <div className="h-3 rounded-full bg-bg border border-white overflow-hidden"><div className="h-full bg-gold" style={{ width: `${selectedGroup ? Math.min(100, Math.round((selectedGroup.classPetXp / selectedGroup.classPetXpGoal) * 100)) : 0}%` }} /></div>
+        <p className="text-xs text-ink-muted">{selectedGroup?.classPetXp || 0}/{selectedGroup?.classPetXpGoal || 100} XP · {selectedGroup?.classPetTreats || 0} treats</p>
+        <button type="button" className="btn-primary" onClick={() => selectedGroup && giveClassPetReward(selectedGroup.id, 15)}><Gift size={14} strokeWidth={3} /> Give class reward</button>
+      </div>
+    </div>
+  );
+
+  const assignmentsPanel = (
+    <div className="grid xl:grid-cols-2 gap-5">
+      <div className="rounded-[2rem] bg-bg border-2 border-white p-4">
+        <p className="text-xs font-extrabold uppercase tracking-widest text-ink-muted">Create assignment</p>
+        <div className="mt-3 grid sm:grid-cols-2 gap-3">
+          <label className="block sm:col-span-2"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Assignment title</span><input className="input mt-1" value={assignmentTitle} onChange={(e) => setAssignmentTitle(e.target.value)} /></label>
+          <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Work type</span><select className="input mt-1" value={assignmentWorkType} onChange={(e) => setAssignmentWorkType(e.target.value as AssignmentWorkType)}>{Object.entries(ASSIGNMENT_WORK_TYPE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+          <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Subject</span><select className="input mt-1" value={assignmentSubject} onChange={(e) => setAssignmentSubject(e.target.value)}>{subjectOptions.map((subject) => <option key={subject} value={subject}>{subject}</option>)}</select></label>
+          <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Skill</span><select className="input mt-1" value={assignmentSkill} onChange={(e) => setAssignmentSkill(e.target.value)}>{skillOptions.map((skill) => <option key={skill} value={skill}>{skill}</option>)}</select></label>
+          <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Questions</span><input className="input mt-1" type="number" min={1} max={50} value={assignmentCount} onChange={(e) => setAssignmentCount(Number(e.target.value))} /></label>
+          <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Difficulty</span><select className="input mt-1" value={assignmentDifficulty} onChange={(e) => setAssignmentDifficulty(e.target.value as AssignmentDifficulty)}>{DIFFICULTY_OPTIONS.map((difficulty) => <option key={difficulty} value={difficulty}>{difficulty}</option>)}</select></label>
+          <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Due</span><select className="input mt-1" value={assignmentDue} onChange={(e) => setAssignmentDue(e.target.value)}>{ASSIGNMENT_DUE_OPTIONS.map((due) => <option key={due} value={due}>{due}</option>)}</select></label>
+          <button type="button" className="btn-primary justify-center sm:col-span-2" onClick={handleGenerateAssignment} disabled={!selectedGroup}><Sparkles size={16} strokeWidth={3} /> Generate assignment draft</button>
+        </div>
+      </div>
+      <div className="space-y-3">
+        {groupAssignments.length ? groupAssignments.map((assignment) => (
+          <div key={assignment.id} className="rounded-3xl bg-bg border-2 border-white p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div><p className="h-display text-xl">{assignment.title}</p><p className="text-xs font-bold text-ink-muted">{ASSIGNMENT_WORK_TYPE_LABELS[assignment.workType]} · {assignment.subject} · {assignment.skill} · {assignment.questionCount} questions</p></div>
+              <span className="chip bg-primary/10 text-primary border-primary/20 capitalize">{ASSIGNMENT_STATUS_LABELS[assignment.status]}</span>
+            </div>
+            <p className="text-xs text-ink-muted mt-2">Due {assignment.dueLabel} · {assignment.difficulty} · {assignment.completionPercent}% complete</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button type="button" className="btn-outline !py-2 !px-3 !text-xs" onClick={() => handleOpenReview(assignment.id)} disabled={assignment.status === "review" || assignment.status === "approved" || assignment.status === "assigned" || assignment.status === "completed"}><Eye size={13} strokeWidth={3} /> Review</button>
+              <button type="button" className="btn-primary !py-2 !px-3 !text-xs" onClick={() => approveAssignment(assignment.id)} disabled={assignment.status === "approved" || assignment.status === "assigned" || assignment.status === "completed"}><CheckCircle2 size={13} strokeWidth={3} /> Approve</button>
+              <button type="button" className="btn-outline !py-2 !px-3 !text-xs !text-red-500 hover:!border-red-300" onClick={() => handleDeleteAssignment(assignment.id)}>Delete</button>
+            </div>
+          </div>
+        )) : <p className="text-sm text-ink-muted">No assignments yet.</p>}
+      </div>
+    </div>
+  );
+
+  const curriculumPanel = (
+    <div className="grid xl:grid-cols-2 gap-5">
+      <div className="rounded-[2rem] bg-bg border-2 border-white p-4 space-y-3">
+        <p className="text-xs font-extrabold uppercase tracking-widest text-ink-muted">Curriculum controls</p>
+        <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Subject</span><select className="input mt-1" value={goalSubject} onChange={(e) => setGoalSubject(e.target.value)}>{subjectOptions.map((subject) => <option key={subject} value={subject}>{subject}</option>)}</select></label>
+        <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Skill</span><select className="input mt-1" value={goalSkill} onChange={(e) => setGoalSkill(e.target.value)}>{goalSkillOptions.map((skill: string) => <option key={skill} value={skill}>{skill}</option>)}</select></label>
+        <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Goal</span><input className="input mt-1" value={goalTarget} onChange={(e) => setGoalTarget(e.target.value)} /></label>
+        <button type="button" className="btn-primary w-full justify-center" onClick={handleAddLearningGoal} disabled={!selectedGroup}><Plus size={15} strokeWidth={3} /> Add goal</button>
+      </div>
+      <div className="space-y-3">
+        {groupLearningGoals.length ? groupLearningGoals.map((goal) => (
+          <div key={goal.id} className="rounded-3xl bg-bg border-2 border-white p-3">
+            <p className="h-display text-lg">{goal.skill}</p>
+            <p className="text-xs font-bold text-ink-muted">{goal.subject} · {MASTERY_LABELS[goal.masteryLevel]}</p>
+            <p className="text-xs text-ink-muted mt-1">{goal.target}</p>
+          </div>
+        )) : <p className="text-sm text-ink-muted">No curriculum goals yet.</p>}
+      </div>
+    </div>
+  );
+
+  const parentReportsPanel = (
+    <div className="grid lg:grid-cols-2 gap-4">
+      <div className="space-y-3">
+        {groupLearners.map((learner) => (
+          <button key={learner.id} type="button" className="w-full rounded-3xl bg-bg border-2 border-white p-3 text-left hover:border-primary/40" onClick={() => selectedGroup && generateParentReport(learner.id, selectedGroup.id)}>
+            <p className="h-display text-lg">{learner.name}</p>
+            <p className="text-xs font-bold text-ink-muted">Generate parent snapshot</p>
+          </button>
+        ))}
+      </div>
+      <div className="space-y-3">
+        {groupParentReports.length ? groupParentReports.map((report) => (
+          <div key={report.id} className="rounded-3xl bg-primary/10 border-2 border-primary/20 p-3">
+            <p className="h-display text-lg">{report.title}</p>
+            <p className="text-xs text-ink-muted mt-1">{report.summary}</p>
+          </div>
+        )) : <p className="text-sm text-ink-muted">No reports generated yet.</p>}
+      </div>
+    </div>
+  );
+
+  const classroomHubPanel = (
+    <div className="grid xl:grid-cols-[1fr_22rem] gap-5">
+      <div className="space-y-4">
+        <div className="rounded-[2rem] bg-gradient-to-br from-primary/10 via-white to-gold/10 border-2 border-primary/20 p-5">
+          <div className="flex flex-wrap justify-between gap-4">
+            <div>
+              <p className="text-xs font-extrabold uppercase tracking-widest text-primary">Selected classroom</p>
+              <h3 className="h-display text-4xl">{selectedClassroom?.name || "No classroom selected"}</h3>
+              <p className="text-sm font-bold text-ink-muted mt-1">{selectedClassroom ? `${selectedClassroom.gradeBand} · ${selectedClassroom.subjectFocus.join(", ")} · ${selectedClassroomMembers.length} students` : "Create or select a classroom."}</p>
+            </div>
+            <div className="rounded-3xl bg-white border-2 border-white px-5 py-4 min-w-[13rem] shadow-inner">
+              <p className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Teacher join code</p>
+              <div className="flex items-center gap-2 mt-1">
+                <p className="h-display text-3xl text-primary">{selectedClassroom?.joinCode || "—"}</p>
+                <button type="button" className="btn-outline !py-2 !px-3 !text-xs" onClick={() => selectedClassroom?.joinCode && navigator.clipboard?.writeText(selectedClassroom.joinCode)} disabled={!selectedClassroom}>Copy</button>
+              </div>
+              <p className="text-[10px] text-ink-muted mt-2">Shown once for the selected class. Students enter codes in their join screen.</p>
+            </div>
+          </div>
+        </div>
+        <div className="grid md:grid-cols-2 gap-4">
+          <div className="rounded-[2rem] bg-bg border-2 border-white p-4">
+            <p className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Classrooms</p>
+            <div className="mt-3 space-y-2">
+              {classrooms.map((classroom) => (
+                <button key={classroom.id} type="button" onClick={() => selectClassroom(classroom.id)} className={`w-full rounded-2xl border-2 p-3 text-left transition ${selectedClassroom?.id === classroom.id ? "border-primary bg-primary/10" : "border-white bg-white hover:border-primary/30"}`}>
+                  <p className="h-display text-lg">{classroom.name}</p>
+                  <p className="text-xs font-bold text-ink-muted">{classroom.gradeBand} · {classroom.memberIds.length} students</p>
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="rounded-[2rem] bg-bg border-2 border-white p-4">
+            <p className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Roster</p>
+            <div className="mt-3 space-y-2">
+              {selectedClassroomMembers.length ? selectedClassroomMembers.map((member: any) => (
+                <div key={member.id} className="rounded-2xl bg-white border-2 border-white p-3">
+                  <p className="h-display text-lg">{member.displayName}</p>
+                  <p className="text-xs font-bold text-ink-muted capitalize">{member.status} · {member.role}</p>
+                </div>
+              )) : <p className="text-sm text-ink-muted">No students have joined this classroom yet.</p>}
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="space-y-4">
+        <div className="rounded-[2rem] bg-bg border-2 border-white p-4">
+          <p className="text-xs font-extrabold uppercase tracking-widest text-ink-muted">Create classroom</p>
+          <div className="mt-3 space-y-3">
+            <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Class name</span><input className="input mt-1" value={classroomName} onChange={(e) => setClassroomName(e.target.value)} /></label>
+            <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Grade band</span><select className="input mt-1" value={classroomGradeBand} onChange={(e) => setClassroomGradeBand(e.target.value)}>{GRADE_BAND_OPTIONS.map((band) => <option key={band} value={band}>{band}</option>)}</select></label>
+            <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Subject focus</span><select className="input mt-1" value={classroomSubjectFocus} onChange={(e) => setClassroomSubjectFocus(e.target.value as ClassroomSubjectFocus)}>{CLASSROOM_SUBJECT_OPTIONS.map((subject: ClassroomSubjectFocus) => <option key={subject} value={subject}>{subject}</option>)}</select></label>
+            <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Room theme</span><select className="input mt-1" value={classroomRoomTheme} onChange={(e) => setClassroomRoomTheme(e.target.value as ClassroomRoomTheme)}>{CLASSROOM_ROOM_THEME_OPTIONS.map((theme: ClassroomRoomTheme) => <option key={theme} value={theme}>{theme[0].toUpperCase() + theme.slice(1)}</option>)}</select></label>
+            <button type="button" className="btn-primary w-full justify-center" onClick={handleCreateClassroom}><Plus size={15} strokeWidth={3} /> Create classroom</button>
+          </div>
+        </div>
+        <div className="rounded-[2rem] bg-bg border-2 border-white p-4">
+          <p className="text-xs font-extrabold uppercase tracking-widest text-ink-muted">Student join simulator</p>
+          <p className="text-xs text-ink-muted mt-1">For QA only. The real student join flow should live outside the teacher dashboard.</p>
+          <div className="mt-3 space-y-3">
+            <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Join code</span><input className="input mt-1 uppercase" value={joinCodeInput} onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())} placeholder="Enter class code" /></label>
+            <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Student name</span><input className="input mt-1" value={studentJoinName} onChange={(e) => setStudentJoinName(e.target.value)} /></label>
+            <button type="button" className="btn-outline w-full justify-center" onClick={handleJoinClassroom}><UserPlus size={15} strokeWidth={3} /> Join classroom</button>
+            {joinMessage && <p className="text-xs font-bold text-ink-muted">{joinMessage}</p>}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderTeacherTab = () => {
+    switch (teacherTab) {
+      case "Groups":
+        return (
+          <div className="space-y-5">
+            {groupPicker}
+            <div className="rounded-[2rem] bg-bg border-2 border-white p-4 grid md:grid-cols-4 gap-3">
+              <input className="input md:col-span-2" value={newGroupName} onChange={(e) => setNewGroupName(e.target.value)} />
+              <select className="input" value={newGroupType} onChange={(e) => setNewGroupType(e.target.value as LearningGroupType)}>{GROUP_TYPE_OPTIONS.map((type) => <option key={type} value={type}>{LEARNING_GROUP_TYPE_LABELS[type]}</option>)}</select>
+              <button type="button" className="btn-primary justify-center" onClick={handleCreateGroup}><Plus size={15} strokeWidth={3} /> Create group</button>
+            </div>
+          </div>
+        );
+      case "Student Progress":
+        return learnerProgressPanel;
+      case "Class Pet":
+        return classPetPanel;
+      case "Assignments":
+        return assignmentsPanel;
+      case "Curriculum":
+        return curriculumPanel;
+      case "Analytics":
+        return (
+          <div className="grid md:grid-cols-3 gap-4">
+            <DashboardStat icon={<Users className="text-primary" strokeWidth={3} />} label="Learners" value={String(groupLearners.length)} />
+            <DashboardStat icon={<BookOpen className="text-sage" strokeWidth={3} />} label="Avg accuracy" value={`${avgAccuracy}%`} />
+            <DashboardStat icon={<GraduationCap className="text-gold" strokeWidth={3} />} label="Weekly minutes" value={`${weeklyMinutes}m`} />
+          </div>
+        );
+      case "Parent Reports":
+        return parentReportsPanel;
+      case "Classroom Hub":
+        return classroomHubPanel;
+      default:
+        return groupPicker;
+    }
+  };
+
+  const renderParentTab = () => {
+    switch (parentTab) {
+      case "Children":
+      case "Progress":
+        return learnerProgressPanel;
+      case "Assignments":
+        return (
+          <div className="space-y-3">
+            {groupAssignments.map((assignment) => (
+              <div key={assignment.id} className="rounded-3xl bg-bg border-2 border-white p-4">
+                <p className="h-display text-xl">{assignment.title}</p>
+                <p className="text-xs font-bold text-ink-muted">{assignment.subject} · {assignment.skill} · Due {assignment.dueLabel}</p>
+              </div>
+            ))}
+          </div>
+        );
+      case "Reports":
+        return parentReportsPanel;
+      case "Rewards":
+        return classPetPanel;
+      default:
+        return learnerProgressPanel;
+    }
+  };
+
   return (
     <div className="min-h-screen pb-16">
       <TopBar back="/" title="Edu-Mates Dashboard" />
@@ -344,59 +608,47 @@ const ParentTeacherDashboard: React.FC = () => {
         <Card>
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div>
-              <p className="text-xs font-extrabold uppercase tracking-widest text-primary">Parent / Teacher Command Center</p>
-              <h1 className="h-display text-4xl md:text-5xl text-ink mt-1">Learning groups for Edu-Mates</h1>
-              <p className="text-ink-muted mt-2 max-w-3xl">Manage classrooms, homeschool rooms, tutoring pods, assignments, learner progress, and class pets from one shared dashboard model.</p>
+              <p className="text-xs font-extrabold uppercase tracking-widest text-primary">Role-based dashboard shell</p>
+              <h1 className="h-display text-4xl md:text-5xl text-ink mt-1">{dashboardTitle}</h1>
+              <p className="text-ink-muted mt-2 max-w-3xl">Select a role, then work inside focused tabs instead of one long stream of unrelated tools.</p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Link to="/adventure" className="btn-outline !text-sm !py-2 !px-4"><Castle size={15} strokeWidth={3} /> Open learner world</Link>
+              <Link to="/adventure" className="btn-outline !text-sm !py-2 !px-4"><Castle size={15} strokeWidth={3} /> Learner world</Link>
               <Link to="/admin/studio" className="btn-primary !text-sm !py-2 !px-4"><Sparkles size={15} strokeWidth={3} /> Content Studio</Link>
             </div>
           </div>
         </Card>
 
-        <section className="grid lg:grid-cols-[20rem_1fr] gap-5">
+        <section className="grid lg:grid-cols-[18rem_1fr] gap-5">
           <aside className="space-y-5">
             <Card>
-              <p className="text-xs font-extrabold uppercase tracking-widest text-ink-muted">Current role</p>
+              <p className="text-xs font-extrabold uppercase tracking-widest text-ink-muted">Select role</p>
               <select className="input mt-2" value={currentRole} onChange={(e) => setCurrentRole(e.target.value as EduMatesUserRole)} data-testid="dashboard-role-select">
                 {ROLE_OPTIONS.map((role) => <option key={role} value={role}>{EDU_MATES_ROLE_LABELS[role]}</option>)}
               </select>
-              <p className="text-xs text-ink-muted mt-2">Role-aware dashboard labels without auth yet.</p>
+              <p className="text-xs text-ink-muted mt-2">{isTeacherDashboard ? "Teacher tools are enabled." : "Parent-facing view is enabled."}</p>
             </Card>
 
             <Card>
-              <div className="flex items-center gap-2 mb-3"><Users size={18} strokeWidth={3} className="text-primary" /><p className="text-xs font-extrabold uppercase tracking-widest text-ink-muted">Learning groups</p></div>
-              <div className="space-y-2">
-                {groups.map((group) => (
-                  <button type="button" key={group.id} onClick={() => selectGroup(group.id)} className={`w-full text-left rounded-2xl border-2 p-3 transition ${selectedGroup?.id === group.id ? "border-primary bg-primary/10" : "border-white bg-bg hover:border-primary/30"}`} data-testid={`dashboard-group-${group.id}`}>
-                    <p className="h-display text-lg truncate">{group.name}</p>
-                    <p className="text-xs font-bold text-ink-muted">{LEARNING_GROUP_TYPE_LABELS[group.type]} · {group.gradeBand}</p>
-                  </button>
-                ))}
-              </div>
-            </Card>
-
-            <Card>
-              <div className="flex items-center gap-2 mb-3"><Plus size={18} strokeWidth={3} className="text-primary" /><p className="text-xs font-extrabold uppercase tracking-widest text-ink-muted">Create group</p></div>
-              <div className="space-y-3">
-                <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Group name</span><input className="input mt-1" value={newGroupName} onChange={(e) => setNewGroupName(e.target.value)} data-testid="dashboard-new-group-name" /></label>
-                <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Group type</span><select className="input mt-1" value={newGroupType} onChange={(e) => setNewGroupType(e.target.value as LearningGroupType)}>{GROUP_TYPE_OPTIONS.map((type) => <option key={type} value={type}>{LEARNING_GROUP_TYPE_LABELS[type]}</option>)}</select></label>
-                <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Grade band</span><select className="input mt-1" value={newGroupGradeBand} onChange={(e) => setNewGroupGradeBand(e.target.value)}>{CLASSROOM_GRADE_BAND_OPTIONS.map((grade) => <option key={grade} value={grade}>{grade}</option>)}</select></label>
-                <button type="button" className="btn-primary w-full justify-center" onClick={handleCreateGroup} data-testid="dashboard-create-group"><Plus size={16} strokeWidth={3} /> Create group</button>
-              </div>
+              <p className="text-xs font-extrabold uppercase tracking-widest text-ink-muted">Selected group</p>
+              <h2 className="h-display text-2xl mt-2">{selectedGroup?.name || "No group"}</h2>
+              <p className="text-xs font-bold text-ink-muted mt-1">{selectedGroup ? `${LEARNING_GROUP_TYPE_LABELS[selectedGroup.type]} · ${selectedGroup.gradeBand}` : "Choose a group in the Groups tab."}</p>
             </Card>
           </aside>
 
           <section className="space-y-5">
             <Card>
-              <div className="flex items-start justify-between gap-4 flex-wrap">
+              <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <p className="text-xs font-extrabold uppercase tracking-widest text-primary">Dashboard overview</p>
-                  <h2 className="h-display text-4xl text-ink mt-1">{selectedGroup?.name || "No group selected"}</h2>
-                  <p className="text-ink-muted mt-1">{selectedGroup ? `${LEARNING_GROUP_TYPE_LABELS[selectedGroup.type]} · ${EDU_MATES_ROLE_LABELS[selectedGroup.ownerRole]} · ${selectedGroup.gradeBand}` : "Create or select a group to begin."}</p>
+                  <p className="text-xs font-extrabold uppercase tracking-widest text-primary">Quick actions</p>
+                  <h2 className="h-display text-3xl">{selectedGroup?.name || "Dashboard"}</h2>
                 </div>
-                {selectedGroup && <span className="chip border-primary/30 bg-primary/10 text-primary capitalize">{selectedGroup.status}</span>}
+                <div className="flex flex-wrap gap-2">
+                  {isTeacherDashboard && <button type="button" className="btn-primary !py-2 !px-4 !text-sm border-2 border-primary" onClick={() => setTeacherTab("Assignments")}><ClipboardList size={15} strokeWidth={3} /> Assignments</button>}
+                  {isTeacherDashboard && <button type="button" className="btn-outline !py-2 !px-4 !text-sm !border-primary/35 hover:!border-primary/70" onClick={() => setTeacherTab("Classroom Hub")}><Castle size={15} strokeWidth={3} /> Classroom Hub</button>}
+                  <button type="button" className="btn-outline !py-2 !px-4 !text-sm !border-primary/35 hover:!border-primary/70" onClick={handleAddLearner}><Users size={15} strokeWidth={3} /> Add learner</button>
+                  <button type="button" className="btn-outline !py-2 !px-4 !text-sm !border-primary/35 hover:!border-primary/70" onClick={() => selectedGroup && giveClassPetReward(selectedGroup.id, 15)}><Gift size={15} strokeWidth={3} /> Reward</button>
+                </div>
               </div>
             </Card>
 
@@ -407,217 +659,16 @@ const ParentTeacherDashboard: React.FC = () => {
               <DashboardStat icon={<ClipboardList className="text-fire" strokeWidth={3} />} label="Assignments" value={String(groupAssignments.length)} />
             </section>
 
-            <section className="grid xl:grid-cols-3 gap-5">
-              <Card className="xl:col-span-2">
-                <p className="text-xs font-extrabold uppercase tracking-widest text-ink-muted">Learner progress tracking</p>
-                <div className="mt-3 space-y-3">
-                  {groupLearners.length ? groupLearners.map((learner) => (
-                    <div key={learner.id} className="rounded-3xl bg-bg border-2 border-white p-4 flex items-center gap-4">
-                      <div className="w-12 h-12 rounded-2xl bg-white grid place-items-center text-2xl shadow-inner">{learner.avatarEmoji}</div>
-                      <div className="min-w-0 flex-1">
-                        <p className="h-display text-xl truncate">{learner.name}</p>
-                        <p className="text-xs font-bold text-ink-muted">Grade {learner.grade} · {learner.lastActiveLabel} · {learner.streakDays} day streak</p>
-                        <p className="text-[10px] font-bold text-ink-muted truncate">Support: {learner.needsSupport.length ? learner.needsSupport.join(", ") : "none flagged"}</p>
-                      </div>
-                      <div className="text-right"><p className="h-display text-2xl text-primary">{learner.accuracy}%</p><p className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">accuracy</p></div>
-                    </div>
-                  )) : <p className="text-sm text-ink-muted">No learners assigned yet. Add one below.</p>}
-                </div>
-              </Card>
-
-              <div className="space-y-5">
-                <Card>
-                  <p className="text-xs font-extrabold uppercase tracking-widest text-ink-muted">Active assignment</p>
-                  <h3 className="h-display text-2xl mt-2">{activeAssignment?.title || selectedGroup?.activeQuest || "No assignment yet"}</h3>
-                  <p className="text-sm text-ink-muted mt-1">{activeAssignment ? `${ASSIGNMENT_WORK_TYPE_LABELS[activeAssignment.workType]} · ${activeAssignment.subject} · ${activeAssignment.skill} · Due ${activeAssignment.dueLabel}` : `Realm: ${selectedGroup?.activeRealm || "Not set"}`}</p>
-                  {activeAssignment && <div className="mt-3"><div className="h-3 rounded-full bg-bg border border-white overflow-hidden"><div className="h-full bg-primary" style={{ width: `${activeAssignment.completionPercent}%` }} /></div><p className="text-xs text-ink-muted mt-1">{activeAssignment.completionPercent}% complete · {activeAssignment.averageAccuracy}% avg accuracy</p></div>}
-                </Card>
-
-                <Card>
-                  <p className="text-xs font-extrabold uppercase tracking-widest text-ink-muted">Class pet</p>
-                  <div className="mt-3 rounded-[2rem] bg-gradient-to-br from-primary/10 via-white to-gold/20 border-2 border-white p-4 text-center">
-                    {selectedPetImageUrl ? (
-                      <div className="mx-auto mb-3 w-28 h-28 rounded-[2rem] bg-white/80 border-2 border-white shadow-inner p-2 grid place-items-center overflow-hidden">
-                        <img src={selectedPetImageUrl} alt={selectedPetName} className="max-w-full max-h-full object-contain drop-shadow-sm" />
-                      </div>
-                    ) : (
-                      <div className="text-5xl mb-2">{selectedGroup?.classPetEmoji || "🔥"}</div>
-                    )}
-                    <h3 className="h-display text-2xl">{selectedPetName}</h3>
-                    <p className="text-sm font-bold text-ink-muted capitalize">Mood: {selectedGroup?.classPetMood || "focused"} · Level {selectedGroup?.classPetLevel || 1}</p>
-                    <label className="block text-left mt-3"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Teacher companion</span><select className="input mt-1" value={selectedGroup?.classPetId || "embercub"} onChange={(e) => selectedGroup && setClassPet(selectedGroup.id, e.target.value)}>{selectablePets.map((pet) => <option key={pet.id} value={pet.id}>{pet.name}</option>)}</select></label>
-                    <div className="mt-3 h-3 rounded-full bg-white border border-white overflow-hidden"><div className="h-full bg-gold" style={{ width: `${selectedGroup ? Math.min(100, Math.round((selectedGroup.classPetXp / selectedGroup.classPetXpGoal) * 100)) : 0}%` }} /></div>
-                    <p className="text-xs text-ink-muted mt-1">{selectedGroup?.classPetXp || 0}/{selectedGroup?.classPetXpGoal || 100} XP · {selectedGroup?.classPetTreats || 0} treats</p>
-                    <button type="button" className="btn-primary !py-2 !px-4 !text-sm mt-3" onClick={() => selectedGroup && giveClassPetReward(selectedGroup.id, 15)}><Gift size={14} strokeWidth={3} /> Give class reward</button>
-                  </div>
-                </Card>
-              </div>
-            </section>
-
-            <section className="grid xl:grid-cols-[1.15fr_0.85fr] gap-5">
-              <Card>
-                <div className="flex items-start justify-between gap-4 flex-wrap">
-                  <div>
-                    <p className="text-xs font-extrabold uppercase tracking-widest text-primary">Classroom World Hub</p>
-                    <h2 className="h-display text-4xl text-ink mt-1">{selectedClassroom?.name || "No classroom selected"}</h2>
-                    <p className="text-sm text-ink-muted mt-1">{selectedClassroom?.gradeBand || "No grade band"} · {selectedClassroom?.subjectFocus?.join(", ") || "No subject"}</p>
-                  </div>
-                  <div className="rounded-3xl bg-primary/10 border-2 border-primary/20 px-5 py-3 min-w-[12rem]">
-                    <p className="text-[10px] font-extrabold uppercase tracking-wider text-primary">Join code</p>
-                    <p className="h-display text-3xl text-ink tracking-widest">{selectedClassroom?.joinCode || "—"}</p>
-                    <button type="button" className="btn-outline !py-2 !px-3 !text-xs mt-2 w-full justify-center" onClick={handleCopyJoinCode} disabled={!selectedClassroom}><Copy size={13} strokeWidth={3} /> Copy code</button>
-                  </div>
-                </div>
-                {copyMessage && <p className="text-xs font-bold text-primary mt-3">{copyMessage}</p>}
-                <div className="mt-5 grid sm:grid-cols-3 gap-3">
-                  <div className="rounded-3xl bg-bg border-2 border-white p-4"><p className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Room</p><p className="h-display text-xl mt-1">{selectedClassroom?.roomName || selectedClassroom?.room.roomName || "Not set"}</p><p className="text-xs font-bold text-ink-muted">{CLASSROOM_ROOM_THEME_LABELS[selectedClassroom?.roomTheme || selectedClassroom?.room.theme || "meadow"]}</p></div>
-                  <div className="rounded-3xl bg-bg border-2 border-white p-4"><p className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Class pet</p><p className="h-display text-xl mt-1">{selectedClassroom?.pet.name || selectedClassroom?.pet.petName || "None"}</p><p className="text-xs font-bold text-ink-muted">{selectedClassroom?.pet.xp || 0}/{selectedClassroom?.pet.xpGoal || 100} XP</p></div>
-                  <div className="rounded-3xl bg-bg border-2 border-white p-4"><p className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Roster</p><p className="h-display text-xl mt-1">{selectedClassroomMembers.length} students</p><p className="text-xs font-bold text-ink-muted">{selectedClassroom?.privacy.requireTeacherApproval ? "Approval required" : "Instant join"}</p></div>
-                </div>
-                <div className="mt-5 grid md:grid-cols-[0.85fr_1.15fr] gap-4">
-                  <div>
-                    <p className="text-xs font-extrabold uppercase tracking-widest text-ink-muted mb-2">Classrooms</p>
-                    <div className="space-y-2">
-                      {classrooms.map((classroom) => (
-                        <button key={classroom.id} type="button" onClick={() => selectClassroom(classroom.id)} className={`w-full rounded-2xl border-2 p-3 text-left ${selectedClassroom?.id === classroom.id ? "border-primary bg-primary/10" : "border-white bg-bg hover:border-primary/30"}`}>
-                          <p className="h-display text-lg">{classroom.name}</p>
-                          <p className="text-xs font-bold text-ink-muted">{classroom.joinCode} · {classroom.gradeBand} · {classroom.memberIds.length} students</p>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <p className="text-xs font-extrabold uppercase tracking-widest text-ink-muted mb-2">Roster preview</p>
-                    <div className="rounded-3xl bg-bg border-2 border-white p-4 min-h-[9rem]">
-                      {selectedClassroomMembers.length ? selectedClassroomMembers.slice(0, 6).map((member) => <p key={member.id} className="text-sm font-bold text-ink mt-1">{member.displayName} · {member.status}</p>) : <p className="text-sm text-ink-muted">No students yet. Share the join code or use the student join test.</p>}
-                    </div>
-                  </div>
-                </div>
-              </Card>
-
-              <div className="space-y-5">
-                <Card>
-                  <div className="flex items-center gap-2"><Plus size={18} strokeWidth={3} className="text-primary" /><p className="text-xs font-extrabold uppercase tracking-widest text-ink-muted">Teacher create flow</p></div>
-                  <p className="text-sm text-ink-muted mt-2">Controlled fields, unique join code, and cleaner classroom setup.</p>
-                  <div className="mt-4 space-y-3">
-                    <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Class name</span><input className="input mt-1" value={classroomName} onChange={(e) => setClassroomName(e.target.value)} /></label>
-                    <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Grade band</span><select className="input mt-1" value={classroomGradeBand} onChange={(e) => setClassroomGradeBand(e.target.value)}>{CLASSROOM_GRADE_BAND_OPTIONS.map((grade) => <option key={grade} value={grade}>{grade}</option>)}</select></label>
-                    <div className="grid sm:grid-cols-2 gap-3">
-                      <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Subject focus</span><select className="input mt-1" value={classroomSubjectFocus} onChange={(e) => setClassroomSubjectFocus(e.target.value as ClassroomSubjectFocus)}>{CLASSROOM_SUBJECT_OPTIONS.map((subject) => <option key={subject} value={subject}>{subject}</option>)}</select></label>
-                      <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Room theme</span><select className="input mt-1" value={classroomRoomTheme} onChange={(e) => setClassroomRoomTheme(e.target.value as ClassroomRoomTheme)}>{CLASSROOM_ROOM_THEME_OPTIONS.map((theme) => <option key={theme} value={theme}>{CLASSROOM_ROOM_THEME_LABELS[theme]}</option>)}</select></label>
-                    </div>
-                    <button type="button" className="btn-primary w-full justify-center min-h-[4.25rem]" onClick={handleCreateClassroom}><Plus size={16} strokeWidth={3} /> Create classroom</button>
-                  </div>
-                </Card>
-
-                <Card>
-                  <div className="flex items-center gap-2"><UserPlus size={18} strokeWidth={3} className="text-primary" /><p className="text-xs font-extrabold uppercase tracking-widest text-ink-muted">Student join flow</p></div>
-                  <p className="text-sm text-ink-muted mt-2">Validate a join code and preview duplicate protection.</p>
-                  <div className="mt-4 space-y-3">
-                    <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Join code</span><input className="input mt-1 uppercase tracking-widest" value={joinCodeInput} onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())} /></label>
-                    <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Student display name</span><input className="input mt-1" value={studentJoinName} onChange={(e) => setStudentJoinName(e.target.value)} /></label>
-                    <button type="button" className="btn-outline w-full justify-center min-h-[4.25rem]" onClick={handleJoinClassroom}><Users size={16} strokeWidth={3} /> Join classroom</button>
-                    {joinMessage && <p className="text-xs font-bold text-ink-muted">{joinMessage}</p>}
-                  </div>
-                </Card>
-              </div>
-            </section>
-
-            <section className="grid xl:grid-cols-2 gap-5">
-              <Card>
-                <p className="text-xs font-extrabold uppercase tracking-widest text-ink-muted">Create assignment</p>
-                <p className="text-sm text-ink-muted mt-1">Generate an assignment, review it, then approve it for learners.</p>
-                <div className="mt-3 grid sm:grid-cols-2 gap-3">
-                  <label className="block sm:col-span-2"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Assignment title</span><input className="input mt-1" value={assignmentTitle} onChange={(e) => setAssignmentTitle(e.target.value)} /></label>
-                  <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Work type</span><select className="input mt-1" value={assignmentWorkType} onChange={(e) => setAssignmentWorkType(e.target.value as AssignmentWorkType)}>{Object.entries(ASSIGNMENT_WORK_TYPE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-                  <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Subject</span><select className="input mt-1" value={assignmentSubject} onChange={(e) => setAssignmentSubject(e.target.value)}>{subjectOptions.map((subject) => <option key={subject} value={subject}>{subject}</option>)}</select></label>
-                  <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Skill</span><select className="input mt-1" value={assignmentSkill} onChange={(e) => setAssignmentSkill(e.target.value)}>{skillOptions.map((skill) => <option key={skill} value={skill}>{skill}</option>)}</select></label>
-                  <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Questions</span><input className="input mt-1" type="number" min={1} max={50} value={assignmentCount} onChange={(e) => setAssignmentCount(Number(e.target.value))} /></label>
-                  <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Difficulty</span><select className="input mt-1" value={assignmentDifficulty} onChange={(e) => setAssignmentDifficulty(e.target.value as AssignmentDifficulty)}>{DIFFICULTY_OPTIONS.map((difficulty) => <option key={difficulty} value={difficulty}>{difficulty}</option>)}</select></label>
-                  <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Due</span><select className="input mt-1" value={assignmentDue} onChange={(e) => setAssignmentDue(e.target.value)}>{ASSIGNMENT_DUE_OPTIONS.map((due) => <option key={due} value={due}>{due}</option>)}</select></label>
-                  <button type="button" className="btn-primary justify-center sm:col-span-2" onClick={handleGenerateAssignment} disabled={!selectedGroup}><Sparkles size={16} strokeWidth={3} /> Generate assignment draft</button>
-                </div>
-              </Card>
-
-              <Card>
-                <p className="text-xs font-extrabold uppercase tracking-widest text-ink-muted">Assignment review queue</p>
-                <div className="mt-3 space-y-3">
-                  {groupAssignments.length ? groupAssignments.map((assignment) => (
-                    <div key={assignment.id} className="rounded-3xl bg-bg border-2 border-white p-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <div><p className="h-display text-xl">{assignment.title}</p><p className="text-xs font-bold text-ink-muted">{ASSIGNMENT_WORK_TYPE_LABELS[assignment.workType]} · {assignment.subject} · {assignment.skill} · {assignment.questionCount} questions</p></div>
-                        <span className="chip bg-primary/10 text-primary border-primary/20 capitalize">{ASSIGNMENT_STATUS_LABELS[assignment.status]}</span>
-                      </div>
-                      <p className="text-xs text-ink-muted mt-2">Due {assignment.dueLabel} · {assignment.difficulty} · {assignment.completionPercent}% complete</p>
-                      <p className="text-xs text-ink-muted mt-2">{assignment.generatedSummary}</p>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <button type="button" className="btn-outline !py-2 !px-3 !text-xs" onClick={() => handleOpenReview(assignment.id)} disabled={assignment.status === "review" || assignment.status === "approved" || assignment.status === "assigned" || assignment.status === "completed"}><Eye size={13} strokeWidth={3} /> Review</button>
-                        <button type="button" className="btn-primary !py-2 !px-3 !text-xs" onClick={() => approveAssignment(assignment.id)} disabled={assignment.status === "approved" || assignment.status === "assigned" || assignment.status === "completed"}><CheckCircle2 size={13} strokeWidth={3} /> Approve</button>
-                        <button type="button" className="btn-outline !py-2 !px-3 !text-xs !text-red-500 hover:!border-red-300" onClick={() => handleDeleteAssignment(assignment.id)}>Delete</button>
-                      </div>
-                    </div>
-                  )) : <p className="text-sm text-ink-muted">No assignments yet.</p>}
-                </div>
-              </Card>
-            </section>
-
-            <section className="grid xl:grid-cols-3 gap-5">
-              <Card>
-                <div className="flex items-center gap-2"><Target size={18} strokeWidth={3} className="text-primary" /><p className="text-xs font-extrabold uppercase tracking-widest text-ink-muted">Curriculum controls</p></div>
-                <p className="text-sm text-ink-muted mt-2">Set teacher-controlled learning goals for the selected group.</p>
-                <div className="mt-3 space-y-3">
-                  <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Subject</span><select className="input mt-1" value={goalSubject} onChange={(e) => setGoalSubject(e.target.value)}>{subjectOptions.map((subject) => <option key={subject} value={subject}>{subject}</option>)}</select></label>
-                  <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Skill</span><select className="input mt-1" value={goalSkill} onChange={(e) => setGoalSkill(e.target.value)}>{goalSkillOptions.map((skill: string) => <option key={skill} value={skill}>{skill}</option>)}</select></label>
-                  <label className="block"><span className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">Goal</span><input className="input mt-1" value={goalTarget} onChange={(e) => setGoalTarget(e.target.value)} /></label>
-                  <button type="button" className="btn-primary w-full justify-center" onClick={handleAddLearningGoal} disabled={!selectedGroup}><Plus size={15} strokeWidth={3} /> Add goal</button>
-                </div>
-              </Card>
-
-              <Card>
-                <div className="flex items-center gap-2"><TrendingUp size={18} strokeWidth={3} className="text-sage" /><p className="text-xs font-extrabold uppercase tracking-widest text-ink-muted">Teacher analytics</p></div>
-                <div className="mt-3 space-y-3">
-                  {groupLearningGoals.length ? groupLearningGoals.map((goal) => (
-                    <div key={goal.id} className="rounded-3xl bg-bg border-2 border-white p-3">
-                      <p className="h-display text-lg">{goal.skill}</p>
-                      <p className="text-xs font-bold text-ink-muted">{goal.subject} · {MASTERY_LABELS[goal.masteryLevel]}</p>
-                      <p className="text-xs text-ink-muted mt-1">{goal.target}</p>
-                    </div>
-                  )) : <p className="text-sm text-ink-muted">No curriculum goals yet.</p>}
-                </div>
-              </Card>
-
-              <Card>
-                <p className="text-xs font-extrabold uppercase tracking-widest text-ink-muted">Parent reports</p>
-                <p className="text-sm text-ink-muted mt-2">Generate simple parent-facing learning summaries from learner progress.</p>
-                <div className="mt-3 space-y-3">
-                  {groupLearners.slice(0, 3).map((learner) => (
-                    <button key={learner.id} type="button" className="w-full rounded-3xl bg-bg border-2 border-white p-3 text-left hover:border-primary/40" onClick={() => selectedGroup && generateParentReport(learner.id, selectedGroup.id)}>
-                      <p className="h-display text-lg">{learner.name}</p>
-                      <p className="text-xs font-bold text-ink-muted">Generate parent snapshot</p>
-                    </button>
-                  ))}
-                  {groupParentReports.slice(0, 2).map((report) => (
-                    <div key={report.id} className="rounded-3xl bg-primary/10 border-2 border-primary/20 p-3">
-                      <p className="h-display text-lg">{report.title}</p>
-                      <p className="text-xs text-ink-muted mt-1">{report.summary}</p>
-                    </div>
-                  ))}
-                </div>
-              </Card>
-            </section>
-
             <Card>
-              <p className="text-xs font-extrabold uppercase tracking-widest text-ink-muted">Quick actions</p>
-              <div className="mt-3 grid sm:grid-cols-2 xl:grid-cols-4 gap-3">
-                <QuickAction icon={<ClipboardList size={18} strokeWidth={3} />} title="Create assignment" sub="Generate / review / approve" />
-                <QuickAction icon={<Users size={18} strokeWidth={3} />} title="Add learner" sub="Roster v1" onClick={handleAddLearner} />
-                <QuickAction icon={<Gift size={18} strokeWidth={3} />} title="Give reward" sub="Class pet XP" onClick={() => selectedGroup && giveClassPetReward(selectedGroup.id, 15)} />
-                <QuickAction icon={<Castle size={18} strokeWidth={3} />} title="Open classroom world" sub="Edu-Mates realm" to="/adventure/realms" />
+              <div className="flex gap-2 border-b border-bg pb-4 overflow-x-auto whitespace-nowrap">
+                {isTeacherDashboard ? DASHBOARD_TABS.map((tab) => (
+                  <button key={tab} type="button" onClick={() => setTeacherTab(tab)} className={`shrink-0 rounded-full border-2 px-4 py-2 text-xs font-extrabold transition ${teacherTab === tab ? "border-primary bg-primary text-white shadow" : "border-primary/25 bg-white text-ink-muted hover:border-primary/60 hover:text-primary hover:bg-primary/5"}`}>{tab}</button>
+                )) : PARENT_TABS.map((tab) => (
+                  <button key={tab} type="button" onClick={() => setParentTab(tab)} className={`shrink-0 rounded-full border-2 px-4 py-2 text-xs font-extrabold transition ${parentTab === tab ? "border-primary bg-primary text-white shadow" : "border-primary/25 bg-white text-ink-muted hover:border-primary/60 hover:text-primary hover:bg-primary/5"}`}>{tab}</button>
+                ))}
               </div>
-              <div className="mt-4 grid sm:grid-cols-3 gap-3">
-                <input className="input" value={learnerName} onChange={(e) => setLearnerName(e.target.value)} placeholder="Learner name" />
-                <input className="input" value={learnerGrade} onChange={(e) => setLearnerGrade(e.target.value)} placeholder="Grade" />
-                <input className="input" value={learnerEmoji} onChange={(e) => setLearnerEmoji(e.target.value)} placeholder="Emoji" />
+              <div className="mt-5">
+                {isTeacherDashboard ? renderTeacherTab() : renderParentTab()}
               </div>
             </Card>
           </section>
