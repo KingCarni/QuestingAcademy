@@ -5,3 +5,26 @@ credentials.json
 *.pem
 *.key
 .credentials
+
+# Local dependencies
+node_modules/
+backend/node_modules/
+frontend/node_modules/
+
+# Build outputs
+build/
+frontend/build/
+
+# Local uploads / generated assets
+backend/uploads/
+frontend/public/assets/adventure-zones/
+
+# Yarn/PnP local files
+.yarn/
+.pnp.cjs
+.pnp.loader.mjs
+yarn.lock
+
+# Local backups/generated config
+backend/server.backup.js
+backend/gemini-models.json
