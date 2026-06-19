@@ -5,6 +5,7 @@ import Onboarding from "./pages/Onboarding";
 import CharacterCreator from "./pages/CharacterCreator";
 import StarterPicker from "./pages/StarterPicker";
 import Battle from "./pages/Battle";
+import Classroom from "./pages/Classroom";
 import EggHatch from "./pages/EggHatch";
 import Collection from "./pages/Collection";
 import Academy from "./pages/Academy";
@@ -24,6 +25,7 @@ const App: React.FC = () => {
   return (
     <Routes>
       <Route path="/" element={<Landing />} />
+      <Route path="/classroom-3d" element={<Classroom />} />
       <Route path="/onboarding" element={<Onboarding />} />
       <Route path="/character" element={<CharacterCreator />} />
       <Route path="/starter" element={<RequirePlayer><StarterPicker /></RequirePlayer>} />
