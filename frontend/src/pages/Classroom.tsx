@@ -3,7 +3,7 @@ import { Canvas, useFrame } from "@react-three/fiber";
 import { Html, OrbitControls, useGLTF } from "@react-three/drei";
 import * as THREE from "three";
 
-const CLASSROOM_MODEL_PATH = "/assets/3d/classroom/classroom.glb";
+const CLASSROOM_MODEL_PATH = "/assets/3d/classroom-blockout/classroom-blockout.glb";
 
 type KeyState = {
   forward: boolean;
