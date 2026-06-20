@@ -64,6 +64,7 @@ type ClassroomPanelData = {
   members: any[];
 };
 
+
 type ClassroomAssetType = "academy-desk" | "embercub";
 
 type ClassroomPropPlacement = {
@@ -76,38 +77,25 @@ type ClassroomPropPlacement = {
 };
 
 // Student desk/chair placements.
-// These are the first saved table/chair values from Dev Mode.
-const ACADEMY_DESK_PLACEMENTS: ClassroomPropPlacement[] = [
-  { id: "left-front-1", assetType: "academy-desk", position: [-4.95, 0.93, 0.65], rotation: [0, 3.1, 0], scale: 0.85 },
-  { id: "left-front-2", assetType: "academy-desk", position: [-2.55, 0.83, 0.65], rotation: [0, 3.2, 0], scale: 0.825 },
-  { id: "left-mid-1", assetType: "academy-desk", position: [-4.95, 0.93, 2.55], rotation: [0, 3.1, 0], scale: 0.85 },
-  { id: "left-mid-2", assetType: "academy-desk", position: [-2.55, 0.98, 2.75], rotation: [0, 3.1, 0], scale: 0.8 },
-  { id: "left-back-1", assetType: "academy-desk", position: [-4.95, 0.88, 4.45], rotation: [0, 3.1, 0], scale: 0.775 },
-  { id: "left-back-2", assetType: "academy-desk", position: [-2.55, 0.88, 4.65], rotation: [0, 3.1, 0], scale: 0.725 },
-
-  { id: "right-front-1", assetType: "academy-desk", position: [2.45, 0.33, 1.05], rotation: [0, 0, 0], scale: 0.25 },
-  { id: "right-front-2", assetType: "academy-desk", position: [3.85, 0.33, 1.05], rotation: [0, 0, 0], scale: 0.25 },
-  { id: "right-mid-1", assetType: "academy-desk", position: [2.45, 0.33, 2.05], rotation: [0, 0, 0], scale: 0.25 },
-  { id: "right-mid-2", assetType: "academy-desk", position: [3.85, 0.33, 2.05], rotation: [0, 0, 0], scale: 0.25 },
-  { id: "right-back-1", assetType: "academy-desk", position: [2.45, 0.33, 3.05], rotation: [0, 0, 0], scale: 0.25 },
-  { id: "right-back-2", assetType: "academy-desk", position: [3.85, 0.33, 3.05], rotation: [0, 0, 0], scale: 0.25 },
-];
-
-const EMBERCUB_PLACEMENTS: ClassroomPropPlacement[] = [
-  {
-    id: "embercub-1",
-    assetType: "embercub",
-    label: "Embercub (Pet)",
-    position: [-0.55, 0, 2.0],
-    rotation: [0, 3.75, 0],
-    scale: 0.45,
-  },
-];
-
+// Keep these values explicit instead of generating them so future dev-mode placement
+// commits can replace coordinates cleanly without changing the rendering logic.
 const CLASSROOM_ASSET_PLACEMENTS: ClassroomPropPlacement[] = [
-  ...ACADEMY_DESK_PLACEMENTS,
-  ...EMBERCUB_PLACEMENTS,
+  { id: "left-front-1", assetType: "academy-desk", position: [-5.05, 1.08, 0.65], rotation: [0, 3.1, 0], scale: 0.825 },
+  { id: "left-front-2", assetType: "academy-desk", position: [-2.55, 1.08, 0.65], rotation: [0, 3.2, 0], scale: 0.825 },
+  { id: "left-mid-1", assetType: "academy-desk", position: [-4.95, 1.08, 2.55], rotation: [0, 3.1, 0], scale: 0.825 },
+  { id: "left-mid-2", assetType: "academy-desk", position: [-2.55, 1.08, 2.75], rotation: [0, 3.1, 0], scale: 0.825 },
+  { id: "left-back-1", assetType: "academy-desk", position: [-4.95, 1.08, 4.45], rotation: [0, 3.1, 0], scale: 0.825 },
+  { id: "left-back-2", assetType: "academy-desk", position: [-2.55, 1.08, 4.65], rotation: [0, 3.1, 0], scale: 0.825 },
+  { id: "right-front-1", assetType: "academy-desk", position: [2.65, 1.08, 0.75], rotation: [0, 3.2, 0], scale: 0.825 },
+  { id: "right-front-2", assetType: "academy-desk", position: [5.05, 1.08, 0.75], rotation: [0, 3.2, 0], scale: 0.825 },
+  { id: "right-mid-1", assetType: "academy-desk", position: [2.65, 1.08, 2.75], rotation: [0, 3.3, 0], scale: 0.825 },
+  { id: "right-mid-2", assetType: "academy-desk", position: [4.95, 1.08, 2.75], rotation: [0, 3.2, 0], scale: 0.825 },
+  { id: "right-back-1", assetType: "academy-desk", position: [2.65, 1.08, 4.55], rotation: [0, 3.2, 0], scale: 0.825 },
+  { id: "right-back-2", assetType: "academy-desk", position: [5.05, 1.08, 4.55], rotation: [0, 3.2, 0], scale: 0.825 },
+  { id: "embercub-1", assetType: "embercub", label: "Embercub (Pet)", position: [7.65, 1.15, -5], rotation: [0, 5.95, 0], scale: 1.075 },
 ];
+
+
 
 const HOTSPOTS: HotspotInfo[] = [
   {
@@ -207,110 +195,6 @@ function clonePlacement(placement: ClassroomPropPlacement): ClassroomPropPlaceme
   };
 }
 
-function cloneDefaultPlacements() {
-  return CLASSROOM_ASSET_PLACEMENTS.map(clonePlacement);
-}
-
-function normalizePlacement(
-  placement: ClassroomPropPlacement,
-  fallback?: ClassroomPropPlacement,
-): ClassroomPropPlacement {
-  const assetType = placement.assetType || fallback?.assetType || "academy-desk";
-
-  return {
-    ...(fallback || {}),
-    ...placement,
-    assetType,
-    label: placement.label || fallback?.label,
-    position: [...(placement.position || fallback?.position || [0, 0, 0])] as [
-      number,
-      number,
-      number,
-    ],
-    rotation: placement.rotation
-      ? ([...placement.rotation] as [number, number, number])
-      : fallback?.rotation
-        ? ([...fallback.rotation] as [number, number, number])
-        : ([0, 0, 0] as [number, number, number]),
-    scale:
-      placement.scale ||
-      fallback?.scale ||
-      getDefaultScaleForAsset(assetType),
-  };
-}
-
-function loadSavedPlacements() {
-  if (typeof window === "undefined") return cloneDefaultPlacements();
-
-  try {
-    const saved = window.localStorage.getItem(DEV_PLACEMENT_STORAGE_KEY);
-    if (!saved) return cloneDefaultPlacements();
-
-    const parsed = JSON.parse(saved);
-    if (!Array.isArray(parsed)) return cloneDefaultPlacements();
-
-    const savedById = new Map<string, ClassroomPropPlacement>();
-    parsed.forEach((placement: ClassroomPropPlacement) => {
-      if (placement?.id) {
-        savedById.set(placement.id, placement);
-      }
-    });
-
-    return cloneDefaultPlacements().map((defaultPlacement) =>
-      normalizePlacement(savedById.get(defaultPlacement.id) || defaultPlacement, defaultPlacement),
-    );
-  } catch {
-    return cloneDefaultPlacements();
-  }
-}
-
-function formatNumber(value: number) {
-  return Number(value.toFixed(3));
-}
-
-function formatPlacementCode(placements: ClassroomPropPlacement[]) {
-  const rows = placements
-    .map((placement) => {
-      const position = placement.position.map(formatNumber).join(", ");
-      const rotation = (placement.rotation || [0, 0, 0])
-        .map(formatNumber)
-        .join(", ");
-      const scale = formatNumber(
-        placement.scale || getDefaultScaleForAsset(placement.assetType),
-      );
-      const label = placement.label ? `, label: "${placement.label}"` : "";
-
-      return `  { id: "${placement.id}", assetType: "${placement.assetType}"${label}, position: [${position}], rotation: [${rotation}], scale: ${scale} },`;
-    })
-    .join("\n");
-
-  return `const CLASSROOM_ASSET_PLACEMENTS: ClassroomPropPlacement[] = [\n${rows}\n];`;
-}
-
-function asLabel(value: any, fallback: string) {
-  if (value === null || value === undefined || value === "") return fallback;
-  if (Array.isArray(value)) return value.join(", ");
-  return String(value);
-}
-
-function getAssignmentTitle(assignment: any, index: number) {
-  return asLabel(
-    assignment?.title || assignment?.name || assignment?.assignmentTitle,
-    `Quest ${index + 1}`,
-  );
-}
-
-function getGoalTitle(goal: any, index: number) {
-  return asLabel(goal?.title || goal?.name || goal?.goalTitle, `Goal ${index + 1}`);
-}
-
-function getRewardTitle(reward: any, index: number) {
-  return asLabel(
-    reward?.title || reward?.name || reward?.rewardName,
-    `Reward ${index + 1}`,
-  );
-}
-
 function useKeyboardMovement() {
   const keysRef = useRef<KeyState>({
     forward: false,
@@ -320,30 +204,24 @@ function useKeyboardMovement() {
   });
 
   useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
+    const setKey = (event: KeyboardEvent, value: boolean) => {
       const key = event.key.toLowerCase();
 
-      if (key === "w" || key === "arrowup") keysRef.current.forward = true;
-      if (key === "s" || key === "arrowdown") keysRef.current.backward = true;
-      if (key === "a" || key === "arrowleft") keysRef.current.left = true;
-      if (key === "d" || key === "arrowright") keysRef.current.right = true;
+      if (key === "w" || key === "arrowup") keysRef.current.forward = value;
+      if (key === "s" || key === "arrowdown") keysRef.current.backward = value;
+      if (key === "a" || key === "arrowleft") keysRef.current.left = value;
+      if (key === "d" || key === "arrowright") keysRef.current.right = value;
     };
 
-    const onKeyUp = (event: KeyboardEvent) => {
-      const key = event.key.toLowerCase();
+    const onDown = (event: KeyboardEvent) => setKey(event, true);
+    const onUp = (event: KeyboardEvent) => setKey(event, false);
 
-      if (key === "w" || key === "arrowup") keysRef.current.forward = false;
-      if (key === "s" || key === "arrowdown") keysRef.current.backward = false;
-      if (key === "a" || key === "arrowleft") keysRef.current.left = false;
-      if (key === "d" || key === "arrowright") keysRef.current.right = false;
-    };
-
-    window.addEventListener("keydown", onKeyDown);
-    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("keydown", onDown);
+    window.addEventListener("keyup", onUp);
 
     return () => {
-      window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("keydown", onDown);
+      window.removeEventListener("keyup", onUp);
     };
   }, []);
 
@@ -377,7 +255,7 @@ function PlayerAvatarModel() {
   );
 }
 
-function ModelAsset({
+function ClassroomPlacedAssetModel({
   placement,
   devMode,
   isSelected,
@@ -392,9 +270,14 @@ function ModelAsset({
     placement.assetType === "embercub"
       ? EMBERCUB_MODEL_PATH
       : ACADEMY_DESK_MODEL_PATH;
-  const gltf = useGLTF(modelPath) as any;
 
-  const scene = useMemo(() => {
+  const defaultScale =
+    placement.assetType === "embercub"
+      ? EMBERCUB_MODEL_SCALE
+      : ACADEMY_DESK_MODEL_SCALE;
+
+  const gltf = useGLTF(modelPath) as any;
+  const assetScene = useMemo(() => {
     const clonedScene = gltf.scene.clone(true);
 
     clonedScene.traverse((child: any) => {
@@ -413,20 +296,17 @@ function ModelAsset({
     onSelect(placement.id);
   };
 
-  const label = placement.label || placement.id;
-  const labelHeight = placement.assetType === "embercub" ? 1.15 : 0.65;
-
   return (
     <group
       position={placement.position}
       rotation={placement.rotation || [0, 0, 0]}
-      scale={placement.scale || getDefaultScaleForAsset(placement.assetType)}
+      scale={placement.scale || defaultScale}
       onClick={handleClick}
     >
-      <primitive object={scene} />
+      <primitive object={assetScene} />
 
-      {devMode || placement.assetType === "embercub" ? (
-        <Html position={[0, labelHeight, 0]} center>
+      {devMode && (
+        <Html position={[0, placement.assetType === "embercub" ? 1.15 : 0.65, 0]} center>
           <button
             type="button"
             onClick={(event) => {
@@ -434,17 +314,14 @@ function ModelAsset({
               onSelect(placement.id);
             }}
             style={{
-              ...(placement.assetType === "embercub"
-                ? floatingLabelStyle
-                : devAssetTagStyle),
-              ...(devMode ? devAssetTagStyle : {}),
+              ...devAssetTagStyle,
               ...(isSelected ? devAssetTagActiveStyle : {}),
             }}
           >
-            {label}
+            {placement.label || placement.id}
           </button>
         </Html>
-      ) : null}
+      )}
     </group>
   );
 }
@@ -463,7 +340,7 @@ function AssetLayout({
   return (
     <>
       {placements.map((placement) => (
-        <ModelAsset
+        <ClassroomPlacedAssetModel
           key={placement.id}
           placement={placement}
           devMode={devMode}
@@ -488,6 +365,9 @@ function PlayerMarker({
     if (!group) return;
 
     const speed = 2.5;
+
+    // World-space movement for the classroom blockout:
+    // W moves toward the teacher/board wall, S moves toward the open camera side.
     const moveX =
       (keysRef.current.right ? 1 : 0) - (keysRef.current.left ? 1 : 0);
     const moveZ =
@@ -509,7 +389,9 @@ function PlayerMarker({
         PLAYER_BOUNDS.maxZ,
       );
 
-      group.rotation.y = Math.atan2(moveX, moveZ) + Math.PI;
+      if (movement.lengthSq() > 0) {
+        group.rotation.y = Math.atan2(movement.x, movement.z);
+      }
     }
 
     playerPositionRef.current.copy(group.position);
@@ -518,86 +400,60 @@ function PlayerMarker({
   return (
     <group ref={groupRef} position={PLAYER_START_POSITION.toArray()}>
       <PlayerAvatarModel />
-      <Html position={[0, 1.25, 0]} center>
-        <div style={floatingLabelStyle}>Player</div>
+      <Html position={[0, 1.45, 0]} center>
+        <div style={floatingLabelStyle}>Student</div>
       </Html>
     </group>
   );
 }
 
-function ClassroomHotspot({
+function HotspotMarker({
   hotspot,
-  isActive,
+  active,
+  showDevZones,
   onSelect,
-  showDevZone,
 }: {
   hotspot: HotspotInfo;
-  isActive: boolean;
+  active: boolean;
+  showDevZones: boolean;
   onSelect: (id: HotspotKey) => void;
-  showDevZone: boolean;
 }) {
-  const [isHovered, setIsHovered] = useState(false);
-  const opacity = showDevZone ? (isActive ? 0.22 : isHovered ? 0.16 : 0.05) : 0;
-  const showLabel = isActive || isHovered || !showDevZone;
-
-  const handlePointerOver = (event: ThreeEvent<PointerEvent>) => {
-    event.stopPropagation();
-    setIsHovered(true);
-    document.body.style.cursor = "pointer";
-  };
-
-  const handlePointerOut = (event: ThreeEvent<PointerEvent>) => {
-    event.stopPropagation();
-    setIsHovered(false);
-    document.body.style.cursor = "default";
-  };
-
-  const handleClick = (event: ThreeEvent<MouseEvent>) => {
-    event.stopPropagation();
-    onSelect(hotspot.id);
-  };
-
   return (
     <group position={hotspot.position}>
-      <mesh
-        onClick={handleClick}
-        onPointerOver={handlePointerOver}
-        onPointerOut={handlePointerOut}
-      >
-        <boxGeometry args={hotspot.size} />
-        <meshStandardMaterial
-          color={hotspot.color}
-          transparent
-          opacity={opacity}
-          roughness={0.55}
-          depthWrite={false}
-        />
-      </mesh>
-
-      {showLabel && (
-        <Html position={[0, hotspot.size[1] / 2 + 0.22, 0]} center>
-          <button
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              onSelect(hotspot.id);
-            }}
-            style={{
-              ...compactHotspotLabelStyle,
-              borderColor: isActive
-                ? "rgba(124,92,255,0.75)"
-                : "rgba(124,92,255,0.35)",
-              boxShadow: isActive
-                ? `0 0 0 4px ${hotspot.color}33`
-                : "0 8px 18px rgba(38,31,72,0.16)",
-            }}
-            aria-label={hotspot.title}
-            title={hotspot.title}
-          >
-            {hotspot.icon}
-          </button>
-        </Html>
+      {showDevZones && (
+        <mesh
+          scale={hotspot.size}
+          onClick={(event) => {
+            event.stopPropagation();
+            onSelect(hotspot.id);
+          }}
+        >
+          <boxGeometry args={[1, 1, 1]} />
+          <meshStandardMaterial
+            color={hotspot.color}
+            transparent
+            opacity={active ? 0.35 : 0.16}
+            roughness={0.4}
+          />
+        </mesh>
       )}
+
+      <Html position={[0, hotspot.size[1] + 0.25, 0]} center>
+        <button
+          type="button"
+          onClick={() => onSelect(hotspot.id)}
+          style={{
+            ...hotspotButtonStyle,
+            borderColor: active ? hotspot.color : "rgba(255,255,255,0.65)",
+            boxShadow: active
+              ? `0 14px 28px ${hotspot.color}44`
+              : "0 10px 24px rgba(52, 41, 92, 0.18)",
+          }}
+        >
+          <span style={{ fontSize: "1.15rem" }}>{hotspot.icon}</span>
+          <span>{hotspot.label}</span>
+        </button>
+      </Html>
     </group>
   );
 }
@@ -614,12 +470,12 @@ function ClassroomHotspots({
   return (
     <>
       {HOTSPOTS.map((hotspot) => (
-        <ClassroomHotspot
+        <HotspotMarker
           key={hotspot.id}
           hotspot={hotspot}
-          isActive={activeHotspot === hotspot.id}
+          active={activeHotspot === hotspot.id}
+          showDevZones={showDevZones}
           onSelect={onSelect}
-          showDevZone={showDevZones}
         />
       ))}
     </>
@@ -641,30 +497,27 @@ function CameraRig({
   cameraMode: CameraMode;
   playerPositionRef: React.MutableRefObject<THREE.Vector3>;
 }) {
-  useFrame(({ camera }) => {
-    if (cameraMode === "orbit") return;
+  useFrame(({ camera }, delta) => {
+    const player = playerPositionRef.current;
 
-    const playerPosition = playerPositionRef.current;
-
-    if (cameraMode === "follow") {
-      const targetPosition = new THREE.Vector3(
-        playerPosition.x + 2.4,
-        playerPosition.y + 3.2,
-        playerPosition.z + 4.8,
-      );
-      camera.position.lerp(targetPosition, 0.08);
-      camera.lookAt(playerPosition.x, playerPosition.y + 0.8, playerPosition.z);
-    }
+    let desiredPosition: THREE.Vector3;
 
     if (cameraMode === "top") {
-      const targetPosition = new THREE.Vector3(
-        playerPosition.x,
-        playerPosition.y + 9.5,
-        playerPosition.z + 0.01,
-      );
-      camera.position.lerp(targetPosition, 0.1);
-      camera.lookAt(playerPosition.x, playerPosition.y, playerPosition.z);
+      desiredPosition = new THREE.Vector3(player.x, player.y + 12, player.z + 0.1);
+    } else if (cameraMode === "follow") {
+      desiredPosition = new THREE.Vector3(player.x, player.y + 3.2, player.z + 5.5);
+    } else {
+      return;
     }
+
+    camera.position.lerp(desiredPosition, Math.min(1, delta * 4.5));
+
+    const lookTarget =
+      cameraMode === "top"
+        ? new THREE.Vector3(player.x, player.y, player.z)
+        : new THREE.Vector3(player.x, player.y + 0.85, player.z);
+
+    camera.lookAt(lookTarget);
   });
 
   return null;
@@ -742,145 +595,6 @@ function Scene({
         target={[0, 1, 0]}
       />
     </>
-  );
-}
-
-function DevPlacementPanel({
-  placements,
-  selectedPropId,
-  onSelectProp,
-  onNudge,
-  onRotate,
-  onScale,
-  onSaveLocal,
-  onReset,
-  onCopyCode,
-}: {
-  placements: ClassroomPropPlacement[];
-  selectedPropId: string | null;
-  onSelectProp: (id: string) => void;
-  onNudge: (axis: "x" | "y" | "z", amount: number) => void;
-  onRotate: (amount: number) => void;
-  onScale: (amount: number) => void;
-  onSaveLocal: () => void;
-  onReset: () => void;
-  onCopyCode: () => void;
-}) {
-  const selectedPlacement =
-    placements.find((placement) => placement.id === selectedPropId) ||
-    placements[0] ||
-    null;
-
-  return (
-    <aside style={devPanelShellStyle}>
-      <div style={devPanelCardStyle}>
-        <div style={eyebrowStyle}>Dev Mode</div>
-        <h2 style={devPanelTitleStyle}>Asset Placement</h2>
-        <p style={miniTextStyle}>
-          Select a desk or pet, nudge position, rotate, scale, then copy the
-          placement code into the file when it looks right.
-        </p>
-
-        <label style={devLabelStyle}>
-          Selected asset
-          <select
-            value={selectedPlacement?.id || ""}
-            onChange={(event) => onSelectProp(event.target.value)}
-            style={devSelectStyle}
-          >
-            {placements.map((placement) => (
-              <option key={placement.id} value={placement.id}>
-                {placement.label || placement.id}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        {selectedPlacement && (
-          <div style={devReadoutStyle}>
-            <div>
-              <strong>Asset</strong>
-              <span>{selectedPlacement.label || selectedPlacement.id}</span>
-            </div>
-            <div>
-              <strong>Type</strong>
-              <span>{selectedPlacement.assetType}</span>
-            </div>
-            <div>
-              <strong>Position</strong>
-              <span>{selectedPlacement.position.map(formatNumber).join(", ")}</span>
-            </div>
-            <div>
-              <strong>Rotation Y</strong>
-              <span>{formatNumber((selectedPlacement.rotation || [0, 0, 0])[1])}</span>
-            </div>
-            <div>
-              <strong>Scale</strong>
-              <span>
-                {formatNumber(
-                  selectedPlacement.scale ||
-                    getDefaultScaleForAsset(selectedPlacement.assetType),
-                )}
-              </span>
-            </div>
-          </div>
-        )}
-
-        <div style={devControlGroupStyle}>
-          <span style={devControlLabelStyle}>Nudge position</span>
-          <div style={devButtonGridStyle}>
-            <button type="button" onClick={() => onNudge("x", -0.1)} style={devButtonStyle}>
-              X -
-            </button>
-            <button type="button" onClick={() => onNudge("x", 0.1)} style={devButtonStyle}>
-              X +
-            </button>
-            <button type="button" onClick={() => onNudge("z", -0.1)} style={devButtonStyle}>
-              Z -
-            </button>
-            <button type="button" onClick={() => onNudge("z", 0.1)} style={devButtonStyle}>
-              Z +
-            </button>
-            <button type="button" onClick={() => onNudge("y", -0.05)} style={devButtonStyle}>
-              Y -
-            </button>
-            <button type="button" onClick={() => onNudge("y", 0.05)} style={devButtonStyle}>
-              Y +
-            </button>
-          </div>
-        </div>
-
-        <div style={devControlGroupStyle}>
-          <span style={devControlLabelStyle}>Rotate / scale</span>
-          <div style={devButtonGridStyle}>
-            <button type="button" onClick={() => onRotate(-0.1)} style={devButtonStyle}>
-              Rot -
-            </button>
-            <button type="button" onClick={() => onRotate(0.1)} style={devButtonStyle}>
-              Rot +
-            </button>
-            <button type="button" onClick={() => onScale(-0.025)} style={devButtonStyle}>
-              Scale -
-            </button>
-            <button type="button" onClick={() => onScale(0.025)} style={devButtonStyle}>
-              Scale +
-            </button>
-          </div>
-        </div>
-
-        <div style={devActionRowStyle}>
-          <button type="button" onClick={onSaveLocal} style={devPrimaryButtonStyle}>
-            Save browser
-          </button>
-          <button type="button" onClick={onCopyCode} style={devPrimaryButtonStyle}>
-            Copy code
-          </button>
-          <button type="button" onClick={onReset} style={devDangerButtonStyle}>
-            Reset
-          </button>
-        </div>
-      </div>
-    </aside>
   );
 }
 
@@ -965,24 +679,26 @@ function PanelContent({
     return <StudentRosterPanel data={data} />;
   }
 
-  if (activeHotspot === "door") {
-    return <DoorPanel />;
+  if (activeHotspot === "teacher") {
+    return <TeacherPanel data={data} />;
   }
 
-  return <TeacherPanel data={data} />;
+  return <DoorPanel />;
 }
 
 function QuestBoardPanel({ data }: { data: ClassroomPanelData }) {
+  const assignments = data.assignments;
+
   return (
     <section style={sectionStyle}>
       <div style={sectionHeaderRowStyle}>
         <span style={sectionLabelStyle}>Active quests</span>
-        <span style={countPillStyle}>{data.assignments.length}</span>
+        <span style={countPillStyle}>{assignments.length}</span>
       </div>
 
-      {data.assignments.length ? (
+      {assignments.length ? (
         <div style={listStackStyle}>
-          {data.assignments.slice(0, 4).map((assignment, index) => (
+          {assignments.slice(0, 4).map((assignment, index) => (
             <InfoCard key={assignment?.id || index}>
               <strong>{getAssignmentTitle(assignment, index)}</strong>
               <p style={miniTextStyle}>
@@ -1081,23 +797,19 @@ function StudentRosterPanel({ data }: { data: ClassroomPanelData }) {
   return (
     <section style={sectionStyle}>
       <div style={sectionHeaderRowStyle}>
-        <span style={sectionLabelStyle}>Class roster</span>
+        <span style={sectionLabelStyle}>Students</span>
         <span style={countPillStyle}>{data.members.length}</span>
       </div>
 
       {data.members.length ? (
-        <div style={rosterGridStyle}>
-          {data.members.slice(0, 8).map((member, index) => (
-            <div key={member?.id || index} style={rosterCardStyle}>
-              <div style={avatarBubbleStyle}>
-                {asLabel(member?.displayName || member?.name, "?")
-                  .slice(0, 1)
-                  .toUpperCase()}
-              </div>
-              <span>
-                {asLabel(member?.displayName || member?.name, "Student")}
-              </span>
-            </div>
+        <div style={listStackStyle}>
+          {data.members.slice(0, 5).map((member, index) => (
+            <InfoCard key={member?.id || index}>
+              <strong>{asLabel(member?.displayName || member?.name, `Student ${index + 1}`)}</strong>
+              <p style={miniTextStyle}>
+                {asLabel(member?.role || member?.status, "Class member")}
+              </p>
+            </InfoCard>
           ))}
         </div>
       ) : (
@@ -1243,6 +955,220 @@ function ViewModeControls({
   );
 }
 
+function cloneDefaultPlacements() {
+  return CLASSROOM_ASSET_PLACEMENTS.map(clonePlacement);
+}
+
+function normalizePlacement(
+  placement: ClassroomPropPlacement,
+  fallback?: ClassroomPropPlacement,
+): ClassroomPropPlacement {
+  const assetType = placement.assetType || fallback?.assetType || "academy-desk";
+
+  return {
+    ...(fallback || {}),
+    ...placement,
+    assetType,
+    label: placement.label || fallback?.label,
+    position: [...(placement.position || fallback?.position || [0, 0, 0])] as [
+      number,
+      number,
+      number,
+    ],
+    rotation: placement.rotation
+      ? ([...placement.rotation] as [number, number, number])
+      : fallback?.rotation
+        ? ([...fallback.rotation] as [number, number, number])
+        : ([0, 0, 0] as [number, number, number]),
+    scale:
+      placement.scale ||
+      fallback?.scale ||
+      getDefaultScaleForAsset(assetType),
+  };
+}
+
+function loadSavedPlacements() {
+  if (typeof window === "undefined") return cloneDefaultPlacements();
+
+  try {
+    const saved = window.localStorage.getItem(DEV_PLACEMENT_STORAGE_KEY);
+    if (!saved) return cloneDefaultPlacements();
+
+    const parsed = JSON.parse(saved);
+    if (!Array.isArray(parsed)) return cloneDefaultPlacements();
+
+    const savedById = new Map<string, ClassroomPropPlacement>();
+    parsed.forEach((placement: ClassroomPropPlacement) => {
+      if (placement?.id) {
+        savedById.set(placement.id, placement);
+      }
+    });
+
+    return cloneDefaultPlacements().map((defaultPlacement) =>
+      normalizePlacement(
+        savedById.get(defaultPlacement.id) || defaultPlacement,
+        defaultPlacement,
+      ),
+    );
+  } catch {
+    return cloneDefaultPlacements();
+  }
+}
+
+function formatNumber(value: number) {
+  return Number(value.toFixed(3));
+}
+
+function formatPlacementCode(placements: ClassroomPropPlacement[]) {
+  const rows = placements
+    .map((placement) => {
+      const position = placement.position.map(formatNumber).join(", ");
+      const rotation = (placement.rotation || [0, 0, 0])
+        .map(formatNumber)
+        .join(", ");
+      const scale = formatNumber(
+        placement.scale || getDefaultScaleForAsset(placement.assetType),
+      );
+      const label = placement.label ? `, label: "${placement.label}"` : "";
+
+      return `  { id: "${placement.id}", assetType: "${placement.assetType}"${label}, position: [${position}], rotation: [${rotation}], scale: ${scale} },`;
+    })
+    .join("\n");
+
+  return `const CLASSROOM_ASSET_PLACEMENTS: ClassroomPropPlacement[] = [\n${rows}\n];`;
+}
+
+function DevPlacementPanel({
+  placements,
+  selectedPropId,
+  onSelectProp,
+  onNudge,
+  onRotate,
+  onScale,
+  onSaveLocal,
+  onReset,
+  onCopyCode,
+}: {
+  placements: ClassroomPropPlacement[];
+  selectedPropId: string | null;
+  onSelectProp: (id: string) => void;
+  onNudge: (axis: "x" | "y" | "z", amount: number) => void;
+  onRotate: (amount: number) => void;
+  onScale: (amount: number) => void;
+  onSaveLocal: () => void;
+  onReset: () => void;
+  onCopyCode: () => void;
+}) {
+  const selectedPlacement =
+    placements.find((placement) => placement.id === selectedPropId) ||
+    placements[0] ||
+    null;
+
+  return (
+    <aside style={devPanelShellStyle}>
+      <div style={devPanelCardStyle}>
+        <div style={eyebrowStyle}>Dev Mode</div>
+        <h2 style={devPanelTitleStyle}>Desk Placement</h2>
+        <p style={miniTextStyle}>
+          Select a desk, nudge position, rotate, scale, then copy the placement
+          code into the file when it looks right.
+        </p>
+
+        <label style={devLabelStyle}>
+          Selected desk
+          <select
+            value={selectedPlacement?.id || ""}
+            onChange={(event) => onSelectProp(event.target.value)}
+            style={devSelectStyle}
+          >
+            {placements.map((placement) => (
+              <option key={placement.id} value={placement.id}>
+                {placement.id}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        {selectedPlacement && (
+          <div style={devReadoutStyle}>
+            <div>
+              <strong>Desk</strong>
+              <span>{selectedPlacement.id}</span>
+            </div>
+            <div>
+              <strong>Position</strong>
+              <span>{selectedPlacement.position.map(formatNumber).join(", ")}</span>
+            </div>
+            <div>
+              <strong>Rotation Y</strong>
+              <span>{formatNumber((selectedPlacement.rotation || [0, 0, 0])[1])}</span>
+            </div>
+            <div>
+              <strong>Scale</strong>
+              <span>{formatNumber(selectedPlacement.scale || ACADEMY_DESK_MODEL_SCALE)}</span>
+            </div>
+          </div>
+        )}
+
+        <div style={devControlGroupStyle}>
+          <span style={devControlLabelStyle}>Nudge position</span>
+          <div style={devButtonGridStyle}>
+            <button type="button" onClick={() => onNudge("x", -0.1)} style={devButtonStyle}>
+              X -
+            </button>
+            <button type="button" onClick={() => onNudge("x", 0.1)} style={devButtonStyle}>
+              X +
+            </button>
+            <button type="button" onClick={() => onNudge("z", -0.1)} style={devButtonStyle}>
+              Z -
+            </button>
+            <button type="button" onClick={() => onNudge("z", 0.1)} style={devButtonStyle}>
+              Z +
+            </button>
+            <button type="button" onClick={() => onNudge("y", -0.05)} style={devButtonStyle}>
+              Y -
+            </button>
+            <button type="button" onClick={() => onNudge("y", 0.05)} style={devButtonStyle}>
+              Y +
+            </button>
+          </div>
+        </div>
+
+        <div style={devControlGroupStyle}>
+          <span style={devControlLabelStyle}>Rotate / scale</span>
+          <div style={devButtonGridStyle}>
+            <button type="button" onClick={() => onRotate(-0.1)} style={devButtonStyle}>
+              Rot -
+            </button>
+            <button type="button" onClick={() => onRotate(0.1)} style={devButtonStyle}>
+              Rot +
+            </button>
+            <button type="button" onClick={() => onScale(-0.025)} style={devButtonStyle}>
+              Scale -
+            </button>
+            <button type="button" onClick={() => onScale(0.025)} style={devButtonStyle}>
+              Scale +
+            </button>
+          </div>
+        </div>
+
+        <div style={devActionRowStyle}>
+          <button type="button" onClick={onSaveLocal} style={devPrimaryButtonStyle}>
+            Save browser
+          </button>
+          <button type="button" onClick={onCopyCode} style={devPrimaryButtonStyle}>
+            Copy code
+          </button>
+          <button type="button" onClick={onReset} style={devDangerButtonStyle}>
+            Reset
+          </button>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+
 export default function Classroom() {
   const [showHelp, setShowHelp] = useState(true);
   const [showDevZones, setShowDevZones] = useState(false);
@@ -1356,8 +1282,7 @@ export default function Classroom() {
 
   const scaleSelectedPlacement = (amount: number) => {
     updateSelectedPlacement((placement) => {
-      const currentScale =
-        placement.scale || getDefaultScaleForAsset(placement.assetType);
+      const currentScale = placement.scale || getDefaultScaleForAsset(placement.assetType);
       const nextScale = Math.max(0.025, formatNumber(currentScale + amount));
 
       return { ...placement, scale: nextScale };
@@ -1457,204 +1382,143 @@ export default function Classroom() {
 }
 
 const pageStyle: React.CSSProperties = {
-  background: "linear-gradient(135deg, #fff8de 0%, #e8f7ff 45%, #f4e9ff 100%)",
-  height: "100vh",
-  overflow: "hidden",
   position: "relative",
-  width: "100vw",
+  minHeight: "100vh",
+  overflow: "hidden",
+  background: "linear-gradient(135deg, #c8f3ff 0%, #f5fff3 100%)",
+  color: "#2b2352",
+  fontFamily:
+    "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
 };
 
 const helpCardShellStyle: React.CSSProperties = {
-  left: 18,
   position: "absolute",
-  top: 18,
+  top: "18px",
+  left: "18px",
   zIndex: 10,
+  maxWidth: "390px",
+  pointerEvents: "none",
 };
 
 const helpCardStyle: React.CSSProperties = {
-  background: "rgba(255,255,255,0.92)",
-  border: "2px solid rgba(124,92,255,0.2)",
-  borderRadius: "22px",
-  boxShadow: "0 14px 35px rgba(38,31,72,0.12)",
-  padding: "14px 16px",
+  pointerEvents: "auto",
+  background: "rgba(255, 255, 255, 0.86)",
+  border: "1px solid rgba(255, 255, 255, 0.9)",
+  borderRadius: "24px",
+  padding: "18px 20px",
+  boxShadow: "0 18px 50px rgba(66, 50, 122, 0.18)",
+  backdropFilter: "blur(16px)",
 };
 
 const eyebrowStyle: React.CSSProperties = {
-  color: "#7c5cff",
-  fontSize: "11px",
-  fontWeight: 900,
-  letterSpacing: "0.08em",
+  fontSize: "0.72rem",
+  letterSpacing: "0.12em",
   textTransform: "uppercase",
+  fontWeight: 800,
+  color: "#7c5cff",
 };
 
 const titleStyle: React.CSSProperties = {
-  color: "#24183f",
-  fontSize: "24px",
-  lineHeight: 1,
-  margin: "5px 0 0",
+  margin: "4px 0 8px",
+  fontSize: "1.65rem",
+  lineHeight: 1.1,
 };
 
 const helpTextStyle: React.CSSProperties = {
-  color: "#6f6687",
-  fontSize: "12px",
-  fontWeight: 700,
-  margin: "8px 0 0",
-  maxWidth: "300px",
+  margin: "0 0 12px",
+  fontSize: "0.92rem",
+  lineHeight: 1.5,
+  color: "rgba(43, 35, 82, 0.75)",
 };
 
 const helpButtonStyle: React.CSSProperties = {
-  background: "#7c5cff",
-  border: "0",
+  border: "none",
   borderRadius: "999px",
-  color: "white",
-  cursor: "pointer",
-  fontSize: "11px",
-  fontWeight: 900,
-  marginTop: "10px",
-  padding: "7px 11px",
-};
-
-const floatingLabelStyle: React.CSSProperties = {
-  background: "rgba(255,255,255,0.96)",
-  border: "2px solid rgba(124,92,255,0.35)",
-  borderRadius: "999px",
-  color: "#2a1f4f",
-  fontSize: "11px",
-  fontWeight: 900,
-  padding: "6px 10px",
-  whiteSpace: "nowrap",
-};
-
-const compactHotspotLabelStyle: React.CSSProperties = {
-  alignItems: "center",
-  background: "rgba(255,255,255,0.94)",
-  border: "2px solid rgba(124,92,255,0.35)",
-  borderRadius: "999px",
-  color: "#2a1f4f",
-  display: "inline-flex",
-  fontSize: "16px",
-  fontWeight: 900,
-  height: "34px",
-  justifyContent: "center",
-  padding: 0,
-  width: "34px",
-  whiteSpace: "nowrap",
-};
-
-const loadingStyle: React.CSSProperties = {
-  background: "rgba(255,255,255,0.95)",
-  border: "2px solid rgba(124,92,255,0.25)",
-  borderRadius: "18px",
-  color: "#2a1f4f",
+  padding: "8px 12px",
   fontWeight: 800,
-  minWidth: "220px",
-  padding: "14px 18px",
-  textAlign: "center",
+  color: "#fff",
+  background: "linear-gradient(135deg, #7c5cff, #ff7ad9)",
+  cursor: "pointer",
 };
 
 const panelShellStyle: React.CSSProperties = {
-  bottom: 18,
   position: "absolute",
-  right: 18,
-  top: 18,
-  width: "min(380px, calc(100vw - 36px))",
-  zIndex: 10,
+  top: "18px",
+  right: "18px",
+  zIndex: 11,
+  width: "340px",
+  maxWidth: "calc(100vw - 36px)",
+  maxHeight: "calc(100vh - 140px)",
 };
 
 const panelCardStyle: React.CSSProperties = {
-  backdropFilter: "blur(12px)",
-  background: "rgba(255,255,255,0.92)",
-  border: "2px solid rgba(124,92,255,0.2)",
-  borderRadius: "26px",
-  boxShadow: "0 18px 45px rgba(38,31,72,0.16)",
+  height: "100%",
+  maxHeight: "calc(100vh - 140px)",
   display: "flex",
   flexDirection: "column",
-  height: "100%",
   overflow: "hidden",
+  background: "rgba(255, 255, 255, 0.9)",
+  border: "1px solid rgba(255, 255, 255, 0.9)",
+  borderRadius: "24px",
+  boxShadow: "0 18px 50px rgba(66, 50, 122, 0.18)",
+  backdropFilter: "blur(16px)",
 };
 
 const panelHeaderStyle: React.CSSProperties = {
-  background:
-    "linear-gradient(135deg, rgba(124,92,255,0.16), rgba(126,231,255,0.18))",
-  borderBottom: "1px solid rgba(124,92,255,0.16)",
-  padding: "16px",
+  padding: "18px 18px 10px",
+  borderBottom: "1px solid rgba(124, 92, 255, 0.1)",
 };
 
 const panelTitleStyle: React.CSSProperties = {
-  color: "#24183f",
-  fontSize: "26px",
-  lineHeight: 1,
-  margin: "7px 0 0",
+  margin: "4px 0 6px",
+  fontSize: "1.25rem",
 };
 
 const panelSubtitleStyle: React.CSSProperties = {
-  color: "#6f6687",
-  fontSize: "13px",
-  fontWeight: 800,
-  margin: "8px 0 0",
+  margin: 0,
+  fontSize: "0.86rem",
+  lineHeight: 1.4,
+  color: "rgba(43, 35, 82, 0.68)",
 };
 
 const bodyTextStyle: React.CSSProperties = {
-  color: "#3a315c",
-  fontSize: "14px",
-  fontWeight: 700,
-  lineHeight: 1.45,
-  margin: 0,
-};
-
-const primaryButtonStyle: React.CSSProperties = {
-  background: "#7c5cff",
-  border: "0",
-  borderRadius: "999px",
-  color: "white",
-  cursor: "pointer",
-  fontSize: "12px",
-  fontWeight: 950,
-  marginTop: "14px",
-  padding: "10px 14px",
-  width: "100%",
-};
-
-const hotspotNavButtonStyle: React.CSSProperties = {
-  alignItems: "center",
-  borderRadius: "16px",
-  color: "#24183f",
-  cursor: "pointer",
-  display: "flex",
-  fontSize: "12px",
-  fontWeight: 900,
-  justifyContent: "space-between",
-  padding: "10px 11px",
-  textAlign: "left",
+  margin: "0 0 14px",
+  fontSize: "0.9rem",
+  lineHeight: 1.5,
+  color: "rgba(43, 35, 82, 0.76)",
 };
 
 const sectionStyle: React.CSSProperties = {
   display: "grid",
   gap: "10px",
-  marginTop: "14px",
+  margin: "12px 0 14px",
 };
 
 const sectionHeaderRowStyle: React.CSSProperties = {
-  alignItems: "center",
   display: "flex",
+  alignItems: "center",
   justifyContent: "space-between",
+  gap: "12px",
 };
 
 const sectionLabelStyle: React.CSSProperties = {
-  color: "#7c5cff",
-  fontSize: "11px",
-  fontWeight: 950,
-  letterSpacing: "0.08em",
+  fontSize: "0.76rem",
+  fontWeight: 900,
   textTransform: "uppercase",
+  letterSpacing: "0.08em",
+  color: "rgba(43, 35, 82, 0.62)",
 };
 
 const countPillStyle: React.CSSProperties = {
-  background: "rgba(124,92,255,0.12)",
+  minWidth: "26px",
+  height: "26px",
+  display: "grid",
+  placeItems: "center",
   borderRadius: "999px",
+  background: "rgba(124, 92, 255, 0.12)",
   color: "#7c5cff",
-  fontSize: "11px",
-  fontWeight: 950,
-  padding: "5px 9px",
+  fontSize: "0.75rem",
+  fontWeight: 900,
 };
 
 const listStackStyle: React.CSSProperties = {
@@ -1663,210 +1527,229 @@ const listStackStyle: React.CSSProperties = {
 };
 
 const infoCardStyle: React.CSSProperties = {
-  background: "rgba(255,248,222,0.75)",
-  border: "1px solid rgba(255,198,77,0.28)",
+  padding: "10px 12px",
   borderRadius: "16px",
-  color: "#2a1f4f",
-  display: "grid",
-  gap: "4px",
-  padding: "12px",
+  background: "rgba(124, 92, 255, 0.07)",
+  border: "1px solid rgba(124, 92, 255, 0.08)",
 };
 
 const emptyCardStyle: React.CSSProperties = {
-  ...infoCardStyle,
-  background: "rgba(255,248,222,0.82)",
+  padding: "12px",
+  borderRadius: "16px",
+  background: "rgba(255, 255, 255, 0.68)",
+  border: "1px dashed rgba(124, 92, 255, 0.24)",
 };
 
 const miniTextStyle: React.CSSProperties = {
-  color: "#6f6687",
-  fontSize: "12px",
-  fontWeight: 750,
-  lineHeight: 1.35,
-  margin: 0,
+  margin: "4px 0 0",
+  fontSize: "0.8rem",
+  lineHeight: 1.4,
+  color: "rgba(43, 35, 82, 0.65)",
 };
 
-const rosterGridStyle: React.CSSProperties = {
-  display: "grid",
-  gap: "8px",
-  gridTemplateColumns: "1fr 1fr",
-};
-
-const rosterCardStyle: React.CSSProperties = {
-  alignItems: "center",
-  background: "rgba(255,255,255,0.78)",
-  border: "1px solid rgba(124,92,255,0.12)",
-  borderRadius: "14px",
-  color: "#2a1f4f",
-  display: "flex",
-  fontSize: "12px",
+const primaryButtonStyle: React.CSSProperties = {
+  width: "100%",
+  border: "none",
+  borderRadius: "16px",
+  padding: "11px 14px",
   fontWeight: 900,
-  gap: "8px",
-  padding: "8px",
+  color: "#fff",
+  background: "linear-gradient(135deg, #7c5cff, #ff7ad9)",
+  cursor: "pointer",
 };
 
-const avatarBubbleStyle: React.CSSProperties = {
-  alignItems: "center",
-  background: "linear-gradient(135deg, #7c5cff, #7ee7ff)",
-  borderRadius: "50%",
-  color: "white",
+const hotspotNavButtonStyle: React.CSSProperties = {
+  borderRadius: "14px",
+  padding: "9px 11px",
   display: "flex",
-  flex: "0 0 auto",
-  fontSize: "12px",
-  fontWeight: 950,
-  height: "26px",
-  justifyContent: "center",
-  width: "26px",
+  justifyContent: "space-between",
+  alignItems: "center",
+  fontWeight: 800,
+  color: "#2b2352",
+  cursor: "pointer",
 };
 
 const bottomControlsStyle: React.CSSProperties = {
-  alignItems: "center",
-  bottom: 16,
-  display: "flex",
-  gap: "8px",
-  left: 16,
   position: "absolute",
-  zIndex: 20,
+  left: "18px",
+  bottom: "18px",
+  zIndex: 14,
+  display: "flex",
+  flexWrap: "wrap",
+  gap: "8px",
 };
 
 const smallButtonStyle: React.CSSProperties = {
-  background: "rgba(255,255,255,0.92)",
-  border: "2px solid rgba(124,92,255,0.18)",
+  border: "1px solid rgba(124, 92, 255, 0.18)",
   borderRadius: "999px",
-  color: "#2a1f4f",
-  cursor: "pointer",
-  fontSize: "12px",
+  padding: "9px 12px",
+  background: "rgba(255, 255, 255, 0.82)",
+  color: "#2b2352",
   fontWeight: 900,
-  padding: "9px 14px",
+  cursor: "pointer",
+  boxShadow: "0 10px 30px rgba(66, 50, 122, 0.12)",
+  backdropFilter: "blur(12px)",
 };
 
 const activeSmallButtonStyle: React.CSSProperties = {
-  background: "rgba(124,92,255,0.16)",
-  border: "2px solid rgba(124,92,255,0.55)",
-  color: "#4b32bd",
+  background: "linear-gradient(135deg, #7c5cff, #ff7ad9)",
+  color: "#fff",
+};
+
+const hotspotButtonStyle: React.CSSProperties = {
+  border: "2px solid rgba(255,255,255,0.65)",
+  borderRadius: "999px",
+  padding: "7px 11px",
+  display: "inline-flex",
+  alignItems: "center",
+  gap: "6px",
+  color: "#2b2352",
+  fontSize: "0.78rem",
+  fontWeight: 900,
+  background: "rgba(255,255,255,0.9)",
+  cursor: "pointer",
+};
+
+const floatingLabelStyle: React.CSSProperties = {
+  padding: "5px 8px",
+  borderRadius: "999px",
+  background: "rgba(255,255,255,0.86)",
+  color: "#2b2352",
+  fontSize: "0.72rem",
+  fontWeight: 900,
+  boxShadow: "0 8px 22px rgba(66, 50, 122, 0.16)",
+  whiteSpace: "nowrap",
+};
+
+const loadingStyle: React.CSSProperties = {
+  padding: "14px 18px",
+  borderRadius: "18px",
+  background: "rgba(255,255,255,0.92)",
+  color: "#2b2352",
+  fontWeight: 900,
+  boxShadow: "0 12px 30px rgba(66, 50, 122, 0.16)",
 };
 
 const devPanelShellStyle: React.CSSProperties = {
-  left: 18,
   position: "absolute",
-  top: 148,
-  width: "min(330px, calc(100vw - 36px))",
-  zIndex: 15,
+  left: "18px",
+  top: "180px",
+  zIndex: 13,
+  width: "310px",
+  maxWidth: "calc(100vw - 36px)",
 };
 
 const devPanelCardStyle: React.CSSProperties = {
-  background: "rgba(255,255,255,0.94)",
-  border: "2px solid rgba(124,92,255,0.22)",
-  borderRadius: "22px",
-  boxShadow: "0 18px 45px rgba(38,31,72,0.16)",
-  display: "grid",
-  gap: "12px",
-  padding: "14px 16px",
+  background: "rgba(255, 255, 255, 0.91)",
+  border: "1px solid rgba(255, 255, 255, 0.9)",
+  borderRadius: "24px",
+  padding: "16px",
+  boxShadow: "0 18px 50px rgba(66, 50, 122, 0.18)",
+  backdropFilter: "blur(16px)",
 };
 
 const devPanelTitleStyle: React.CSSProperties = {
-  color: "#24183f",
-  fontSize: "22px",
-  lineHeight: 1,
-  margin: "2px 0 0",
+  margin: "4px 0 8px",
+  fontSize: "1.1rem",
 };
 
 const devLabelStyle: React.CSSProperties = {
-  color: "#6f6687",
   display: "grid",
-  fontSize: "11px",
-  fontWeight: 950,
   gap: "6px",
-  letterSpacing: "0.04em",
-  textTransform: "uppercase",
+  marginTop: "12px",
+  fontSize: "0.76rem",
+  fontWeight: 900,
+  color: "rgba(43, 35, 82, 0.66)",
 };
 
 const devSelectStyle: React.CSSProperties = {
-  background: "white",
-  border: "2px solid rgba(124,92,255,0.22)",
+  width: "100%",
+  border: "1px solid rgba(124, 92, 255, 0.18)",
   borderRadius: "14px",
-  color: "#2a1f4f",
-  fontSize: "13px",
-  fontWeight: 900,
-  outline: "none",
-  padding: "10px 11px",
+  padding: "9px 10px",
+  fontWeight: 800,
+  color: "#2b2352",
+  background: "rgba(255, 255, 255, 0.9)",
 };
 
 const devReadoutStyle: React.CSSProperties = {
-  background: "rgba(124,92,255,0.09)",
-  borderRadius: "16px",
-  color: "#2a1f4f",
   display: "grid",
-  fontSize: "12px",
-  fontWeight: 850,
-  gap: "6px",
-  padding: "11px",
+  gridTemplateColumns: "1fr 1fr",
+  gap: "8px",
+  marginTop: "12px",
 };
 
 const devControlGroupStyle: React.CSSProperties = {
   display: "grid",
-  gap: "7px",
+  gap: "8px",
+  marginTop: "14px",
 };
 
 const devControlLabelStyle: React.CSSProperties = {
-  color: "#7c5cff",
-  fontSize: "11px",
-  fontWeight: 950,
-  letterSpacing: "0.08em",
-  textTransform: "uppercase",
+  fontSize: "0.76rem",
+  fontWeight: 900,
+  color: "rgba(43, 35, 82, 0.66)",
 };
 
 const devButtonGridStyle: React.CSSProperties = {
   display: "grid",
-  gap: "7px",
-  gridTemplateColumns: "1fr 1fr",
+  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+  gap: "8px",
 };
 
 const devButtonStyle: React.CSSProperties = {
-  background: "white",
-  border: "2px solid rgba(124,92,255,0.18)",
-  borderRadius: "12px",
-  color: "#2a1f4f",
-  cursor: "pointer",
-  fontSize: "12px",
-  fontWeight: 950,
+  border: "1px solid rgba(124, 92, 255, 0.16)",
+  borderRadius: "14px",
   padding: "9px 10px",
+  fontWeight: 900,
+  color: "#2b2352",
+  background: "rgba(255, 255, 255, 0.84)",
+  cursor: "pointer",
 };
 
 const devActionRowStyle: React.CSSProperties = {
   display: "grid",
-  gap: "7px",
   gridTemplateColumns: "1fr 1fr 1fr",
+  gap: "8px",
+  marginTop: "14px",
 };
 
 const devPrimaryButtonStyle: React.CSSProperties = {
-  ...devButtonStyle,
-  background: "#7c5cff",
-  borderColor: "#7c5cff",
-  color: "white",
+  border: "none",
+  borderRadius: "14px",
+  padding: "10px 8px",
+  fontWeight: 900,
+  color: "#fff",
+  background: "linear-gradient(135deg, #7c5cff, #33c7ff)",
+  cursor: "pointer",
 };
 
 const devDangerButtonStyle: React.CSSProperties = {
-  ...devButtonStyle,
-  background: "#fff8de",
-  borderColor: "rgba(255,179,71,0.55)",
+  border: "none",
+  borderRadius: "14px",
+  padding: "10px 8px",
+  fontWeight: 900,
+  color: "#fff",
+  background: "linear-gradient(135deg, #ff5470, #ff9d5c)",
+  cursor: "pointer",
 };
 
 const devAssetTagStyle: React.CSSProperties = {
-  background: "rgba(255,255,255,0.96)",
-  border: "2px solid rgba(124,92,255,0.35)",
+  border: "1px solid rgba(124, 92, 255, 0.24)",
   borderRadius: "999px",
-  color: "#2a1f4f",
-  cursor: "pointer",
-  fontSize: "10px",
-  fontWeight: 950,
   padding: "5px 8px",
+  background: "rgba(255,255,255,0.88)",
+  color: "#2b2352",
+  fontSize: "0.68rem",
+  fontWeight: 900,
+  cursor: "pointer",
+  boxShadow: "0 8px 18px rgba(66, 50, 122, 0.12)",
   whiteSpace: "nowrap",
 };
 
 const devAssetTagActiveStyle: React.CSSProperties = {
-  background: "#7c5cff",
-  borderColor: "#7c5cff",
-  color: "white",
+  background: "linear-gradient(135deg, #7c5cff, #ff7ad9)",
+  color: "#fff",
 };
 
 useGLTF.preload(CLASSROOM_MODEL_PATH);
