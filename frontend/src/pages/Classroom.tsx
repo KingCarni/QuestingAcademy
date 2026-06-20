@@ -10,14 +10,12 @@ const PLAYER_MODEL_PATH = "/assets/3d/avatar/avatar.glb";
 const EMBERCUB_MODEL_PATH = "/assets/3d/pets/embercub.glb";
 const ACADEMY_DESK_MODEL_PATH = "/assets/3d/classroom/academy-desk.glb";
 
-// First-pass tuning knobs. These will likely need tiny adjustments per exported model.
 const PLAYER_MODEL_SCALE = 1;
-const EMBERCUB_MODEL_SCALE = 1;
 const ACADEMY_DESK_MODEL_SCALE = 0.25;
-const DEV_PLACEMENT_STORAGE_KEY = "eduMatesClassroomDeskPlacements.v1";
+const EMBERCUB_MODEL_SCALE = 1;
 
-// Tuning knobs for the current classroom blockout.
-// Keep these near the top so we can quickly adjust them as the UE room changes.
+const DEV_PLACEMENT_STORAGE_KEY = "eduMatesClassroomAssetPlacements.v3";
+
 const PLAYER_START_POSITION = new THREE.Vector3(0, 1.5, 2.5);
 const PLAYER_BOUNDS = {
   minX: -9.2,
@@ -66,33 +64,49 @@ type ClassroomPanelData = {
   members: any[];
 };
 
+type ClassroomAssetType = "academy-desk" | "embercub";
 
 type ClassroomPropPlacement = {
   id: string;
+  assetType: ClassroomAssetType;
+  label?: string;
   position: [number, number, number];
   rotation?: [number, number, number];
   scale?: number;
 };
 
 // Student desk/chair placements.
-// Keep these values explicit instead of generating them so future dev-mode placement
-// commits can replace coordinates cleanly without changing the rendering logic.
+// These are the first saved table/chair values from Dev Mode.
 const ACADEMY_DESK_PLACEMENTS: ClassroomPropPlacement[] = [
-  // Left student area.
-  { id: "left-front-1", position: [-3.95, 0.33, 1.05], rotation: [0, 0, 0] },
-  { id: "left-front-2", position: [-2.55, 0.33, 1.05], rotation: [0, 0, 0] },
-  { id: "left-mid-1", position: [-3.95, 0.33, 2.05], rotation: [0, 0, 0] },
-  { id: "left-mid-2", position: [-2.55, 0.33, 2.05], rotation: [0, 0, 0] },
-  { id: "left-back-1", position: [-3.95, 0.33, 3.05], rotation: [0, 0, 0] },
-  { id: "left-back-2", position: [-2.55, 0.33, 3.05], rotation: [0, 0, 0] },
+  { id: "left-front-1", assetType: "academy-desk", position: [-4.95, 0.93, 0.65], rotation: [0, 3.1, 0], scale: 0.85 },
+  { id: "left-front-2", assetType: "academy-desk", position: [-2.55, 0.83, 0.65], rotation: [0, 3.2, 0], scale: 0.825 },
+  { id: "left-mid-1", assetType: "academy-desk", position: [-4.95, 0.93, 2.55], rotation: [0, 3.1, 0], scale: 0.85 },
+  { id: "left-mid-2", assetType: "academy-desk", position: [-2.55, 0.98, 2.75], rotation: [0, 3.1, 0], scale: 0.8 },
+  { id: "left-back-1", assetType: "academy-desk", position: [-4.95, 0.88, 4.45], rotation: [0, 3.1, 0], scale: 0.775 },
+  { id: "left-back-2", assetType: "academy-desk", position: [-2.55, 0.88, 4.65], rotation: [0, 3.1, 0], scale: 0.725 },
 
-  // Right student area.
-  { id: "right-front-1", position: [2.45, 0.33, 1.05], rotation: [0, 0, 0] },
-  { id: "right-front-2", position: [3.85, 0.33, 1.05], rotation: [0, 0, 0] },
-  { id: "right-mid-1", position: [2.45, 0.33, 2.05], rotation: [0, 0, 0] },
-  { id: "right-mid-2", position: [3.85, 0.33, 2.05], rotation: [0, 0, 0] },
-  { id: "right-back-1", position: [2.45, 0.33, 3.05], rotation: [0, 0, 0] },
-  { id: "right-back-2", position: [3.85, 0.33, 3.05], rotation: [0, 0, 0] },
+  { id: "right-front-1", assetType: "academy-desk", position: [2.45, 0.33, 1.05], rotation: [0, 0, 0], scale: 0.25 },
+  { id: "right-front-2", assetType: "academy-desk", position: [3.85, 0.33, 1.05], rotation: [0, 0, 0], scale: 0.25 },
+  { id: "right-mid-1", assetType: "academy-desk", position: [2.45, 0.33, 2.05], rotation: [0, 0, 0], scale: 0.25 },
+  { id: "right-mid-2", assetType: "academy-desk", position: [3.85, 0.33, 2.05], rotation: [0, 0, 0], scale: 0.25 },
+  { id: "right-back-1", assetType: "academy-desk", position: [2.45, 0.33, 3.05], rotation: [0, 0, 0], scale: 0.25 },
+  { id: "right-back-2", assetType: "academy-desk", position: [3.85, 0.33, 3.05], rotation: [0, 0, 0], scale: 0.25 },
+];
+
+const EMBERCUB_PLACEMENTS: ClassroomPropPlacement[] = [
+  {
+    id: "embercub-1",
+    assetType: "embercub",
+    label: "Embercub (Pet)",
+    position: [-0.55, 0, 2.0],
+    rotation: [0, 3.75, 0],
+    scale: 0.45,
+  },
+];
+
+const CLASSROOM_ASSET_PLACEMENTS: ClassroomPropPlacement[] = [
+  ...ACADEMY_DESK_PLACEMENTS,
+  ...EMBERCUB_PLACEMENTS,
 ];
 
 const HOTSPOTS: HotspotInfo[] = [
@@ -178,6 +192,125 @@ const HOTSPOT_LOOKUP = HOTSPOTS.reduce(
   {} as Record<HotspotKey, HotspotInfo>,
 );
 
+function getDefaultScaleForAsset(assetType: ClassroomAssetType) {
+  return assetType === "embercub" ? EMBERCUB_MODEL_SCALE : ACADEMY_DESK_MODEL_SCALE;
+}
+
+function clonePlacement(placement: ClassroomPropPlacement): ClassroomPropPlacement {
+  return {
+    ...placement,
+    position: [...placement.position] as [number, number, number],
+    rotation: placement.rotation
+      ? ([...placement.rotation] as [number, number, number])
+      : ([0, 0, 0] as [number, number, number]),
+    scale: placement.scale || getDefaultScaleForAsset(placement.assetType),
+  };
+}
+
+function cloneDefaultPlacements() {
+  return CLASSROOM_ASSET_PLACEMENTS.map(clonePlacement);
+}
+
+function normalizePlacement(
+  placement: ClassroomPropPlacement,
+  fallback?: ClassroomPropPlacement,
+): ClassroomPropPlacement {
+  const assetType = placement.assetType || fallback?.assetType || "academy-desk";
+
+  return {
+    ...(fallback || {}),
+    ...placement,
+    assetType,
+    label: placement.label || fallback?.label,
+    position: [...(placement.position || fallback?.position || [0, 0, 0])] as [
+      number,
+      number,
+      number,
+    ],
+    rotation: placement.rotation
+      ? ([...placement.rotation] as [number, number, number])
+      : fallback?.rotation
+        ? ([...fallback.rotation] as [number, number, number])
+        : ([0, 0, 0] as [number, number, number]),
+    scale:
+      placement.scale ||
+      fallback?.scale ||
+      getDefaultScaleForAsset(assetType),
+  };
+}
+
+function loadSavedPlacements() {
+  if (typeof window === "undefined") return cloneDefaultPlacements();
+
+  try {
+    const saved = window.localStorage.getItem(DEV_PLACEMENT_STORAGE_KEY);
+    if (!saved) return cloneDefaultPlacements();
+
+    const parsed = JSON.parse(saved);
+    if (!Array.isArray(parsed)) return cloneDefaultPlacements();
+
+    const savedById = new Map<string, ClassroomPropPlacement>();
+    parsed.forEach((placement: ClassroomPropPlacement) => {
+      if (placement?.id) {
+        savedById.set(placement.id, placement);
+      }
+    });
+
+    return cloneDefaultPlacements().map((defaultPlacement) =>
+      normalizePlacement(savedById.get(defaultPlacement.id) || defaultPlacement, defaultPlacement),
+    );
+  } catch {
+    return cloneDefaultPlacements();
+  }
+}
+
+function formatNumber(value: number) {
+  return Number(value.toFixed(3));
+}
+
+function formatPlacementCode(placements: ClassroomPropPlacement[]) {
+  const rows = placements
+    .map((placement) => {
+      const position = placement.position.map(formatNumber).join(", ");
+      const rotation = (placement.rotation || [0, 0, 0])
+        .map(formatNumber)
+        .join(", ");
+      const scale = formatNumber(
+        placement.scale || getDefaultScaleForAsset(placement.assetType),
+      );
+      const label = placement.label ? `, label: "${placement.label}"` : "";
+
+      return `  { id: "${placement.id}", assetType: "${placement.assetType}"${label}, position: [${position}], rotation: [${rotation}], scale: ${scale} },`;
+    })
+    .join("\n");
+
+  return `const CLASSROOM_ASSET_PLACEMENTS: ClassroomPropPlacement[] = [\n${rows}\n];`;
+}
+
+function asLabel(value: any, fallback: string) {
+  if (value === null || value === undefined || value === "") return fallback;
+  if (Array.isArray(value)) return value.join(", ");
+  return String(value);
+}
+
+function getAssignmentTitle(assignment: any, index: number) {
+  return asLabel(
+    assignment?.title || assignment?.name || assignment?.assignmentTitle,
+    `Quest ${index + 1}`,
+  );
+}
+
+function getGoalTitle(goal: any, index: number) {
+  return asLabel(goal?.title || goal?.name || goal?.goalTitle, `Goal ${index + 1}`);
+}
+
+function getRewardTitle(reward: any, index: number) {
+  return asLabel(
+    reward?.title || reward?.name || reward?.rewardName,
+    `Reward ${index + 1}`,
+  );
+}
+
 function useKeyboardMovement() {
   const keysRef = useRef<KeyState>({
     forward: false,
@@ -244,22 +377,7 @@ function PlayerAvatarModel() {
   );
 }
 
-function EmbercubModel() {
-  const gltf = useGLTF(EMBERCUB_MODEL_PATH) as any;
-  const embercubScene = useMemo(() => gltf.scene.clone(true), [gltf.scene]);
-
-  return (
-    <group position={[-4.05, 1.25, 2.35]} rotation={[0, 0.7, 0]}>
-      <primitive object={embercubScene} scale={EMBERCUB_MODEL_SCALE} />
-      <Html position={[0, 1.15, 0]} center>
-        <div style={floatingLabelStyle}>Embercub</div>
-      </Html>
-    </group>
-  );
-}
-
-
-function AcademyDeskModel({
+function ModelAsset({
   placement,
   devMode,
   isSelected,
@@ -270,8 +388,13 @@ function AcademyDeskModel({
   isSelected: boolean;
   onSelect: (id: string) => void;
 }) {
-  const gltf = useGLTF(ACADEMY_DESK_MODEL_PATH) as any;
-  const deskScene = useMemo(() => {
+  const modelPath =
+    placement.assetType === "embercub"
+      ? EMBERCUB_MODEL_PATH
+      : ACADEMY_DESK_MODEL_PATH;
+  const gltf = useGLTF(modelPath) as any;
+
+  const scene = useMemo(() => {
     const clonedScene = gltf.scene.clone(true);
 
     clonedScene.traverse((child: any) => {
@@ -290,17 +413,20 @@ function AcademyDeskModel({
     onSelect(placement.id);
   };
 
+  const label = placement.label || placement.id;
+  const labelHeight = placement.assetType === "embercub" ? 1.15 : 0.65;
+
   return (
     <group
       position={placement.position}
       rotation={placement.rotation || [0, 0, 0]}
-      scale={placement.scale || ACADEMY_DESK_MODEL_SCALE}
+      scale={placement.scale || getDefaultScaleForAsset(placement.assetType)}
       onClick={handleClick}
     >
-      <primitive object={deskScene} />
+      <primitive object={scene} />
 
-      {devMode && (
-        <Html position={[0, 0.65, 0]} center>
+      {devMode || placement.assetType === "embercub" ? (
+        <Html position={[0, labelHeight, 0]} center>
           <button
             type="button"
             onClick={(event) => {
@@ -308,19 +434,22 @@ function AcademyDeskModel({
               onSelect(placement.id);
             }}
             style={{
-              ...devAssetTagStyle,
+              ...(placement.assetType === "embercub"
+                ? floatingLabelStyle
+                : devAssetTagStyle),
+              ...(devMode ? devAssetTagStyle : {}),
               ...(isSelected ? devAssetTagActiveStyle : {}),
             }}
           >
-            {placement.id}
+            {label}
           </button>
         </Html>
-      )}
+      ) : null}
     </group>
   );
 }
 
-function AcademyDeskLayout({
+function AssetLayout({
   placements,
   devMode,
   selectedPropId,
@@ -334,7 +463,7 @@ function AcademyDeskLayout({
   return (
     <>
       {placements.map((placement) => (
-        <AcademyDeskModel
+        <ModelAsset
           key={placement.id}
           placement={placement}
           devMode={devMode}
@@ -359,9 +488,6 @@ function PlayerMarker({
     if (!group) return;
 
     const speed = 2.5;
-
-    // World-space movement for the classroom blockout:
-    // W moves toward the teacher/board wall, S moves toward the open camera side.
     const moveX =
       (keysRef.current.right ? 1 : 0) - (keysRef.current.left ? 1 : 0);
     const moveZ =
@@ -383,8 +509,6 @@ function PlayerMarker({
         PLAYER_BOUNDS.maxZ,
       );
 
-      // The avatar GLB faces opposite the movement vector after its model-level rotation.
-      // Add PI so the visible character points toward travel direction instead of away from it.
       group.rotation.y = Math.atan2(moveX, moveZ) + Math.PI;
     }
 
@@ -394,7 +518,6 @@ function PlayerMarker({
   return (
     <group ref={groupRef} position={PLAYER_START_POSITION.toArray()}>
       <PlayerAvatarModel />
-
       <Html position={[0, 1.25, 0]} center>
         <div style={floatingLabelStyle}>Player</div>
       </Html>
@@ -455,20 +578,23 @@ function ClassroomHotspot({
         <Html position={[0, hotspot.size[1] / 2 + 0.22, 0]} center>
           <button
             type="button"
-            onClick={() => onSelect(hotspot.id)}
-            style={{
-              ...(showDevZone ? floatingLabelStyle : compactHotspotLabelStyle),
-              border: `2px solid ${hotspot.color}`,
-              boxShadow: isActive
-                ? `0 0 0 4px ${hotspot.color}24, 0 10px 26px rgba(35, 24, 63, 0.18)`
-                : "0 8px 24px rgba(35, 24, 63, 0.13)",
-              cursor: "pointer",
+            onClick={(event) => {
+              event.stopPropagation();
+              onSelect(hotspot.id);
             }}
+            style={{
+              ...compactHotspotLabelStyle,
+              borderColor: isActive
+                ? "rgba(124,92,255,0.75)"
+                : "rgba(124,92,255,0.35)",
+              boxShadow: isActive
+                ? `0 0 0 4px ${hotspot.color}33`
+                : "0 8px 18px rgba(38,31,72,0.16)",
+            }}
+            aria-label={hotspot.title}
+            title={hotspot.title}
           >
-            <span aria-hidden="true" style={{ marginRight: showDevZone ? 5 : 0 }}>
-              {hotspot.icon}
-            </span>
-            {showDevZone ? hotspot.label : null}
+            {hotspot.icon}
           </button>
         </Html>
       )}
@@ -503,12 +629,7 @@ function ClassroomHotspots({
 function LoadingFallback() {
   return (
     <Html center>
-      <div style={loadingStyle}>
-        Loading classroom...
-        <div style={{ color: "#6f6687", fontSize: "12px", marginTop: "4px" }}>
-          Large GLB files can take a moment.
-        </div>
-      </div>
+      <div style={loadingStyle}>Loading classroom...</div>
     </Html>
   );
 }
@@ -520,23 +641,30 @@ function CameraRig({
   cameraMode: CameraMode;
   playerPositionRef: React.MutableRefObject<THREE.Vector3>;
 }) {
-  useFrame(({ camera }, delta) => {
+  useFrame(({ camera }) => {
     if (cameraMode === "orbit") return;
 
-    const player = playerPositionRef.current;
-    const desiredPosition =
-      cameraMode === "top"
-        ? new THREE.Vector3(player.x, player.y + 9.5, player.z + 0.05)
-        : new THREE.Vector3(player.x + 3.4, player.y + 3.2, player.z + 4.2);
+    const playerPosition = playerPositionRef.current;
 
-    camera.position.lerp(desiredPosition, Math.min(1, delta * 4.5));
+    if (cameraMode === "follow") {
+      const targetPosition = new THREE.Vector3(
+        playerPosition.x + 2.4,
+        playerPosition.y + 3.2,
+        playerPosition.z + 4.8,
+      );
+      camera.position.lerp(targetPosition, 0.08);
+      camera.lookAt(playerPosition.x, playerPosition.y + 0.8, playerPosition.z);
+    }
 
-    const lookTarget =
-      cameraMode === "top"
-        ? new THREE.Vector3(player.x, player.y, player.z)
-        : new THREE.Vector3(player.x, player.y + 0.85, player.z);
-
-    camera.lookAt(lookTarget);
+    if (cameraMode === "top") {
+      const targetPosition = new THREE.Vector3(
+        playerPosition.x,
+        playerPosition.y + 9.5,
+        playerPosition.z + 0.01,
+      );
+      camera.position.lerp(targetPosition, 0.1);
+      camera.lookAt(playerPosition.x, playerPosition.y, playerPosition.z);
+    }
   });
 
   return null;
@@ -548,7 +676,7 @@ function Scene({
   showDevZones,
   cameraMode,
   playerPositionRef,
-  deskPlacements,
+  placements,
   devMode,
   selectedPropId,
   onSelectProp,
@@ -558,7 +686,7 @@ function Scene({
   showDevZones: boolean;
   cameraMode: CameraMode;
   playerPositionRef: React.MutableRefObject<THREE.Vector3>;
-  deskPlacements: ClassroomPropPlacement[];
+  placements: ClassroomPropPlacement[];
   devMode: boolean;
   selectedPropId: string | null;
   onSelectProp: (id: string) => void;
@@ -578,13 +706,12 @@ function Scene({
 
       <Suspense fallback={<LoadingFallback />}>
         <ClassroomModel />
-        <AcademyDeskLayout
-          placements={deskPlacements}
+        <AssetLayout
+          placements={placements}
           devMode={devMode}
           selectedPropId={selectedPropId}
           onSelectProp={onSelectProp}
         />
-        <EmbercubModel />
         <PlayerMarker playerPositionRef={playerPositionRef} />
         <ClassroomHotspots
           activeHotspot={activeHotspot}
@@ -615,6 +742,145 @@ function Scene({
         target={[0, 1, 0]}
       />
     </>
+  );
+}
+
+function DevPlacementPanel({
+  placements,
+  selectedPropId,
+  onSelectProp,
+  onNudge,
+  onRotate,
+  onScale,
+  onSaveLocal,
+  onReset,
+  onCopyCode,
+}: {
+  placements: ClassroomPropPlacement[];
+  selectedPropId: string | null;
+  onSelectProp: (id: string) => void;
+  onNudge: (axis: "x" | "y" | "z", amount: number) => void;
+  onRotate: (amount: number) => void;
+  onScale: (amount: number) => void;
+  onSaveLocal: () => void;
+  onReset: () => void;
+  onCopyCode: () => void;
+}) {
+  const selectedPlacement =
+    placements.find((placement) => placement.id === selectedPropId) ||
+    placements[0] ||
+    null;
+
+  return (
+    <aside style={devPanelShellStyle}>
+      <div style={devPanelCardStyle}>
+        <div style={eyebrowStyle}>Dev Mode</div>
+        <h2 style={devPanelTitleStyle}>Asset Placement</h2>
+        <p style={miniTextStyle}>
+          Select a desk or pet, nudge position, rotate, scale, then copy the
+          placement code into the file when it looks right.
+        </p>
+
+        <label style={devLabelStyle}>
+          Selected asset
+          <select
+            value={selectedPlacement?.id || ""}
+            onChange={(event) => onSelectProp(event.target.value)}
+            style={devSelectStyle}
+          >
+            {placements.map((placement) => (
+              <option key={placement.id} value={placement.id}>
+                {placement.label || placement.id}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        {selectedPlacement && (
+          <div style={devReadoutStyle}>
+            <div>
+              <strong>Asset</strong>
+              <span>{selectedPlacement.label || selectedPlacement.id}</span>
+            </div>
+            <div>
+              <strong>Type</strong>
+              <span>{selectedPlacement.assetType}</span>
+            </div>
+            <div>
+              <strong>Position</strong>
+              <span>{selectedPlacement.position.map(formatNumber).join(", ")}</span>
+            </div>
+            <div>
+              <strong>Rotation Y</strong>
+              <span>{formatNumber((selectedPlacement.rotation || [0, 0, 0])[1])}</span>
+            </div>
+            <div>
+              <strong>Scale</strong>
+              <span>
+                {formatNumber(
+                  selectedPlacement.scale ||
+                    getDefaultScaleForAsset(selectedPlacement.assetType),
+                )}
+              </span>
+            </div>
+          </div>
+        )}
+
+        <div style={devControlGroupStyle}>
+          <span style={devControlLabelStyle}>Nudge position</span>
+          <div style={devButtonGridStyle}>
+            <button type="button" onClick={() => onNudge("x", -0.1)} style={devButtonStyle}>
+              X -
+            </button>
+            <button type="button" onClick={() => onNudge("x", 0.1)} style={devButtonStyle}>
+              X +
+            </button>
+            <button type="button" onClick={() => onNudge("z", -0.1)} style={devButtonStyle}>
+              Z -
+            </button>
+            <button type="button" onClick={() => onNudge("z", 0.1)} style={devButtonStyle}>
+              Z +
+            </button>
+            <button type="button" onClick={() => onNudge("y", -0.05)} style={devButtonStyle}>
+              Y -
+            </button>
+            <button type="button" onClick={() => onNudge("y", 0.05)} style={devButtonStyle}>
+              Y +
+            </button>
+          </div>
+        </div>
+
+        <div style={devControlGroupStyle}>
+          <span style={devControlLabelStyle}>Rotate / scale</span>
+          <div style={devButtonGridStyle}>
+            <button type="button" onClick={() => onRotate(-0.1)} style={devButtonStyle}>
+              Rot -
+            </button>
+            <button type="button" onClick={() => onRotate(0.1)} style={devButtonStyle}>
+              Rot +
+            </button>
+            <button type="button" onClick={() => onScale(-0.025)} style={devButtonStyle}>
+              Scale -
+            </button>
+            <button type="button" onClick={() => onScale(0.025)} style={devButtonStyle}>
+              Scale +
+            </button>
+          </div>
+        </div>
+
+        <div style={devActionRowStyle}>
+          <button type="button" onClick={onSaveLocal} style={devPrimaryButtonStyle}>
+            Save browser
+          </button>
+          <button type="button" onClick={onCopyCode} style={devPrimaryButtonStyle}>
+            Copy code
+          </button>
+          <button type="button" onClick={onReset} style={devDangerButtonStyle}>
+            Reset
+          </button>
+        </div>
+      </div>
+    </aside>
   );
 }
 
@@ -699,40 +965,28 @@ function PanelContent({
     return <StudentRosterPanel data={data} />;
   }
 
-  if (activeHotspot === "teacher") {
-    return <TeacherPanel data={data} />;
+  if (activeHotspot === "door") {
+    return <DoorPanel />;
   }
 
-  return <DoorPanel />;
+  return <TeacherPanel data={data} />;
 }
 
 function QuestBoardPanel({ data }: { data: ClassroomPanelData }) {
-  const assignments = data.assignments;
-
   return (
     <section style={sectionStyle}>
       <div style={sectionHeaderRowStyle}>
         <span style={sectionLabelStyle}>Active quests</span>
-        <span style={countPillStyle}>{assignments.length}</span>
+        <span style={countPillStyle}>{data.assignments.length}</span>
       </div>
 
-      {assignments.length ? (
+      {data.assignments.length ? (
         <div style={listStackStyle}>
-          {assignments.slice(0, 5).map((assignment, index) => (
-            <InfoCard key={assignment?.id || assignment?.assignmentId || index}>
-              <div style={cardTitleRowStyle}>
-                <strong>{getAssignmentTitle(assignment, index)}</strong>
-                <span style={statusPillStyle}>
-                  {asLabel(assignment?.status, "active")}
-                </span>
-              </div>
+          {data.assignments.slice(0, 4).map((assignment, index) => (
+            <InfoCard key={assignment?.id || index}>
+              <strong>{getAssignmentTitle(assignment, index)}</strong>
               <p style={miniTextStyle}>
-                {asLabel(
-                  assignment?.subject ||
-                    assignment?.subjectFocus ||
-                    assignment?.type,
-                  "Learning quest",
-                )}
+                {asLabel(assignment?.subject || assignment?.type, "Learning quest")}
               </p>
             </InfoCard>
           ))}
@@ -748,49 +1002,23 @@ function QuestBoardPanel({ data }: { data: ClassroomPanelData }) {
 }
 
 function PetCornerPanel({ data }: { data: ClassroomPanelData }) {
-  const pet = data.classroom?.pet;
-  const petName = asLabel(pet?.petName || pet?.name, "Class pet");
-  const petEmoji = asLabel(pet?.petEmoji || pet?.emoji, "🐾");
-  const level = asLabel(pet?.level, "1");
-  const xp = Number(pet?.xp || 0);
-  const xpGoal = Number(pet?.xpGoal || 100);
-  const percent = Math.max(
-    0,
-    Math.min(100, xpGoal ? Math.round((xp / xpGoal) * 100) : 0),
-  );
+  const pet = data.classroom?.pet || data.classroom?.classPet || null;
 
   return (
     <section style={sectionStyle}>
-      <div style={petHeroStyle}>
-        <div style={petEmojiStyle}>{petEmoji}</div>
-        <div>
-          <strong
-            style={{ color: "#24183f", display: "block", fontSize: "16px" }}
-          >
-            {petName}
-          </strong>
-          <span style={miniTextStyle}>Level {level} class companion</span>
-        </div>
-      </div>
-
-      <div style={{ marginTop: "12px" }}>
-        <div style={sectionHeaderRowStyle}>
-          <span style={sectionLabelStyle}>Pet XP</span>
-          <span style={miniTextStyle}>
-            {xp}/{xpGoal}
-          </span>
-        </div>
-        <div style={progressTrackStyle}>
-          <div style={{ ...progressFillStyle, width: `${percent}%` }} />
-        </div>
-      </div>
-
       <InfoCard>
-        <strong>Classroom role</strong>
+        <strong>{asLabel(pet?.name || pet?.petName, "Embercub")}</strong>
         <p style={miniTextStyle}>
-          The pet corner keeps the class pet visible during normal classroom
-          work. The Pet Sanctuary can handle deeper feeding, habitats, upgrades,
-          and collection systems later.
+          {asLabel(
+            pet?.description || pet?.status,
+            "Class pet is present and ready for future feeding, bonding, and daily care loops.",
+          )}
+        </p>
+      </InfoCard>
+      <InfoCard>
+        <strong>Future loop</strong>
+        <p style={miniTextStyle}>
+          Feed, care, classroom streaks, and class-wide pet progression.
         </p>
       </InfoCard>
     </section>
@@ -811,20 +1039,20 @@ function RewardsPanel({ data }: { data: ClassroomPanelData }) {
             <InfoCard key={goal?.id || index}>
               <strong>{getGoalTitle(goal, index)}</strong>
               <p style={miniTextStyle}>
-                {asLabel(goal?.status, "class goal")}
+                {asLabel(goal?.description || goal?.status, "Class milestone in progress")}
               </p>
             </InfoCard>
           ))}
         </div>
       ) : (
         <EmptyCard
-          title="No goals yet"
-          body="Class goals and progress milestones will appear here."
+          title="No trophy goals yet"
+          body="Class goals and completed assignment milestones will light up this wall."
         />
       )}
 
-      <div style={sectionHeaderRowStyle}>
-        <span style={sectionLabelStyle}>Reward history</span>
+      <div style={{ ...sectionHeaderRowStyle, marginTop: "12px" }}>
+        <span style={sectionLabelStyle}>Reward log</span>
         <span style={countPillStyle}>{data.rewardLogs.length}</span>
       </div>
 
@@ -911,10 +1139,13 @@ function TeacherPanel({ data }: { data: ClassroomPanelData }) {
 function DoorPanel() {
   return (
     <section style={sectionStyle}>
-      <EmptyCard
-        title="Courtyard route coming later"
-        body="Keep this as a clear future transition point. Do not wire routing until the next hub exists."
-      />
+      <InfoCard>
+        <strong>Courtyard transition placeholder</strong>
+        <p style={miniTextStyle}>
+          Next step: click this door to fade out and load the Academy Courtyard
+          route or scene.
+        </p>
+      </InfoCard>
     </section>
   );
 }
@@ -1012,196 +1243,17 @@ function ViewModeControls({
   );
 }
 
-function cloneDefaultPlacements() {
-  return ACADEMY_DESK_PLACEMENTS.map((placement) => ({
-    ...placement,
-    position: [...placement.position] as [number, number, number],
-    rotation: placement.rotation
-      ? ([...placement.rotation] as [number, number, number])
-      : ([0, 0, 0] as [number, number, number]),
-    scale: placement.scale || ACADEMY_DESK_MODEL_SCALE,
-  }));
-}
-
-function loadSavedPlacements() {
-  if (typeof window === "undefined") return cloneDefaultPlacements();
-
-  try {
-    const saved = window.localStorage.getItem(DEV_PLACEMENT_STORAGE_KEY);
-    if (!saved) return cloneDefaultPlacements();
-
-    const parsed = JSON.parse(saved);
-    if (!Array.isArray(parsed)) return cloneDefaultPlacements();
-
-    return parsed.map((placement: ClassroomPropPlacement) => ({
-      ...placement,
-      position: placement.position,
-      rotation: placement.rotation || [0, 0, 0],
-      scale: placement.scale || ACADEMY_DESK_MODEL_SCALE,
-    }));
-  } catch {
-    return cloneDefaultPlacements();
-  }
-}
-
-function formatNumber(value: number) {
-  return Number(value.toFixed(3));
-}
-
-function formatPlacementCode(placements: ClassroomPropPlacement[]) {
-  const rows = placements
-    .map((placement) => {
-      const position = placement.position.map(formatNumber).join(", ");
-      const rotation = (placement.rotation || [0, 0, 0])
-        .map(formatNumber)
-        .join(", ");
-      const scale = formatNumber(placement.scale || ACADEMY_DESK_MODEL_SCALE);
-
-      return `  { id: "${placement.id}", position: [${position}], rotation: [${rotation}], scale: ${scale} },`;
-    })
-    .join("\n");
-
-  return `const ACADEMY_DESK_PLACEMENTS: ClassroomPropPlacement[] = [\n${rows}\n];`;
-}
-
-function DevPlacementPanel({
-  placements,
-  selectedPropId,
-  onSelectProp,
-  onNudge,
-  onRotate,
-  onScale,
-  onSaveLocal,
-  onReset,
-  onCopyCode,
-}: {
-  placements: ClassroomPropPlacement[];
-  selectedPropId: string | null;
-  onSelectProp: (id: string) => void;
-  onNudge: (axis: "x" | "y" | "z", amount: number) => void;
-  onRotate: (amount: number) => void;
-  onScale: (amount: number) => void;
-  onSaveLocal: () => void;
-  onReset: () => void;
-  onCopyCode: () => void;
-}) {
-  const selectedPlacement =
-    placements.find((placement) => placement.id === selectedPropId) ||
-    placements[0] ||
-    null;
-
-  return (
-    <aside style={devPanelShellStyle}>
-      <div style={devPanelCardStyle}>
-        <div style={eyebrowStyle}>Dev Mode</div>
-        <h2 style={devPanelTitleStyle}>Asset Placement</h2>
-        <p style={miniTextStyle}>
-          Select a desk, nudge position, rotate, scale, then copy the placement
-          code into the file when it looks right.
-        </p>
-
-        <label style={devLabelStyle}>
-          Selected asset
-          <select
-            value={selectedPlacement?.id || ""}
-            onChange={(event) => onSelectProp(event.target.value)}
-            style={devSelectStyle}
-          >
-            {placements.map((placement) => (
-              <option key={placement.id} value={placement.id}>
-                {placement.id}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        {selectedPlacement && (
-          <div style={devReadoutStyle}>
-            <div>
-              <strong>Position</strong>
-              <span>{selectedPlacement.position.map(formatNumber).join(", ")}</span>
-            </div>
-            <div>
-              <strong>Rotation Y</strong>
-              <span>{formatNumber((selectedPlacement.rotation || [0, 0, 0])[1])}</span>
-            </div>
-            <div>
-              <strong>Scale</strong>
-              <span>{formatNumber(selectedPlacement.scale || ACADEMY_DESK_MODEL_SCALE)}</span>
-            </div>
-          </div>
-        )}
-
-        <div style={devControlGroupStyle}>
-          <span style={devControlLabelStyle}>Nudge position</span>
-          <div style={devButtonGridStyle}>
-            <button type="button" onClick={() => onNudge("x", -0.1)} style={devButtonStyle}>
-              X -
-            </button>
-            <button type="button" onClick={() => onNudge("x", 0.1)} style={devButtonStyle}>
-              X +
-            </button>
-            <button type="button" onClick={() => onNudge("z", -0.1)} style={devButtonStyle}>
-              Z -
-            </button>
-            <button type="button" onClick={() => onNudge("z", 0.1)} style={devButtonStyle}>
-              Z +
-            </button>
-            <button type="button" onClick={() => onNudge("y", -0.05)} style={devButtonStyle}>
-              Y -
-            </button>
-            <button type="button" onClick={() => onNudge("y", 0.05)} style={devButtonStyle}>
-              Y +
-            </button>
-          </div>
-        </div>
-
-        <div style={devControlGroupStyle}>
-          <span style={devControlLabelStyle}>Rotate / scale</span>
-          <div style={devButtonGridStyle}>
-            <button type="button" onClick={() => onRotate(-0.1)} style={devButtonStyle}>
-              Rot -
-            </button>
-            <button type="button" onClick={() => onRotate(0.1)} style={devButtonStyle}>
-              Rot +
-            </button>
-            <button type="button" onClick={() => onScale(-0.025)} style={devButtonStyle}>
-              Scale -
-            </button>
-            <button type="button" onClick={() => onScale(0.025)} style={devButtonStyle}>
-              Scale +
-            </button>
-          </div>
-        </div>
-
-        <div style={devActionRowStyle}>
-          <button type="button" onClick={onSaveLocal} style={devPrimaryButtonStyle}>
-            Save browser
-          </button>
-          <button type="button" onClick={onCopyCode} style={devPrimaryButtonStyle}>
-            Copy code
-          </button>
-          <button type="button" onClick={onReset} style={devDangerButtonStyle}>
-            Reset
-          </button>
-        </div>
-      </div>
-    </aside>
-  );
-}
-
-
 export default function Classroom() {
   const [showHelp, setShowHelp] = useState(true);
   const [showDevZones, setShowDevZones] = useState(false);
   const [devMode, setDevMode] = useState(false);
   const [cameraMode, setCameraMode] = useState<CameraMode>("orbit");
   const [activeHotspot, setActiveHotspot] = useState<HotspotKey>("quest-board");
-  const [deskPlacements, setDeskPlacements] = useState<ClassroomPropPlacement[]>(
+  const [placements, setPlacements] = useState<ClassroomPropPlacement[]>(
     loadSavedPlacements,
   );
   const [selectedPropId, setSelectedPropId] = useState<string | null>(
-    ACADEMY_DESK_PLACEMENTS[0]?.id || null,
+    CLASSROOM_ASSET_PLACEMENTS[0]?.id || null,
   );
   const playerPositionRef = useRef(PLAYER_START_POSITION.clone());
 
@@ -1256,7 +1308,7 @@ export default function Classroom() {
 
   const helpText = useMemo(() => {
     if (devMode) {
-      return "Dev Mode is on. Select desk props in the scene or panel, then nudge position, rotation, and scale.";
+      return "Dev Mode is on. Select desk or pet assets in the scene or panel, then nudge position, rotation, and scale.";
     }
 
     if (showDevZones) {
@@ -1269,10 +1321,10 @@ export default function Classroom() {
   const updateSelectedPlacement = (
     updater: (placement: ClassroomPropPlacement) => ClassroomPropPlacement,
   ) => {
-    const targetId = selectedPropId || deskPlacements[0]?.id;
+    const targetId = selectedPropId || placements[0]?.id;
     if (!targetId) return;
 
-    setDeskPlacements((currentPlacements) =>
+    setPlacements((currentPlacements) =>
       currentPlacements.map((placement) =>
         placement.id === targetId ? updater(placement) : placement,
       ),
@@ -1304,7 +1356,8 @@ export default function Classroom() {
 
   const scaleSelectedPlacement = (amount: number) => {
     updateSelectedPlacement((placement) => {
-      const currentScale = placement.scale || ACADEMY_DESK_MODEL_SCALE;
+      const currentScale =
+        placement.scale || getDefaultScaleForAsset(placement.assetType);
       const nextScale = Math.max(0.025, formatNumber(currentScale + amount));
 
       return { ...placement, scale: nextScale };
@@ -1314,19 +1367,19 @@ export default function Classroom() {
   const savePlacementsToBrowser = () => {
     window.localStorage.setItem(
       DEV_PLACEMENT_STORAGE_KEY,
-      JSON.stringify(deskPlacements),
+      JSON.stringify(placements),
     );
   };
 
   const resetPlacements = () => {
     const reset = cloneDefaultPlacements();
-    setDeskPlacements(reset);
+    setPlacements(reset);
     setSelectedPropId(reset[0]?.id || null);
     window.localStorage.removeItem(DEV_PLACEMENT_STORAGE_KEY);
   };
 
   const copyPlacementCode = () => {
-    const code = formatPlacementCode(deskPlacements);
+    const code = formatPlacementCode(placements);
 
     if (navigator.clipboard) {
       void navigator.clipboard.writeText(code);
@@ -1360,7 +1413,7 @@ export default function Classroom() {
 
       {devMode && (
         <DevPlacementPanel
-          placements={deskPlacements}
+          placements={placements}
           selectedPropId={selectedPropId}
           onSelectProp={setSelectedPropId}
           onNudge={nudgeSelectedPlacement}
@@ -1393,7 +1446,7 @@ export default function Classroom() {
           showDevZones={showDevZones}
           cameraMode={cameraMode}
           playerPositionRef={playerPositionRef}
-          deskPlacements={deskPlacements}
+          placements={placements}
           devMode={devMode}
           selectedPropId={selectedPropId}
           onSelectProp={setSelectedPropId}
@@ -1471,6 +1524,7 @@ const floatingLabelStyle: React.CSSProperties = {
   padding: "6px 10px",
   whiteSpace: "nowrap",
 };
+
 const compactHotspotLabelStyle: React.CSSProperties = {
   alignItems: "center",
   background: "rgba(255,255,255,0.94)",
@@ -1486,7 +1540,6 @@ const compactHotspotLabelStyle: React.CSSProperties = {
   width: "34px",
   whiteSpace: "nowrap",
 };
-
 
 const loadingStyle: React.CSSProperties = {
   background: "rgba(255,255,255,0.95)",
@@ -1521,29 +1574,30 @@ const panelCardStyle: React.CSSProperties = {
 };
 
 const panelHeaderStyle: React.CSSProperties = {
-  background: "linear-gradient(135deg, rgba(124,92,255,0.12), rgba(126,231,255,0.16))",
-  borderBottom: "1px solid rgba(124,92,255,0.12)",
+  background:
+    "linear-gradient(135deg, rgba(124,92,255,0.16), rgba(126,231,255,0.18))",
+  borderBottom: "1px solid rgba(124,92,255,0.16)",
   padding: "16px",
 };
 
 const panelTitleStyle: React.CSSProperties = {
   color: "#24183f",
-  fontSize: "24px",
+  fontSize: "26px",
   lineHeight: 1,
-  margin: "5px 0 0",
+  margin: "7px 0 0",
 };
 
 const panelSubtitleStyle: React.CSSProperties = {
   color: "#6f6687",
-  fontSize: "12px",
+  fontSize: "13px",
   fontWeight: 800,
   margin: "8px 0 0",
 };
 
 const bodyTextStyle: React.CSSProperties = {
-  color: "#4c416d",
-  fontSize: "13px",
-  fontWeight: 750,
+  color: "#3a315c",
+  fontSize: "14px",
+  fontWeight: 700,
   lineHeight: 1.45,
   margin: 0,
 };
@@ -1554,7 +1608,7 @@ const primaryButtonStyle: React.CSSProperties = {
   borderRadius: "999px",
   color: "white",
   cursor: "pointer",
-  fontSize: "13px",
+  fontSize: "12px",
   fontWeight: 950,
   marginTop: "14px",
   padding: "10px 14px",
@@ -1590,7 +1644,7 @@ const sectionLabelStyle: React.CSSProperties = {
   color: "#7c5cff",
   fontSize: "11px",
   fontWeight: 950,
-  letterSpacing: "0.07em",
+  letterSpacing: "0.08em",
   textTransform: "uppercase",
 };
 
@@ -1600,7 +1654,7 @@ const countPillStyle: React.CSSProperties = {
   color: "#7c5cff",
   fontSize: "11px",
   fontWeight: 950,
-  padding: "4px 8px",
+  padding: "5px 9px",
 };
 
 const listStackStyle: React.CSSProperties = {
@@ -1609,92 +1663,40 @@ const listStackStyle: React.CSSProperties = {
 };
 
 const infoCardStyle: React.CSSProperties = {
-  background: "rgba(255,255,255,0.78)",
-  border: "2px solid rgba(124,92,255,0.11)",
-  borderRadius: "18px",
-  color: "#24183f",
-  padding: "10px 11px",
+  background: "rgba(255,248,222,0.75)",
+  border: "1px solid rgba(255,198,77,0.28)",
+  borderRadius: "16px",
+  color: "#2a1f4f",
+  display: "grid",
+  gap: "4px",
+  padding: "12px",
 };
 
 const emptyCardStyle: React.CSSProperties = {
   ...infoCardStyle,
-  background: "rgba(255,248,222,0.85)",
-};
-
-const cardTitleRowStyle: React.CSSProperties = {
-  alignItems: "center",
-  display: "flex",
-  gap: "8px",
-  justifyContent: "space-between",
-};
-
-const statusPillStyle: React.CSSProperties = {
-  background: "rgba(132,230,106,0.16)",
-  borderRadius: "999px",
-  color: "#287a36",
-  fontSize: "10px",
-  fontWeight: 950,
-  padding: "3px 7px",
-  textTransform: "uppercase",
+  background: "rgba(255,248,222,0.82)",
 };
 
 const miniTextStyle: React.CSSProperties = {
   color: "#6f6687",
-  display: "block",
-  fontSize: "11px",
-  fontWeight: 760,
+  fontSize: "12px",
+  fontWeight: 750,
   lineHeight: 1.35,
-  margin: "4px 0 0",
-};
-
-const petHeroStyle: React.CSSProperties = {
-  alignItems: "center",
-  background: "rgba(132,230,106,0.12)",
-  border: "2px solid rgba(132,230,106,0.18)",
-  borderRadius: "20px",
-  display: "flex",
-  gap: "10px",
-  padding: "10px",
-};
-
-const petEmojiStyle: React.CSSProperties = {
-  alignItems: "center",
-  background: "white",
-  border: "2px solid rgba(132,230,106,0.32)",
-  borderRadius: "18px",
-  display: "flex",
-  fontSize: "30px",
-  height: "56px",
-  justifyContent: "center",
-  width: "56px",
-};
-
-const progressTrackStyle: React.CSSProperties = {
-  background: "rgba(124,92,255,0.12)",
-  borderRadius: "999px",
-  height: "10px",
-  marginTop: "6px",
-  overflow: "hidden",
-};
-
-const progressFillStyle: React.CSSProperties = {
-  background: "linear-gradient(90deg, #7c5cff, #84e66a)",
-  borderRadius: "999px",
-  height: "100%",
+  margin: 0,
 };
 
 const rosterGridStyle: React.CSSProperties = {
   display: "grid",
   gap: "8px",
-  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+  gridTemplateColumns: "1fr 1fr",
 };
 
 const rosterCardStyle: React.CSSProperties = {
   alignItems: "center",
   background: "rgba(255,255,255,0.78)",
-  border: "2px solid rgba(124,92,255,0.11)",
-  borderRadius: "16px",
-  color: "#24183f",
+  border: "1px solid rgba(124,92,255,0.12)",
+  borderRadius: "14px",
+  color: "#2a1f4f",
   display: "flex",
   fontSize: "12px",
   fontWeight: 900,
@@ -1704,41 +1706,68 @@ const rosterCardStyle: React.CSSProperties = {
 
 const avatarBubbleStyle: React.CSSProperties = {
   alignItems: "center",
-  background: "rgba(124,92,255,0.14)",
-  borderRadius: "999px",
-  color: "#7c5cff",
+  background: "linear-gradient(135deg, #7c5cff, #7ee7ff)",
+  borderRadius: "50%",
+  color: "white",
   display: "flex",
   flex: "0 0 auto",
   fontSize: "12px",
   fontWeight: 950,
-  height: "28px",
+  height: "26px",
   justifyContent: "center",
-  width: "28px",
+  width: "26px",
+};
+
+const bottomControlsStyle: React.CSSProperties = {
+  alignItems: "center",
+  bottom: 16,
+  display: "flex",
+  gap: "8px",
+  left: 16,
+  position: "absolute",
+  zIndex: 20,
+};
+
+const smallButtonStyle: React.CSSProperties = {
+  background: "rgba(255,255,255,0.92)",
+  border: "2px solid rgba(124,92,255,0.18)",
+  borderRadius: "999px",
+  color: "#2a1f4f",
+  cursor: "pointer",
+  fontSize: "12px",
+  fontWeight: 900,
+  padding: "9px 14px",
+};
+
+const activeSmallButtonStyle: React.CSSProperties = {
+  background: "rgba(124,92,255,0.16)",
+  border: "2px solid rgba(124,92,255,0.55)",
+  color: "#4b32bd",
 };
 
 const devPanelShellStyle: React.CSSProperties = {
   left: 18,
   position: "absolute",
-  top: 165,
-  width: "min(340px, calc(100vw - 36px))",
-  zIndex: 12,
+  top: 148,
+  width: "min(330px, calc(100vw - 36px))",
+  zIndex: 15,
 };
 
 const devPanelCardStyle: React.CSSProperties = {
-  backdropFilter: "blur(12px)",
   background: "rgba(255,255,255,0.94)",
-  border: "2px solid rgba(124,92,255,0.24)",
+  border: "2px solid rgba(124,92,255,0.22)",
   borderRadius: "22px",
   boxShadow: "0 18px 45px rgba(38,31,72,0.16)",
-  color: "#24183f",
-  padding: "14px",
+  display: "grid",
+  gap: "12px",
+  padding: "14px 16px",
 };
 
 const devPanelTitleStyle: React.CSSProperties = {
   color: "#24183f",
-  fontSize: "20px",
+  fontSize: "22px",
   lineHeight: 1,
-  margin: "5px 0 8px",
+  margin: "2px 0 0",
 };
 
 const devLabelStyle: React.CSSProperties = {
@@ -1748,151 +1777,99 @@ const devLabelStyle: React.CSSProperties = {
   fontWeight: 950,
   gap: "6px",
   letterSpacing: "0.04em",
-  marginTop: "12px",
   textTransform: "uppercase",
 };
 
 const devSelectStyle: React.CSSProperties = {
   background: "white",
-  border: "2px solid rgba(124,92,255,0.18)",
-  borderRadius: "12px",
-  color: "#24183f",
-  fontSize: "12px",
+  border: "2px solid rgba(124,92,255,0.22)",
+  borderRadius: "14px",
+  color: "#2a1f4f",
+  fontSize: "13px",
   fontWeight: 900,
-  padding: "8px",
+  outline: "none",
+  padding: "10px 11px",
 };
 
 const devReadoutStyle: React.CSSProperties = {
-  background: "rgba(124,92,255,0.08)",
-  borderRadius: "14px",
+  background: "rgba(124,92,255,0.09)",
+  borderRadius: "16px",
+  color: "#2a1f4f",
   display: "grid",
+  fontSize: "12px",
+  fontWeight: 850,
   gap: "6px",
-  fontSize: "11px",
-  marginTop: "10px",
-  padding: "10px",
+  padding: "11px",
 };
 
 const devControlGroupStyle: React.CSSProperties = {
   display: "grid",
-  gap: "8px",
-  marginTop: "12px",
+  gap: "7px",
 };
 
 const devControlLabelStyle: React.CSSProperties = {
   color: "#7c5cff",
   fontSize: "11px",
   fontWeight: 950,
-  letterSpacing: "0.06em",
+  letterSpacing: "0.08em",
   textTransform: "uppercase",
 };
 
 const devButtonGridStyle: React.CSSProperties = {
   display: "grid",
-  gap: "6px",
-  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+  gap: "7px",
+  gridTemplateColumns: "1fr 1fr",
 };
 
 const devButtonStyle: React.CSSProperties = {
-  background: "rgba(255,255,255,0.95)",
+  background: "white",
   border: "2px solid rgba(124,92,255,0.18)",
   borderRadius: "12px",
   color: "#2a1f4f",
   cursor: "pointer",
   fontSize: "12px",
   fontWeight: 950,
-  padding: "8px",
+  padding: "9px 10px",
 };
 
 const devActionRowStyle: React.CSSProperties = {
   display: "grid",
-  gap: "6px",
+  gap: "7px",
   gridTemplateColumns: "1fr 1fr 1fr",
-  marginTop: "12px",
 };
 
 const devPrimaryButtonStyle: React.CSSProperties = {
   ...devButtonStyle,
   background: "#7c5cff",
-  border: "2px solid #7c5cff",
+  borderColor: "#7c5cff",
   color: "white",
 };
 
 const devDangerButtonStyle: React.CSSProperties = {
   ...devButtonStyle,
-  background: "rgba(255,179,71,0.15)",
-  border: "2px solid rgba(255,179,71,0.4)",
+  background: "#fff8de",
+  borderColor: "rgba(255,179,71,0.55)",
 };
 
 const devAssetTagStyle: React.CSSProperties = {
-  background: "rgba(255,255,255,0.94)",
-  border: "2px solid rgba(124,92,255,0.3)",
+  background: "rgba(255,255,255,0.96)",
+  border: "2px solid rgba(124,92,255,0.35)",
   borderRadius: "999px",
   color: "#2a1f4f",
   cursor: "pointer",
-  fontSize: "9px",
+  fontSize: "10px",
   fontWeight: 950,
-  padding: "4px 7px",
+  padding: "5px 8px",
   whiteSpace: "nowrap",
 };
 
 const devAssetTagActiveStyle: React.CSSProperties = {
   background: "#7c5cff",
-  border: "2px solid white",
-  boxShadow: "0 0 0 4px rgba(124,92,255,0.22)",
+  borderColor: "#7c5cff",
   color: "white",
-};
-
-const bottomControlsStyle: React.CSSProperties = {
-  bottom: 18,
-  display: "flex",
-  gap: "8px",
-  left: 18,
-  position: "absolute",
-  zIndex: 10,
-};
-
-const smallButtonStyle: React.CSSProperties = {
-  background: "rgba(255,255,255,0.92)",
-  border: "2px solid rgba(124,92,255,0.2)",
-  borderRadius: "999px",
-  color: "#2a1f4f",
-  cursor: "pointer",
-  fontSize: "12px",
-  fontWeight: 900,
-  padding: "9px 12px",
-};
-
-const activeSmallButtonStyle: React.CSSProperties = {
-  background: "rgba(124,92,255,0.16)",
-  border: "2px solid rgba(124,92,255,0.55)",
-  color: "#4b32bd",
 };
 
 useGLTF.preload(CLASSROOM_MODEL_PATH);
 useGLTF.preload(PLAYER_MODEL_PATH);
 useGLTF.preload(EMBERCUB_MODEL_PATH);
 useGLTF.preload(ACADEMY_DESK_MODEL_PATH);
-
-function asLabel(value: any, fallback: string) {
-  if (value === null || value === undefined || value === "") return fallback;
-  if (Array.isArray(value)) return value.join(", ");
-  return String(value);
-}
-
-function getAssignmentTitle(assignment: any, index: number) {
-  return asLabel(
-    assignment?.title || assignment?.name || assignment?.assignmentTitle,
-    `Quest ${index + 1}`,
-  );
-}
-
-function getGoalTitle(goal: any, index: number) {
-  return asLabel(goal?.title || goal?.name || goal?.goalTitle, `Goal ${index + 1}`);
-}
-
-function getRewardTitle(reward: any, index: number) {
-  return asLabel(
-    reward?.title || reward?.name || reward?.rewardName,
-    `Reward ${index + 1}`,
-  );
-}
