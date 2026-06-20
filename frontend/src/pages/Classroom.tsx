@@ -2,8 +2,10 @@ import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, ThreeEvent, useFrame } from "@react-three/fiber";
 import { Html, OrbitControls, useGLTF } from "@react-three/drei";
 import * as THREE from "three";
+import { useClassroomWorldStore } from "../lib/classroomWorldStore";
 
-const CLASSROOM_MODEL_PATH = "/assets/3d/classroom-blockout/classroom-blockout.glb";
+const CLASSROOM_MODEL_PATH =
+  "/assets/3d/classroom-blockout/classroom-blockout.glb";
 
 type KeyState = {
   forward: boolean;
@@ -32,17 +34,26 @@ type HotspotInfo = {
   color: string;
 };
 
+type ClassroomPanelData = {
+  classroom: any | null;
+  assignments: any[];
+  completedAssignments: any[];
+  goals: any[];
+  rewardLogs: any[];
+  events: any[];
+  members: any[];
+};
+
 const HOTSPOTS: HotspotInfo[] = [
   {
     id: "quest-board",
     title: "Quest Board",
     label: "Assignments",
     subtitle: "Class quests and active learning tasks.",
-    body:
-      "This will connect to teacher-created assignments. Students should be able to walk up, open the board, and see what needs to be completed next.",
+    body: "Teacher-created assignments appear here as classroom quests. This is the main daily action loop for students.",
     cta: "Open Quest Board",
-    position: [0, 0.65, -3.35],
-    size: [4.6, 1.45, 0.28],
+    position: [0, 1.15, -3.05],
+    size: [3.4, 1.15, 0.22],
     color: "#79d96b",
   },
   {
@@ -50,11 +61,10 @@ const HOTSPOTS: HotspotInfo[] = [
     title: "Student Desks",
     label: "Roster",
     subtitle: "Safe classroom presence for students.",
-    body:
-      "This area represents student seats, roster presence, and future classmate avatars. Keep it async and safe: no free chat, no open social layer.",
+    body: "This area represents student seats, roster presence, and future classmate avatars. Keep it async and safe: no free chat, no open social layer.",
     cta: "View Student Roster",
-    position: [-0.8, 0.12, 0.85],
-    size: [5.0, 0.22, 2.5],
+    position: [-0.45, 0.08, 1.0],
+    size: [4.7, 0.14, 2.35],
     color: "#7ee7ff",
   },
   {
@@ -62,11 +72,10 @@ const HOTSPOTS: HotspotInfo[] = [
     title: "Pet Corner",
     label: "Class Pet",
     subtitle: "The pet's daily classroom home.",
-    body:
-      "This is a small emotional anchor in the classroom. Full pet progression still belongs in the Pet Sanctuary, but the class pet should feel present here every day.",
+    body: "This is a small emotional anchor in the classroom. Full pet progression belongs in the Pet Sanctuary, but the class pet should feel present here every day.",
     cta: "Visit Class Pet",
-    position: [-4.0, 0.45, 2.25],
-    size: [1.25, 0.9, 1.25],
+    position: [-4.1, 0.36, 2.35],
+    size: [1.15, 0.75, 1.15],
     color: "#84e66a",
   },
   {
@@ -74,11 +83,10 @@ const HOTSPOTS: HotspotInfo[] = [
     title: "Rewards & Trophy Wall",
     label: "Milestones",
     subtitle: "Class wins, rewards, badges, and celebrations.",
-    body:
-      "This wall should show progress history: completed class goals, unlocked rewards, weekly achievements, and trophies earned through learning.",
+    body: "This wall shows progress history: completed class goals, unlocked rewards, weekly achievements, and trophies earned through learning.",
     cta: "View Rewards",
-    position: [-4.35, 1.05, -0.7],
-    size: [0.3, 2.4, 3.4],
+    position: [-4.35, 1.0, -0.7],
+    size: [0.22, 2.05, 3.2],
     color: "#b457ff",
   },
   {
@@ -86,11 +94,10 @@ const HOTSPOTS: HotspotInfo[] = [
     title: "Door to Courtyard",
     label: "Exit",
     subtitle: "Future route to the Academy Courtyard.",
-    body:
-      "This will eventually transition the player from the classroom to the academy courtyard or hallway hub. For now it proves routing intent.",
+    body: "This will transition the player from the classroom to the academy courtyard or hallway hub. For now it proves routing intent.",
     cta: "Exit Coming Soon",
-    position: [4.35, 0.8, 0.75],
-    size: [0.35, 1.7, 1.25],
+    position: [4.25, 0.72, 0.75],
+    size: [0.28, 1.45, 1.1],
     color: "#ffb347",
   },
   {
@@ -98,11 +105,10 @@ const HOTSPOTS: HotspotInfo[] = [
     title: "Teacher Area",
     label: "Teacher",
     subtitle: "Teacher avatar and instruction anchor.",
-    body:
-      "This spot can hold the teacher avatar, class message, daily prompt, or a safe announcement from the teacher.",
+    body: "This spot can hold the teacher avatar, class message, daily prompt, or a safe announcement from the teacher.",
     cta: "View Teacher Area",
-    position: [0, 0.45, -2.1],
-    size: [1.2, 0.9, 1.2],
+    position: [0, 0.42, -2.12],
+    size: [0.9, 0.78, 0.9],
     color: "#7c5cff",
   },
 ];
@@ -112,8 +118,42 @@ const HOTSPOT_LOOKUP = HOTSPOTS.reduce<Record<HotspotKey, HotspotInfo>>(
     lookup[hotspot.id] = hotspot;
     return lookup;
   },
-  {} as Record<HotspotKey, HotspotInfo>
+  {} as Record<HotspotKey, HotspotInfo>,
 );
+
+function asLabel(value: unknown, fallback: string): string {
+  if (typeof value === "string" && value.trim()) return value;
+  if (typeof value === "number") return String(value);
+  return fallback;
+}
+
+function getAssignmentTitle(assignment: any, index: number): string {
+  return asLabel(
+    assignment?.title ||
+      assignment?.assignmentTitle ||
+      assignment?.name ||
+      assignment?.assignmentId,
+    `Quest ${index + 1}`,
+  );
+}
+
+function getGoalTitle(goal: any, index: number): string {
+  return asLabel(
+    goal?.title || goal?.goalTitle || goal?.name || goal?.id,
+    `Class goal ${index + 1}`,
+  );
+}
+
+function getRewardTitle(reward: any, index: number): string {
+  return asLabel(
+    reward?.title ||
+      reward?.rewardTitle ||
+      reward?.description ||
+      reward?.type ||
+      reward?.id,
+    `Reward ${index + 1}`,
+  );
+}
 
 function useKeyboardMovement(): React.MutableRefObject<KeyState> {
   const keysRef = useRef<KeyState>({
@@ -206,20 +246,7 @@ function PlayerMarker() {
       </mesh>
 
       <Html position={[0, 1.05, 0]} center>
-        <div
-          style={{
-            background: "rgba(255,255,255,0.92)",
-            border: "2px solid rgba(124,92,255,0.35)",
-            borderRadius: "999px",
-            color: "#2a1f4f",
-            fontSize: "11px",
-            fontWeight: 800,
-            padding: "4px 9px",
-            whiteSpace: "nowrap",
-          }}
-        >
-          Player
-        </div>
+        <div style={floatingLabelStyle}>Player</div>
       </Html>
     </group>
   );
@@ -235,7 +262,7 @@ function ClassroomHotspot({
   onSelect: (id: HotspotKey) => void;
 }) {
   const [isHovered, setIsHovered] = useState(false);
-  const opacity = isActive ? 0.34 : isHovered ? 0.24 : 0.1;
+  const opacity = isActive ? 0.24 : isHovered ? 0.18 : 0.055;
 
   const handlePointerOver = (event: ThreeEvent<PointerEvent>) => {
     event.stopPropagation();
@@ -277,16 +304,10 @@ function ClassroomHotspot({
             type="button"
             onClick={() => onSelect(hotspot.id)}
             style={{
-              background: "rgba(255,255,255,0.96)",
+              ...floatingLabelStyle,
               border: `2px solid ${hotspot.color}`,
-              borderRadius: "999px",
               boxShadow: "0 8px 24px rgba(35, 24, 63, 0.16)",
-              color: "#2a1f4f",
               cursor: "pointer",
-              fontSize: "11px",
-              fontWeight: 900,
-              padding: "6px 10px",
-              whiteSpace: "nowrap",
             }}
           >
             {hotspot.label}
@@ -321,18 +342,7 @@ function ClassroomHotspots({
 function LoadingFallback() {
   return (
     <Html center>
-      <div
-        style={{
-          background: "rgba(255,255,255,0.95)",
-          border: "2px solid rgba(124,92,255,0.25)",
-          borderRadius: "18px",
-          color: "#2a1f4f",
-          fontWeight: 800,
-          padding: "14px 18px",
-          textAlign: "center",
-          minWidth: "220px",
-        }}
-      >
+      <div style={loadingStyle}>
         Loading classroom...
         <div style={{ color: "#6f6687", fontSize: "12px", marginTop: "4px" }}>
           Large GLB files can take a moment.
@@ -345,9 +355,11 @@ function LoadingFallback() {
 function Scene({
   activeHotspot,
   onSelectHotspot,
+  showHotspots,
 }: {
   activeHotspot: HotspotKey;
   onSelectHotspot: (id: HotspotKey) => void;
+  showHotspots: boolean;
 }) {
   return (
     <>
@@ -365,10 +377,12 @@ function Scene({
       <Suspense fallback={<LoadingFallback />}>
         <ClassroomModel />
         <PlayerMarker />
-        <ClassroomHotspots
-          activeHotspot={activeHotspot}
-          onSelect={onSelectHotspot}
-        />
+        {showHotspots && (
+          <ClassroomHotspots
+            activeHotspot={activeHotspot}
+            onSelect={onSelectHotspot}
+          />
+        )}
       </Suspense>
 
       <mesh
@@ -396,122 +410,40 @@ function Scene({
 function HotspotPanel({
   activeHotspot,
   onSelect,
+  data,
 }: {
   activeHotspot: HotspotKey;
   onSelect: (id: HotspotKey) => void;
+  data: ClassroomPanelData;
 }) {
   const active = HOTSPOT_LOOKUP[activeHotspot];
 
   return (
-    <aside
-      style={{
-        bottom: 18,
-        position: "absolute",
-        right: 18,
-        top: 18,
-        width: "min(360px, calc(100vw - 36px))",
-        zIndex: 10,
-      }}
-    >
-      <div
-        style={{
-          backdropFilter: "blur(12px)",
-          background: "rgba(255,255,255,0.9)",
-          border: "2px solid rgba(124,92,255,0.2)",
-          borderRadius: "26px",
-          boxShadow: "0 18px 45px rgba(38,31,72,0.16)",
-          display: "flex",
-          flexDirection: "column",
-          height: "100%",
-          overflow: "hidden",
-        }}
-      >
-        <div
-          style={{
-            background:
-              "linear-gradient(135deg, rgba(124,92,255,0.16), rgba(126,231,255,0.18))",
-            borderBottom: "1px solid rgba(124,92,255,0.16)",
-            padding: "16px",
-          }}
-        >
-          <div
-            style={{
-              color: "#7c5cff",
-              fontSize: "11px",
-              fontWeight: 950,
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
-            }}
-          >
-            TEA-166 Hotspot
-          </div>
-          <h2
-            style={{
-              color: "#24183f",
-              fontSize: "26px",
-              lineHeight: 1,
-              margin: "7px 0 0",
-            }}
-          >
-            {active.title}
-          </h2>
-          <p
-            style={{
-              color: "#6f6687",
-              fontSize: "13px",
-              fontWeight: 800,
-              margin: "8px 0 0",
-            }}
-          >
-            {active.subtitle}
-          </p>
+    <aside style={panelShellStyle}>
+      <div style={panelCardStyle}>
+        <div style={panelHeaderStyle}>
+          <div style={eyebrowStyle}>TEA-166 Hotspot</div>
+          <h2 style={panelTitleStyle}>{active.title}</h2>
+          <p style={panelSubtitleStyle}>{active.subtitle}</p>
         </div>
 
         <div style={{ overflow: "auto", padding: "14px 16px 16px" }}>
-          <p
-            style={{
-              color: "#3a315c",
-              fontSize: "14px",
-              fontWeight: 700,
-              lineHeight: 1.45,
-              margin: 0,
-            }}
-          >
-            {active.body}
-          </p>
+          <p style={bodyTextStyle}>{active.body}</p>
 
-          <button
-            type="button"
-            style={{
-              background: "#7c5cff",
-              border: "0",
-              borderRadius: "999px",
-              color: "white",
-              cursor: "pointer",
-              fontSize: "12px",
-              fontWeight: 950,
-              marginTop: "14px",
-              padding: "10px 14px",
-              width: "100%",
-            }}
-          >
+          <PanelContent activeHotspot={activeHotspot} data={data} />
+
+          <button type="button" style={primaryButtonStyle}>
             {active.cta}
           </button>
 
-          <div
-            style={{
-              display: "grid",
-              gap: "8px",
-              marginTop: "16px",
-            }}
-          >
+          <div style={{ display: "grid", gap: "8px", marginTop: "16px" }}>
             {HOTSPOTS.map((hotspot) => (
               <button
                 key={hotspot.id}
                 type="button"
                 onClick={() => onSelect(hotspot.id)}
                 style={{
-                  alignItems: "center",
+                  ...hotspotNavButtonStyle,
                   background:
                     activeHotspot === hotspot.id
                       ? "rgba(124,92,255,0.13)"
@@ -520,15 +452,6 @@ function HotspotPanel({
                     activeHotspot === hotspot.id
                       ? "2px solid rgba(124,92,255,0.55)"
                       : "2px solid rgba(124,92,255,0.12)",
-                  borderRadius: "16px",
-                  color: "#24183f",
-                  cursor: "pointer",
-                  display: "flex",
-                  fontSize: "12px",
-                  fontWeight: 900,
-                  justifyContent: "space-between",
-                  padding: "10px 11px",
-                  textAlign: "left",
                 }}
               >
                 <span>{hotspot.label}</span>
@@ -542,6 +465,268 @@ function HotspotPanel({
   );
 }
 
+function PanelContent({
+  activeHotspot,
+  data,
+}: {
+  activeHotspot: HotspotKey;
+  data: ClassroomPanelData;
+}) {
+  if (activeHotspot === "quest-board") {
+    return <QuestBoardPanel data={data} />;
+  }
+
+  if (activeHotspot === "pet-corner") {
+    return <PetCornerPanel data={data} />;
+  }
+
+  if (activeHotspot === "rewards") {
+    return <RewardsPanel data={data} />;
+  }
+
+  if (activeHotspot === "student-desks") {
+    return <StudentRosterPanel data={data} />;
+  }
+
+  if (activeHotspot === "teacher") {
+    return <TeacherPanel data={data} />;
+  }
+
+  return <DoorPanel />;
+}
+
+function QuestBoardPanel({ data }: { data: ClassroomPanelData }) {
+  const assignments = data.assignments;
+
+  return (
+    <section style={sectionStyle}>
+      <div style={sectionHeaderRowStyle}>
+        <span style={sectionLabelStyle}>Active quests</span>
+        <span style={countPillStyle}>{assignments.length}</span>
+      </div>
+
+      {assignments.length ? (
+        <div style={listStackStyle}>
+          {assignments.slice(0, 5).map((assignment, index) => (
+            <InfoCard key={assignment?.id || assignment?.assignmentId || index}>
+              <div style={cardTitleRowStyle}>
+                <strong>{getAssignmentTitle(assignment, index)}</strong>
+                <span style={statusPillStyle}>
+                  {asLabel(assignment?.status, "active")}
+                </span>
+              </div>
+              <p style={miniTextStyle}>
+                {asLabel(
+                  assignment?.subject ||
+                    assignment?.subjectFocus ||
+                    assignment?.type,
+                  "Learning quest",
+                )}
+              </p>
+            </InfoCard>
+          ))}
+        </div>
+      ) : (
+        <EmptyCard
+          title="No active quests yet"
+          body="Teacher assignments will appear here when a classroom has active work."
+        />
+      )}
+    </section>
+  );
+}
+
+function PetCornerPanel({ data }: { data: ClassroomPanelData }) {
+  const pet = data.classroom?.pet;
+  const petName = asLabel(pet?.petName || pet?.name, "Class pet");
+  const petEmoji = asLabel(pet?.petEmoji || pet?.emoji, "🐾");
+  const level = asLabel(pet?.level, "1");
+  const xp = Number(pet?.xp || 0);
+  const xpGoal = Number(pet?.xpGoal || 100);
+  const percent = Math.max(
+    0,
+    Math.min(100, xpGoal ? Math.round((xp / xpGoal) * 100) : 0),
+  );
+
+  return (
+    <section style={sectionStyle}>
+      <div style={petHeroStyle}>
+        <div style={petEmojiStyle}>{petEmoji}</div>
+        <div>
+          <strong
+            style={{ color: "#24183f", display: "block", fontSize: "16px" }}
+          >
+            {petName}
+          </strong>
+          <span style={miniTextStyle}>Level {level} class companion</span>
+        </div>
+      </div>
+
+      <div style={{ marginTop: "12px" }}>
+        <div style={sectionHeaderRowStyle}>
+          <span style={sectionLabelStyle}>Pet XP</span>
+          <span style={miniTextStyle}>
+            {xp}/{xpGoal}
+          </span>
+        </div>
+        <div style={progressTrackStyle}>
+          <div style={{ ...progressFillStyle, width: `${percent}%` }} />
+        </div>
+      </div>
+
+      <InfoCard>
+        <strong>Classroom role</strong>
+        <p style={miniTextStyle}>
+          The pet corner keeps the class pet visible during normal classroom
+          work. The Pet Sanctuary can handle deeper feeding, habitats, upgrades,
+          and collection systems later.
+        </p>
+      </InfoCard>
+    </section>
+  );
+}
+
+function RewardsPanel({ data }: { data: ClassroomPanelData }) {
+  return (
+    <section style={sectionStyle}>
+      <div style={sectionHeaderRowStyle}>
+        <span style={sectionLabelStyle}>Goals</span>
+        <span style={countPillStyle}>{data.goals.length}</span>
+      </div>
+
+      {data.goals.length ? (
+        <div style={listStackStyle}>
+          {data.goals.slice(0, 3).map((goal, index) => (
+            <InfoCard key={goal?.id || index}>
+              <strong>{getGoalTitle(goal, index)}</strong>
+              <p style={miniTextStyle}>
+                {asLabel(
+                  goal?.description || goal?.status,
+                  "Class milestone in progress",
+                )}
+              </p>
+            </InfoCard>
+          ))}
+        </div>
+      ) : (
+        <EmptyCard
+          title="No trophy goals yet"
+          body="Class goals and completed assignment milestones will light up this wall."
+        />
+      )}
+
+      <div style={{ ...sectionHeaderRowStyle, marginTop: "12px" }}>
+        <span style={sectionLabelStyle}>Reward log</span>
+        <span style={countPillStyle}>{data.rewardLogs.length}</span>
+      </div>
+
+      {data.rewardLogs.length ? (
+        <div style={listStackStyle}>
+          {data.rewardLogs.slice(0, 3).map((reward, index) => (
+            <InfoCard key={reward?.id || index}>
+              <strong>{getRewardTitle(reward, index)}</strong>
+              <p style={miniTextStyle}>
+                {asLabel(reward?.createdAt || reward?.date, "Recently earned")}
+              </p>
+            </InfoCard>
+          ))}
+        </div>
+      ) : (
+        <EmptyCard
+          title="Reward chest is empty"
+          body="Teacher-issued rewards and earned gifts will show here."
+        />
+      )}
+    </section>
+  );
+}
+
+function StudentRosterPanel({ data }: { data: ClassroomPanelData }) {
+  return (
+    <section style={sectionStyle}>
+      <div style={sectionHeaderRowStyle}>
+        <span style={sectionLabelStyle}>Class roster</span>
+        <span style={countPillStyle}>{data.members.length}</span>
+      </div>
+
+      {data.members.length ? (
+        <div style={rosterGridStyle}>
+          {data.members.slice(0, 8).map((member, index) => (
+            <div key={member?.id || index} style={rosterCardStyle}>
+              <div style={avatarBubbleStyle}>
+                {asLabel(member?.displayName || member?.name, "?")
+                  .slice(0, 1)
+                  .toUpperCase()}
+              </div>
+              <span>
+                {asLabel(member?.displayName || member?.name, "Student")}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <EmptyCard
+          title="No students seated yet"
+          body="Joined students will eventually appear as safe presence markers around this area."
+        />
+      )}
+    </section>
+  );
+}
+
+function TeacherPanel({ data }: { data: ClassroomPanelData }) {
+  return (
+    <section style={sectionStyle}>
+      <InfoCard>
+        <strong>{asLabel(data.classroom?.teacherName, "Teacher")}</strong>
+        <p style={miniTextStyle}>
+          Daily prompt, class announcement, and teacher avatar will live here.
+        </p>
+      </InfoCard>
+      <InfoCard>
+        <strong>
+          {asLabel(
+            data.classroom?.room?.roomName || data.classroom?.roomName,
+            "Classroom",
+          )}
+        </strong>
+        <p style={miniTextStyle}>
+          {data.classroom?.subjectFocus?.length
+            ? `Focus: ${data.classroom.subjectFocus.join(", ")}`
+            : "Subject focus will appear here."}
+        </p>
+      </InfoCard>
+    </section>
+  );
+}
+
+function DoorPanel() {
+  return (
+    <section style={sectionStyle}>
+      <InfoCard>
+        <strong>Courtyard transition placeholder</strong>
+        <p style={miniTextStyle}>
+          Next step: click this door to fade out and load the Academy Courtyard
+          route or scene.
+        </p>
+      </InfoCard>
+    </section>
+  );
+}
+
+function EmptyCard({ title, body }: { title: string; body: string }) {
+  return (
+    <div style={emptyCardStyle}>
+      <strong>{title}</strong>
+      <p style={miniTextStyle}>{body}</p>
+    </div>
+  );
+}
+
+function InfoCard({ children }: { children: React.ReactNode }) {
+  return <div style={infoCardStyle}>{children}</div>;
+}
+
 function ViewModeControls({
   showHotspots,
   setShowHotspots,
@@ -552,16 +737,7 @@ function ViewModeControls({
   resetHotspot: () => void;
 }) {
   return (
-    <div
-      style={{
-        bottom: 18,
-        display: "flex",
-        gap: "8px",
-        left: 18,
-        position: "absolute",
-        zIndex: 10,
-      }}
-    >
+    <div style={bottomControlsStyle}>
       <button
         type="button"
         onClick={() => setShowHotspots(!showHotspots)}
@@ -576,21 +752,59 @@ function ViewModeControls({
   );
 }
 
-const smallButtonStyle: React.CSSProperties = {
-  background: "rgba(255,255,255,0.92)",
-  border: "2px solid rgba(124,92,255,0.2)",
-  borderRadius: "999px",
-  color: "#2a1f4f",
-  cursor: "pointer",
-  fontSize: "12px",
-  fontWeight: 900,
-  padding: "9px 12px",
-};
-
 export default function Classroom() {
   const [showHelp, setShowHelp] = useState(true);
   const [showHotspots, setShowHotspots] = useState(true);
   const [activeHotspot, setActiveHotspot] = useState<HotspotKey>("quest-board");
+
+  const classrooms = useClassroomWorldStore(
+    (state: any) => state.classrooms || [],
+  );
+  const selectedClassroomId = useClassroomWorldStore(
+    (state: any) => state.selectedClassroomId,
+  );
+  const goals = useClassroomWorldStore((state: any) => state.goals || []);
+  const rewardLogs = useClassroomWorldStore(
+    (state: any) => state.rewardLogs || [],
+  );
+  const events = useClassroomWorldStore((state: any) => state.events || []);
+
+  const selectedClassroom = useMemo(() => {
+    return (
+      classrooms.find(
+        (classroom: any) => classroom.id === selectedClassroomId,
+      ) ||
+      classrooms[0] ||
+      null
+    );
+  }, [classrooms, selectedClassroomId]);
+
+  const panelData = useMemo<ClassroomPanelData>(() => {
+    const classroomId = selectedClassroom?.id;
+    const assignmentRefs = selectedClassroom?.assignmentRefs || [];
+
+    return {
+      classroom: selectedClassroom,
+      assignments: assignmentRefs.filter(
+        (assignment: any) => assignment?.status !== "completed",
+      ),
+      completedAssignments: assignmentRefs.filter(
+        (assignment: any) => assignment?.status === "completed",
+      ),
+      goals: classroomId
+        ? goals.filter((goal: any) => goal?.classroomId === classroomId)
+        : [],
+      rewardLogs: classroomId
+        ? rewardLogs.filter(
+            (reward: any) => reward?.classroomId === classroomId,
+          )
+        : [],
+      events: classroomId
+        ? events.filter((event: any) => event?.classroomId === classroomId)
+        : [],
+      members: selectedClassroom?.members || [],
+    };
+  }, [events, goals, rewardLogs, selectedClassroom]);
 
   const helpText = useMemo(() => {
     if (showHotspots) {
@@ -601,88 +815,27 @@ export default function Classroom() {
   }, [showHotspots]);
 
   return (
-    <main
-      style={{
-        background:
-          "linear-gradient(135deg, #fff8de 0%, #e8f7ff 45%, #f4e9ff 100%)",
-        height: "100vh",
-        overflow: "hidden",
-        position: "relative",
-        width: "100vw",
-      }}
-    >
-      <div
-        style={{
-          left: 18,
-          position: "absolute",
-          top: 18,
-          zIndex: 10,
-        }}
-      >
-        <div
-          style={{
-            background: "rgba(255,255,255,0.92)",
-            border: "2px solid rgba(124,92,255,0.2)",
-            borderRadius: "22px",
-            boxShadow: "0 14px 35px rgba(38,31,72,0.12)",
-            padding: "14px 16px",
-          }}
-        >
-          <div
-            style={{
-              color: "#7c5cff",
-              fontSize: "11px",
-              fontWeight: 900,
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
-            }}
-          >
-            TEA-166 Interactable 3D Classroom
-          </div>
-          <h1
-            style={{
-              color: "#24183f",
-              fontSize: "24px",
-              lineHeight: 1,
-              margin: "5px 0 0",
-            }}
-          >
-            Classroom Hub Prototype
-          </h1>
-          {showHelp && (
-            <p
-              style={{
-                color: "#6f6687",
-                fontSize: "12px",
-                fontWeight: 700,
-                margin: "8px 0 0",
-                maxWidth: "300px",
-              }}
-            >
-              {helpText}
-            </p>
-          )}
+    <main style={pageStyle}>
+      <div style={helpCardShellStyle}>
+        <div style={helpCardStyle}>
+          <div style={eyebrowStyle}>TEA-166 Interactable 3D Classroom</div>
+          <h1 style={titleStyle}>Classroom Hub Prototype</h1>
+          {showHelp && <p style={helpTextStyle}>{helpText}</p>}
           <button
             type="button"
             onClick={() => setShowHelp((value) => !value)}
-            style={{
-              background: "#7c5cff",
-              border: "0",
-              borderRadius: "999px",
-              color: "white",
-              cursor: "pointer",
-              fontSize: "11px",
-              fontWeight: 900,
-              marginTop: "10px",
-              padding: "7px 11px",
-            }}
+            style={helpButtonStyle}
           >
             {showHelp ? "Hide help" : "Show help"}
           </button>
         </div>
       </div>
 
-      <HotspotPanel activeHotspot={activeHotspot} onSelect={setActiveHotspot} />
+      <HotspotPanel
+        activeHotspot={activeHotspot}
+        onSelect={setActiveHotspot}
+        data={panelData}
+      />
 
       <ViewModeControls
         showHotspots={showHotspots}
@@ -696,12 +849,331 @@ export default function Classroom() {
         gl={{ antialias: true }}
       >
         <Scene
-          activeHotspot={showHotspots ? activeHotspot : "quest-board"}
+          activeHotspot={activeHotspot}
           onSelectHotspot={setActiveHotspot}
+          showHotspots={showHotspots}
         />
       </Canvas>
     </main>
   );
 }
+
+const pageStyle: React.CSSProperties = {
+  background: "linear-gradient(135deg, #fff8de 0%, #e8f7ff 45%, #f4e9ff 100%)",
+  height: "100vh",
+  overflow: "hidden",
+  position: "relative",
+  width: "100vw",
+};
+
+const helpCardShellStyle: React.CSSProperties = {
+  left: 18,
+  position: "absolute",
+  top: 18,
+  zIndex: 10,
+};
+
+const helpCardStyle: React.CSSProperties = {
+  background: "rgba(255,255,255,0.92)",
+  border: "2px solid rgba(124,92,255,0.2)",
+  borderRadius: "22px",
+  boxShadow: "0 14px 35px rgba(38,31,72,0.12)",
+  padding: "14px 16px",
+};
+
+const eyebrowStyle: React.CSSProperties = {
+  color: "#7c5cff",
+  fontSize: "11px",
+  fontWeight: 900,
+  letterSpacing: "0.08em",
+  textTransform: "uppercase",
+};
+
+const titleStyle: React.CSSProperties = {
+  color: "#24183f",
+  fontSize: "24px",
+  lineHeight: 1,
+  margin: "5px 0 0",
+};
+
+const helpTextStyle: React.CSSProperties = {
+  color: "#6f6687",
+  fontSize: "12px",
+  fontWeight: 700,
+  margin: "8px 0 0",
+  maxWidth: "300px",
+};
+
+const helpButtonStyle: React.CSSProperties = {
+  background: "#7c5cff",
+  border: "0",
+  borderRadius: "999px",
+  color: "white",
+  cursor: "pointer",
+  fontSize: "11px",
+  fontWeight: 900,
+  marginTop: "10px",
+  padding: "7px 11px",
+};
+
+const floatingLabelStyle: React.CSSProperties = {
+  background: "rgba(255,255,255,0.96)",
+  border: "2px solid rgba(124,92,255,0.35)",
+  borderRadius: "999px",
+  color: "#2a1f4f",
+  fontSize: "11px",
+  fontWeight: 900,
+  padding: "6px 10px",
+  whiteSpace: "nowrap",
+};
+
+const loadingStyle: React.CSSProperties = {
+  background: "rgba(255,255,255,0.95)",
+  border: "2px solid rgba(124,92,255,0.25)",
+  borderRadius: "18px",
+  color: "#2a1f4f",
+  fontWeight: 800,
+  minWidth: "220px",
+  padding: "14px 18px",
+  textAlign: "center",
+};
+
+const panelShellStyle: React.CSSProperties = {
+  bottom: 18,
+  position: "absolute",
+  right: 18,
+  top: 18,
+  width: "min(380px, calc(100vw - 36px))",
+  zIndex: 10,
+};
+
+const panelCardStyle: React.CSSProperties = {
+  backdropFilter: "blur(12px)",
+  background: "rgba(255,255,255,0.92)",
+  border: "2px solid rgba(124,92,255,0.2)",
+  borderRadius: "26px",
+  boxShadow: "0 18px 45px rgba(38,31,72,0.16)",
+  display: "flex",
+  flexDirection: "column",
+  height: "100%",
+  overflow: "hidden",
+};
+
+const panelHeaderStyle: React.CSSProperties = {
+  background:
+    "linear-gradient(135deg, rgba(124,92,255,0.16), rgba(126,231,255,0.18))",
+  borderBottom: "1px solid rgba(124,92,255,0.16)",
+  padding: "16px",
+};
+
+const panelTitleStyle: React.CSSProperties = {
+  color: "#24183f",
+  fontSize: "26px",
+  lineHeight: 1,
+  margin: "7px 0 0",
+};
+
+const panelSubtitleStyle: React.CSSProperties = {
+  color: "#6f6687",
+  fontSize: "13px",
+  fontWeight: 800,
+  margin: "8px 0 0",
+};
+
+const bodyTextStyle: React.CSSProperties = {
+  color: "#3a315c",
+  fontSize: "14px",
+  fontWeight: 700,
+  lineHeight: 1.45,
+  margin: 0,
+};
+
+const primaryButtonStyle: React.CSSProperties = {
+  background: "#7c5cff",
+  border: "0",
+  borderRadius: "999px",
+  color: "white",
+  cursor: "pointer",
+  fontSize: "12px",
+  fontWeight: 950,
+  marginTop: "14px",
+  padding: "10px 14px",
+  width: "100%",
+};
+
+const hotspotNavButtonStyle: React.CSSProperties = {
+  alignItems: "center",
+  borderRadius: "16px",
+  color: "#24183f",
+  cursor: "pointer",
+  display: "flex",
+  fontSize: "12px",
+  fontWeight: 900,
+  justifyContent: "space-between",
+  padding: "10px 11px",
+  textAlign: "left",
+};
+
+const sectionStyle: React.CSSProperties = {
+  display: "grid",
+  gap: "10px",
+  marginTop: "14px",
+};
+
+const sectionHeaderRowStyle: React.CSSProperties = {
+  alignItems: "center",
+  display: "flex",
+  justifyContent: "space-between",
+};
+
+const sectionLabelStyle: React.CSSProperties = {
+  color: "#7c5cff",
+  fontSize: "11px",
+  fontWeight: 950,
+  letterSpacing: "0.07em",
+  textTransform: "uppercase",
+};
+
+const countPillStyle: React.CSSProperties = {
+  background: "rgba(124,92,255,0.12)",
+  borderRadius: "999px",
+  color: "#7c5cff",
+  fontSize: "11px",
+  fontWeight: 950,
+  padding: "4px 8px",
+};
+
+const listStackStyle: React.CSSProperties = {
+  display: "grid",
+  gap: "8px",
+};
+
+const infoCardStyle: React.CSSProperties = {
+  background: "rgba(255,255,255,0.78)",
+  border: "2px solid rgba(124,92,255,0.11)",
+  borderRadius: "18px",
+  color: "#24183f",
+  padding: "10px 11px",
+};
+
+const emptyCardStyle: React.CSSProperties = {
+  ...infoCardStyle,
+  background: "rgba(255,248,222,0.85)",
+};
+
+const cardTitleRowStyle: React.CSSProperties = {
+  alignItems: "center",
+  display: "flex",
+  gap: "8px",
+  justifyContent: "space-between",
+};
+
+const statusPillStyle: React.CSSProperties = {
+  background: "rgba(132,230,106,0.16)",
+  borderRadius: "999px",
+  color: "#287a36",
+  fontSize: "10px",
+  fontWeight: 950,
+  padding: "3px 7px",
+  textTransform: "uppercase",
+};
+
+const miniTextStyle: React.CSSProperties = {
+  color: "#6f6687",
+  display: "block",
+  fontSize: "12px",
+  fontWeight: 800,
+  lineHeight: 1.35,
+  margin: "5px 0 0",
+};
+
+const petHeroStyle: React.CSSProperties = {
+  alignItems: "center",
+  background: "rgba(132,230,106,0.13)",
+  border: "2px solid rgba(132,230,106,0.2)",
+  borderRadius: "20px",
+  display: "flex",
+  gap: "12px",
+  padding: "12px",
+};
+
+const petEmojiStyle: React.CSSProperties = {
+  alignItems: "center",
+  background: "white",
+  border: "2px solid rgba(132,230,106,0.32)",
+  borderRadius: "18px",
+  display: "flex",
+  fontSize: "30px",
+  height: "56px",
+  justifyContent: "center",
+  width: "56px",
+};
+
+const progressTrackStyle: React.CSSProperties = {
+  background: "rgba(124,92,255,0.12)",
+  borderRadius: "999px",
+  height: "10px",
+  marginTop: "6px",
+  overflow: "hidden",
+};
+
+const progressFillStyle: React.CSSProperties = {
+  background: "linear-gradient(90deg, #7c5cff, #84e66a)",
+  borderRadius: "999px",
+  height: "100%",
+};
+
+const rosterGridStyle: React.CSSProperties = {
+  display: "grid",
+  gap: "8px",
+  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+};
+
+const rosterCardStyle: React.CSSProperties = {
+  alignItems: "center",
+  background: "rgba(255,255,255,0.78)",
+  border: "2px solid rgba(124,92,255,0.11)",
+  borderRadius: "16px",
+  color: "#24183f",
+  display: "flex",
+  fontSize: "12px",
+  fontWeight: 900,
+  gap: "8px",
+  padding: "8px",
+};
+
+const avatarBubbleStyle: React.CSSProperties = {
+  alignItems: "center",
+  background: "rgba(124,92,255,0.14)",
+  borderRadius: "999px",
+  color: "#7c5cff",
+  display: "flex",
+  flex: "0 0 auto",
+  fontSize: "12px",
+  fontWeight: 950,
+  height: "28px",
+  justifyContent: "center",
+  width: "28px",
+};
+
+const bottomControlsStyle: React.CSSProperties = {
+  bottom: 18,
+  display: "flex",
+  gap: "8px",
+  left: 18,
+  position: "absolute",
+  zIndex: 10,
+};
+
+const smallButtonStyle: React.CSSProperties = {
+  background: "rgba(255,255,255,0.92)",
+  border: "2px solid rgba(124,92,255,0.2)",
+  borderRadius: "999px",
+  color: "#2a1f4f",
+  cursor: "pointer",
+  fontSize: "12px",
+  fontWeight: 900,
+  padding: "9px 12px",
+};
 
 useGLTF.preload(CLASSROOM_MODEL_PATH);
