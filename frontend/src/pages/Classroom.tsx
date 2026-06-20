@@ -6,6 +6,12 @@ import { useClassroomWorldStore } from "../lib/classroomWorldStore";
 
 const CLASSROOM_MODEL_PATH =
   "/assets/3d/classroom-blockout/classroom-blockout.glb";
+const PLAYER_MODEL_PATH = "/assets/3d/avatar/avatar.glb";
+const EMBERCUB_MODEL_PATH = "/assets/3d/pets/embercub.glb";
+
+// First-pass tuning knobs. These will likely need tiny adjustments per exported model.
+const PLAYER_MODEL_SCALE = 0.85;
+const EMBERCUB_MODEL_SCALE = 0.9;
 
 type KeyState = {
   forward: boolean;
@@ -29,6 +35,7 @@ type HotspotInfo = {
   subtitle: string;
   body: string;
   cta: string;
+  icon: string;
   position: [number, number, number];
   size: [number, number, number];
   color: string;
@@ -52,6 +59,7 @@ const HOTSPOTS: HotspotInfo[] = [
     subtitle: "Class quests and active learning tasks.",
     body: "Teacher-created assignments appear here as classroom quests. This is the main daily action loop for students.",
     cta: "Open Quest Board",
+    icon: "📋",
     position: [0, 1.15, -3.05],
     size: [3.4, 1.15, 0.22],
     color: "#79d96b",
@@ -63,6 +71,7 @@ const HOTSPOTS: HotspotInfo[] = [
     subtitle: "Safe classroom presence for students.",
     body: "This area represents student seats, roster presence, and future classmate avatars. Keep it async and safe: no free chat, no open social layer.",
     cta: "View Student Roster",
+    icon: "🎒",
     position: [-0.45, 0.08, 1.0],
     size: [4.7, 0.14, 2.35],
     color: "#7ee7ff",
@@ -74,6 +83,7 @@ const HOTSPOTS: HotspotInfo[] = [
     subtitle: "The pet's daily classroom home.",
     body: "This is a small emotional anchor in the classroom. Full pet progression belongs in the Pet Sanctuary, but the class pet should feel present here every day.",
     cta: "Visit Class Pet",
+    icon: "🐾",
     position: [-4.1, 0.36, 2.35],
     size: [1.15, 0.75, 1.15],
     color: "#84e66a",
@@ -85,6 +95,7 @@ const HOTSPOTS: HotspotInfo[] = [
     subtitle: "Class wins, rewards, badges, and celebrations.",
     body: "This wall shows progress history: completed class goals, unlocked rewards, weekly achievements, and trophies earned through learning.",
     cta: "View Rewards",
+    icon: "🏆",
     position: [-4.35, 1.0, -0.7],
     size: [0.22, 2.05, 3.2],
     color: "#b457ff",
@@ -96,6 +107,7 @@ const HOTSPOTS: HotspotInfo[] = [
     subtitle: "Future route to the Academy Courtyard.",
     body: "This will transition the player from the classroom to the academy courtyard or hallway hub. For now it proves routing intent.",
     cta: "Exit Coming Soon",
+    icon: "🚪",
     position: [4.25, 0.72, 0.75],
     size: [0.28, 1.45, 1.1],
     color: "#ffb347",
@@ -107,6 +119,7 @@ const HOTSPOTS: HotspotInfo[] = [
     subtitle: "Teacher avatar and instruction anchor.",
     body: "This spot can hold the teacher avatar, class message, daily prompt, or a safe announcement from the teacher.",
     cta: "View Teacher Area",
+    icon: "⭐",
     position: [0, 0.42, -2.12],
     size: [0.9, 0.78, 0.9],
     color: "#7c5cff",
@@ -207,6 +220,34 @@ function ClassroomModel() {
   );
 }
 
+function PlayerAvatarModel() {
+  const gltf = useGLTF(PLAYER_MODEL_PATH) as any;
+  const avatarScene = useMemo(() => gltf.scene.clone(true), [gltf.scene]);
+
+  return (
+    <primitive
+      object={avatarScene}
+      position={[0, -0.05, 0]}
+      rotation={[0, Math.PI, 0]}
+      scale={PLAYER_MODEL_SCALE}
+    />
+  );
+}
+
+function EmbercubModel() {
+  const gltf = useGLTF(EMBERCUB_MODEL_PATH) as any;
+  const embercubScene = useMemo(() => gltf.scene.clone(true), [gltf.scene]);
+
+  return (
+    <group position={[-4.05, 1.1, 2.35]} rotation={[0, 0.7, 0]}>
+      <primitive object={embercubScene} scale={EMBERCUB_MODEL_SCALE} />
+      <Html position={[0, 1.15, 0]} center>
+        <div style={floatingLabelStyle}>Embercub</div>
+      </Html>
+    </group>
+  );
+}
+
 function PlayerMarker() {
   const groupRef = useRef<THREE.Group>(null);
   const keysRef = useKeyboardMovement();
@@ -234,18 +275,10 @@ function PlayerMarker() {
   });
 
   return (
-    <group ref={groupRef} position={[0, -0.45, 2.5]} scale={0.35}>
-      <mesh castShadow position={[0, 0.55, 0]}>
-        <sphereGeometry args={[0.28, 24, 24]} />
-        <meshStandardMaterial color="#f7c97f" roughness={0.55} />
-      </mesh>
+    <group ref={groupRef} position={[0, 1.5, 2.5]}>
+      <PlayerAvatarModel />
 
-      <mesh castShadow position={[0, 0.15, 0]}>
-        <cylinderGeometry args={[0.23, 0.28, 0.55, 24]} />
-        <meshStandardMaterial color="#7c5cff" roughness={0.55} />
-      </mesh>
-
-      <Html position={[0, 1.05, 0]} center>
+      <Html position={[0, 1.35, 0]} center>
         <div style={floatingLabelStyle}>Player</div>
       </Html>
     </group>
@@ -256,13 +289,16 @@ function ClassroomHotspot({
   hotspot,
   isActive,
   onSelect,
+  showDevZone,
 }: {
   hotspot: HotspotInfo;
   isActive: boolean;
   onSelect: (id: HotspotKey) => void;
+  showDevZone: boolean;
 }) {
   const [isHovered, setIsHovered] = useState(false);
-  const opacity = isActive ? 0.24 : isHovered ? 0.18 : 0.055;
+  const opacity = showDevZone ? (isActive ? 0.22 : isHovered ? 0.16 : 0.05) : 0;
+  const showLabel = isActive || isHovered || !showDevZone;
 
   const handlePointerOver = (event: ThreeEvent<PointerEvent>) => {
     event.stopPropagation();
@@ -298,19 +334,24 @@ function ClassroomHotspot({
         />
       </mesh>
 
-      {(isActive || isHovered) && (
+      {showLabel && (
         <Html position={[0, hotspot.size[1] / 2 + 0.22, 0]} center>
           <button
             type="button"
             onClick={() => onSelect(hotspot.id)}
             style={{
-              ...floatingLabelStyle,
+              ...(showDevZone ? floatingLabelStyle : compactHotspotLabelStyle),
               border: `2px solid ${hotspot.color}`,
-              boxShadow: "0 8px 24px rgba(35, 24, 63, 0.16)",
+              boxShadow: isActive
+                ? `0 0 0 4px ${hotspot.color}24, 0 10px 26px rgba(35, 24, 63, 0.18)`
+                : "0 8px 24px rgba(35, 24, 63, 0.13)",
               cursor: "pointer",
             }}
           >
-            {hotspot.label}
+            <span aria-hidden="true" style={{ marginRight: showDevZone ? 5 : 0 }}>
+              {hotspot.icon}
+            </span>
+            {showDevZone ? hotspot.label : null}
           </button>
         </Html>
       )}
@@ -321,9 +362,11 @@ function ClassroomHotspot({
 function ClassroomHotspots({
   activeHotspot,
   onSelect,
+  showDevZones,
 }: {
   activeHotspot: HotspotKey;
   onSelect: (id: HotspotKey) => void;
+  showDevZones: boolean;
 }) {
   return (
     <>
@@ -333,6 +376,7 @@ function ClassroomHotspots({
           hotspot={hotspot}
           isActive={activeHotspot === hotspot.id}
           onSelect={onSelect}
+          showDevZone={showDevZones}
         />
       ))}
     </>
@@ -355,11 +399,11 @@ function LoadingFallback() {
 function Scene({
   activeHotspot,
   onSelectHotspot,
-  showHotspots,
+  showDevZones,
 }: {
   activeHotspot: HotspotKey;
   onSelectHotspot: (id: HotspotKey) => void;
-  showHotspots: boolean;
+  showDevZones: boolean;
 }) {
   return (
     <>
@@ -376,13 +420,13 @@ function Scene({
 
       <Suspense fallback={<LoadingFallback />}>
         <ClassroomModel />
+        <EmbercubModel />
         <PlayerMarker />
-        {showHotspots && (
-          <ClassroomHotspots
-            activeHotspot={activeHotspot}
-            onSelect={onSelectHotspot}
-          />
-        )}
+        <ClassroomHotspots
+          activeHotspot={activeHotspot}
+          onSelect={onSelectHotspot}
+          showDevZones={showDevZones}
+        />
       </Suspense>
 
       <mesh
@@ -728,25 +772,32 @@ function InfoCard({ children }: { children: React.ReactNode }) {
 }
 
 function ViewModeControls({
-  showHotspots,
-  setShowHotspots,
+  showDevZones,
+  setShowDevZones,
   resetHotspot,
 }: {
-  showHotspots: boolean;
-  setShowHotspots: (value: boolean) => void;
+  showDevZones: boolean;
+  setShowDevZones: (value: boolean) => void;
   resetHotspot: () => void;
 }) {
+  const goBackToDashboard = () => {
+    window.location.href = "/dashboard";
+  };
+
   return (
     <div style={bottomControlsStyle}>
       <button
         type="button"
-        onClick={() => setShowHotspots(!showHotspots)}
+        onClick={() => setShowDevZones(!showDevZones)}
         style={smallButtonStyle}
       >
-        {showHotspots ? "Hide hotspots" : "Show hotspots"}
+        {showDevZones ? "Student mode" : "Dev zones"}
       </button>
       <button type="button" onClick={resetHotspot} style={smallButtonStyle}>
         Reset panel
+      </button>
+      <button type="button" onClick={goBackToDashboard} style={smallButtonStyle}>
+        Back to Dashboard
       </button>
     </div>
   );
@@ -754,7 +805,7 @@ function ViewModeControls({
 
 export default function Classroom() {
   const [showHelp, setShowHelp] = useState(true);
-  const [showHotspots, setShowHotspots] = useState(true);
+  const [showDevZones, setShowDevZones] = useState(false);
   const [activeHotspot, setActiveHotspot] = useState<HotspotKey>("quest-board");
 
   const classrooms = useClassroomWorldStore(
@@ -807,12 +858,12 @@ export default function Classroom() {
   }, [events, goals, rewardLogs, selectedClassroom]);
 
   const helpText = useMemo(() => {
-    if (showHotspots) {
-      return "WASD / arrow keys move the placeholder player. Drag to orbit. Click a glowing zone to open its classroom panel.";
+    if (showDevZones) {
+      return "Developer zones are visible. Click a zone or icon to inspect the classroom panel.";
     }
 
-    return "WASD / arrow keys move the placeholder player. Drag to orbit the camera.";
-  }, [showHotspots]);
+    return "WASD / arrow keys move the player. Drag to orbit. Click the floating icons to open classroom panels.";
+  }, [showDevZones]);
 
   return (
     <main style={pageStyle}>
@@ -838,8 +889,8 @@ export default function Classroom() {
       />
 
       <ViewModeControls
-        showHotspots={showHotspots}
-        setShowHotspots={setShowHotspots}
+        showDevZones={showDevZones}
+        setShowDevZones={setShowDevZones}
         resetHotspot={() => setActiveHotspot("quest-board")}
       />
 
@@ -851,7 +902,7 @@ export default function Classroom() {
         <Scene
           activeHotspot={activeHotspot}
           onSelectHotspot={setActiveHotspot}
-          showHotspots={showHotspots}
+          showDevZones={showDevZones}
         />
       </Canvas>
     </main>
@@ -926,6 +977,22 @@ const floatingLabelStyle: React.CSSProperties = {
   padding: "6px 10px",
   whiteSpace: "nowrap",
 };
+const compactHotspotLabelStyle: React.CSSProperties = {
+  alignItems: "center",
+  background: "rgba(255,255,255,0.94)",
+  border: "2px solid rgba(124,92,255,0.35)",
+  borderRadius: "999px",
+  color: "#2a1f4f",
+  display: "inline-flex",
+  fontSize: "16px",
+  fontWeight: 900,
+  height: "34px",
+  justifyContent: "center",
+  padding: 0,
+  width: "34px",
+  whiteSpace: "nowrap",
+};
+
 
 const loadingStyle: React.CSSProperties = {
   background: "rgba(255,255,255,0.95)",
@@ -1177,3 +1244,5 @@ const smallButtonStyle: React.CSSProperties = {
 };
 
 useGLTF.preload(CLASSROOM_MODEL_PATH);
+useGLTF.preload(PLAYER_MODEL_PATH);
+useGLTF.preload(EMBERCUB_MODEL_PATH);
