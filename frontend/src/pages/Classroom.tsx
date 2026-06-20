@@ -10,8 +10,18 @@ const PLAYER_MODEL_PATH = "/assets/3d/avatar/avatar.glb";
 const EMBERCUB_MODEL_PATH = "/assets/3d/pets/embercub.glb";
 
 // First-pass tuning knobs. These will likely need tiny adjustments per exported model.
-const PLAYER_MODEL_SCALE = 0.85;
-const EMBERCUB_MODEL_SCALE = 0.9;
+const PLAYER_MODEL_SCALE = 1;
+const EMBERCUB_MODEL_SCALE = 1;
+
+// Tuning knobs for the current classroom blockout.
+// Keep these near the top so we can quickly adjust them as the UE room changes.
+const PLAYER_START_POSITION = new THREE.Vector3(0, 1.5, 2.5);
+const PLAYER_BOUNDS = {
+  minX: -9.2,
+  maxX: 9.2,
+  minZ: -7,
+  maxZ: 7,
+};
 
 type KeyState = {
   forward: boolean;
@@ -19,6 +29,8 @@ type KeyState = {
   left: boolean;
   right: boolean;
 };
+
+type CameraMode = "orbit" | "follow" | "top";
 
 type HotspotKey =
   | "quest-board"
@@ -239,7 +251,7 @@ function EmbercubModel() {
   const embercubScene = useMemo(() => gltf.scene.clone(true), [gltf.scene]);
 
   return (
-    <group position={[-4.05, 1.1, 2.35]} rotation={[0, 0.7, 0]}>
+    <group position={[-4.05, 1.25, 2.35]} rotation={[0, 0.7, 0]}>
       <primitive object={embercubScene} scale={EMBERCUB_MODEL_SCALE} />
       <Html position={[0, 1.15, 0]} center>
         <div style={floatingLabelStyle}>Embercub</div>
@@ -248,7 +260,11 @@ function EmbercubModel() {
   );
 }
 
-function PlayerMarker() {
+function PlayerMarker({
+  playerPositionRef,
+}: {
+  playerPositionRef: React.MutableRefObject<THREE.Vector3>;
+}) {
   const groupRef = useRef<THREE.Group>(null);
   const keysRef = useKeyboardMovement();
 
@@ -257,28 +273,43 @@ function PlayerMarker() {
     if (!group) return;
 
     const speed = 2.5;
+
+    // World-space movement for the classroom blockout:
+    // W moves toward the teacher/board wall, S moves toward the open camera side.
     const moveX =
-      (keysRef.current.left ? 1 : 0) - (keysRef.current.right ? 1 : 0);
+      (keysRef.current.right ? 1 : 0) - (keysRef.current.left ? 1 : 0);
     const moveZ =
-      (keysRef.current.forward ? 1 : 0) - (keysRef.current.backward ? 1 : 0);
+      (keysRef.current.backward ? 1 : 0) - (keysRef.current.forward ? 1 : 0);
 
     if (moveX !== 0 || moveZ !== 0) {
       const movement = new THREE.Vector3(moveX, 0, moveZ);
       movement.normalize().multiplyScalar(speed * delta);
 
       group.position.add(movement);
-      group.position.x = THREE.MathUtils.clamp(group.position.x, -6, 6);
-      group.position.z = THREE.MathUtils.clamp(group.position.z, -6, 6);
+      group.position.x = THREE.MathUtils.clamp(
+        group.position.x,
+        PLAYER_BOUNDS.minX,
+        PLAYER_BOUNDS.maxX,
+      );
+      group.position.z = THREE.MathUtils.clamp(
+        group.position.z,
+        PLAYER_BOUNDS.minZ,
+        PLAYER_BOUNDS.maxZ,
+      );
 
-      group.rotation.y = Math.atan2(moveX, moveZ);
+      // The avatar GLB faces opposite the movement vector after its model-level rotation.
+      // Add PI so the visible character points toward travel direction instead of away from it.
+      group.rotation.y = Math.atan2(moveX, moveZ) + Math.PI;
     }
+
+    playerPositionRef.current.copy(group.position);
   });
 
   return (
-    <group ref={groupRef} position={[0, 1.5, 2.5]}>
+    <group ref={groupRef} position={PLAYER_START_POSITION.toArray()}>
       <PlayerAvatarModel />
 
-      <Html position={[0, 1.35, 0]} center>
+      <Html position={[0, 1.25, 0]} center>
         <div style={floatingLabelStyle}>Player</div>
       </Html>
     </group>
@@ -396,14 +427,47 @@ function LoadingFallback() {
   );
 }
 
+function CameraRig({
+  cameraMode,
+  playerPositionRef,
+}: {
+  cameraMode: CameraMode;
+  playerPositionRef: React.MutableRefObject<THREE.Vector3>;
+}) {
+  useFrame(({ camera }, delta) => {
+    if (cameraMode === "orbit") return;
+
+    const player = playerPositionRef.current;
+    const desiredPosition =
+      cameraMode === "top"
+        ? new THREE.Vector3(player.x, player.y + 9.5, player.z + 0.05)
+        : new THREE.Vector3(player.x + 3.4, player.y + 3.2, player.z + 4.2);
+
+    camera.position.lerp(desiredPosition, Math.min(1, delta * 4.5));
+
+    const lookTarget =
+      cameraMode === "top"
+        ? new THREE.Vector3(player.x, player.y, player.z)
+        : new THREE.Vector3(player.x, player.y + 0.85, player.z);
+
+    camera.lookAt(lookTarget);
+  });
+
+  return null;
+}
+
 function Scene({
   activeHotspot,
   onSelectHotspot,
   showDevZones,
+  cameraMode,
+  playerPositionRef,
 }: {
   activeHotspot: HotspotKey;
   onSelectHotspot: (id: HotspotKey) => void;
   showDevZones: boolean;
+  cameraMode: CameraMode;
+  playerPositionRef: React.MutableRefObject<THREE.Vector3>;
 }) {
   return (
     <>
@@ -421,7 +485,7 @@ function Scene({
       <Suspense fallback={<LoadingFallback />}>
         <ClassroomModel />
         <EmbercubModel />
-        <PlayerMarker />
+        <PlayerMarker playerPositionRef={playerPositionRef} />
         <ClassroomHotspots
           activeHotspot={activeHotspot}
           onSelect={onSelectHotspot}
@@ -438,8 +502,11 @@ function Scene({
         <meshStandardMaterial color="#e8f7d6" roughness={0.8} />
       </mesh>
 
+      <CameraRig cameraMode={cameraMode} playerPositionRef={playerPositionRef} />
+
       <OrbitControls
         makeDefault
+        enabled={cameraMode === "orbit"}
         enableDamping
         dampingFactor={0.08}
         minDistance={3}
@@ -775,10 +842,14 @@ function ViewModeControls({
   showDevZones,
   setShowDevZones,
   resetHotspot,
+  cameraMode,
+  setCameraMode,
 }: {
   showDevZones: boolean;
   setShowDevZones: (value: boolean) => void;
   resetHotspot: () => void;
+  cameraMode: CameraMode;
+  setCameraMode: (mode: CameraMode) => void;
 }) {
   const goBackToDashboard = () => {
     window.location.href = "/dashboard";
@@ -793,6 +864,36 @@ function ViewModeControls({
       >
         {showDevZones ? "Student mode" : "Dev zones"}
       </button>
+      <button
+        type="button"
+        onClick={() => setCameraMode("orbit")}
+        style={{
+          ...smallButtonStyle,
+          ...(cameraMode === "orbit" ? activeSmallButtonStyle : {}),
+        }}
+      >
+        Orbit
+      </button>
+      <button
+        type="button"
+        onClick={() => setCameraMode("follow")}
+        style={{
+          ...smallButtonStyle,
+          ...(cameraMode === "follow" ? activeSmallButtonStyle : {}),
+        }}
+      >
+        Follow
+      </button>
+      <button
+        type="button"
+        onClick={() => setCameraMode("top")}
+        style={{
+          ...smallButtonStyle,
+          ...(cameraMode === "top" ? activeSmallButtonStyle : {}),
+        }}
+      >
+        Top
+      </button>
       <button type="button" onClick={resetHotspot} style={smallButtonStyle}>
         Reset panel
       </button>
@@ -806,7 +907,9 @@ function ViewModeControls({
 export default function Classroom() {
   const [showHelp, setShowHelp] = useState(true);
   const [showDevZones, setShowDevZones] = useState(false);
+  const [cameraMode, setCameraMode] = useState<CameraMode>("orbit");
   const [activeHotspot, setActiveHotspot] = useState<HotspotKey>("quest-board");
+  const playerPositionRef = useRef(PLAYER_START_POSITION.clone());
 
   const classrooms = useClassroomWorldStore(
     (state: any) => state.classrooms || [],
@@ -892,6 +995,8 @@ export default function Classroom() {
         showDevZones={showDevZones}
         setShowDevZones={setShowDevZones}
         resetHotspot={() => setActiveHotspot("quest-board")}
+        cameraMode={cameraMode}
+        setCameraMode={setCameraMode}
       />
 
       <Canvas
@@ -903,6 +1008,8 @@ export default function Classroom() {
           activeHotspot={activeHotspot}
           onSelectHotspot={setActiveHotspot}
           showDevZones={showDevZones}
+          cameraMode={cameraMode}
+          playerPositionRef={playerPositionRef}
         />
       </Canvas>
     </main>
@@ -1241,6 +1348,12 @@ const smallButtonStyle: React.CSSProperties = {
   fontSize: "12px",
   fontWeight: 900,
   padding: "9px 12px",
+};
+
+const activeSmallButtonStyle: React.CSSProperties = {
+  background: "rgba(124,92,255,0.16)",
+  border: "2px solid rgba(124,92,255,0.55)",
+  color: "#4b32bd",
 };
 
 useGLTF.preload(CLASSROOM_MODEL_PATH);
