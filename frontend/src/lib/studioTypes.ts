@@ -18,6 +18,9 @@ export const STUDIO_STATUSES: StudioStatus[] = [
 export const PLAYER_VISIBLE_STATUSES: StudioStatus[] = ["approved", "published"];
 
 export interface StudioBase {
+  previewUrl?: string;
+  imageProvider?: string;
+  promptUsed?: string;
   id: string;
   status: StudioStatus;
   createdAt: string;
@@ -315,3 +318,6 @@ export type StudioCollectionKey =
   | "templates" | "avatars" | "companions" | "evolutions" | "arts"
   | "assets" | "realms" | "battleBgs" | "scenes" | "npcs"
   | "quests" | "events" | "palettes" | "stylePresets";
+
+
+
