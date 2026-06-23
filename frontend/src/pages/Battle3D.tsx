@@ -8,6 +8,7 @@ import { useGame } from "../lib/gameStore";
 import { useStudio } from "../lib/studioStore";
 
 const EMBERCUB_MODEL_PATH = "/assets/3d/pets/embercub.glb";
+const BUBBLEFIN_MODEL_PATH = "/assets/3d/pets/bubblefin.glb";
 const PLAYER_MODEL_PATH = "/assets/3d/avatar/avatar.glb";
 
 type BattleParticipantCardProps = {
@@ -25,51 +26,56 @@ function LoadingCard() {
   );
 }
 
+function cloneGlbScene(scene: THREE.Object3D) {
+  const cloned = scene.clone(true);
+
+  cloned.traverse((child: any) => {
+    if (child?.isMesh) {
+      child.castShadow = true;
+      child.receiveShadow = true;
+    }
+  });
+
+  return cloned;
+}
+
 function EmbercubModel() {
   const gltf = useGLTF(EMBERCUB_MODEL_PATH) as any;
-  const scene = useMemo(() => {
-    const cloned = gltf.scene.clone(true);
-    cloned.traverse((child: any) => {
-      if (child?.isMesh) {
-        child.castShadow = true;
-        child.receiveShadow = true;
-      }
-    });
-    return cloned;
-  }, [gltf.scene]);
+  const scene = useMemo(() => cloneGlbScene(gltf.scene), [gltf.scene]);
 
-  return <primitive object={scene} position={[-1.9, 0.12, 0]} rotation={[0, 1.1, 0]} scale={0.95} />;
+  return (
+    <primitive
+      object={scene}
+      position={[-1.9, 0.58, 0]}
+      rotation={[0, 1.1, 0]}
+      scale={1.55}
+    />
+  );
 }
 
 function PlayerModelGhost() {
   const gltf = useGLTF(PLAYER_MODEL_PATH) as any;
-  const scene = useMemo(() => {
-    const cloned = gltf.scene.clone(true);
-    cloned.traverse((child: any) => {
-      if (child?.isMesh) {
-        child.castShadow = true;
-        child.receiveShadow = true;
-      }
-    });
-    return cloned;
-  }, [gltf.scene]);
+  const scene = useMemo(() => cloneGlbScene(gltf.scene), [gltf.scene]);
 
-  return <primitive object={scene} position={[-3.4, 0.05, 1.05]} rotation={[0, 0.75, 0]} scale={0.75} />;
+  return (
+    <primitive
+      object={scene}
+      position={[-3.4, 0.7, 1.05]}
+      rotation={[0, 0.75, 0]}
+      scale={0.75}
+    />
+  );
 }
 
-function EnemyPlaceholder() {
+function BubblefinEnemyModel() {
+  const gltf = useGLTF(BUBBLEFIN_MODEL_PATH) as any;
+  const scene = useMemo(() => cloneGlbScene(gltf.scene), [gltf.scene]);
+
   return (
-    <group position={[2.05, 0.35, -0.05]} rotation={[0, -0.7, 0]}>
-      <mesh castShadow receiveShadow position={[0, 0.45, 0]}>
-        <sphereGeometry args={[0.62, 32, 24]} />
-        <meshStandardMaterial color="#d4a373" roughness={0.7} />
-      </mesh>
-      <mesh castShadow receiveShadow position={[0, 1.05, 0]}>
-        <coneGeometry args={[0.55, 0.7, 5]} />
-        <meshStandardMaterial color="#6b3f36" roughness={0.65} />
-      </mesh>
-      <Html position={[0, 1.85, 0]} center>
-        <div style={nameTagStyle}>Enemy GLB slot</div>
+    <group position={[2.25, 0.58, -0.05]} rotation={[0, -0.95, 0]}>
+      <primitive object={scene} scale={1.45} />
+      <Html position={[0, 1.55, 0]} center>
+        <div style={nameTagStyle}>Bubblefin enemy GLB</div>
       </Html>
     </group>
   );
@@ -97,10 +103,10 @@ function ArenaScene() {
           </mesh>
           <EmbercubModel />
           <PlayerModelGhost />
-          <EnemyPlaceholder />
+          <BubblefinEnemyModel />
         </group>
       </Suspense>
-      <OrbitControls target={[0, 0.35, 0]} enablePan={false} minDistance={4.5} maxDistance={8} maxPolarAngle={Math.PI / 2.05} />
+      <OrbitControls target={[0, 0.55, 0]} enablePan={false} minDistance={4.5} maxDistance={8} maxPolarAngle={Math.PI / 2.05} />
     </>
   );
 }
@@ -123,11 +129,10 @@ const Battle3D: React.FC = () => {
   const navigate = useNavigate();
   const player = useGame((state) => state.player);
   const companions = useStudio((state) => state.companions);
-  const npcs = useStudio((state) => state.npcs);
   const starterCompanion = companions.find((companion: any) => companion?.name === "Embercub") || companions[0];
-  const opponent = npcs.find((npc: any) => npc?.status === "approved" || npc?.status === "published") || {
-    name: "Training Dummy",
-    role: "3D enemy placeholder",
+  const enemyCompanion = companions.find((companion: any) => companion?.name === "Bubblefin") || {
+    name: "Bubblefin",
+    role: "3D enemy preview",
   };
 
   return (
@@ -163,8 +168,8 @@ const Battle3D: React.FC = () => {
           />
           <BattleParticipantCard
             eyebrow="Opponent side"
-            name={opponent?.name || "Enemy GLB slot"}
-            subtitle="Temporary placeholder until enemy GLBs are assigned through Content Studio."
+            name={enemyCompanion?.name || "Bubblefin"}
+            subtitle="GLB enemy loaded from /assets/3d/pets/bubblefin.glb"
             align="right"
           />
         </div>
@@ -270,6 +275,7 @@ const nameTagStyle: React.CSSProperties = { borderRadius: 999, background: "rgba
 const loadingStyle: React.CSSProperties = { borderRadius: "1rem", background: "rgba(255,255,255,0.95)", color: "#2b2352", padding: "0.85rem 1rem", fontWeight: 950 };
 
 useGLTF.preload(EMBERCUB_MODEL_PATH);
+useGLTF.preload(BUBBLEFIN_MODEL_PATH);
 useGLTF.preload(PLAYER_MODEL_PATH);
 
 export default Battle3D;
