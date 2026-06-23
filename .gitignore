@@ -1,7 +1,6 @@
-.env
-.env.*
-*.env
-credentials.json
-*.pem
-*.key
-.credentials
+backend/
+frontend/node_modules/
+frontend/package-lock.json
+frontend/src/backend/node_modules/
+frontend/src/backend/package-lock.json
+frontend/src/pages/Classroom.backup.tsx
