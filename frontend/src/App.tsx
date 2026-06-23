@@ -5,6 +5,7 @@ import Onboarding from "./pages/Onboarding";
 import CharacterCreator from "./pages/CharacterCreator";
 import StarterPicker from "./pages/StarterPicker";
 import Battle from "./pages/Battle";
+import Battle3D from "./pages/Battle3D";
 import EggHatch from "./pages/EggHatch";
 import Collection from "./pages/Collection";
 import Academy from "./pages/Academy";
@@ -26,18 +27,14 @@ const App: React.FC = () => {
       <Route path="/onboarding" element={<Onboarding />} />
       <Route path="/character" element={<CharacterCreator />} />
       <Route path="/starter" element={<RequirePlayer><StarterPicker /></RequirePlayer>} />
-
-      {/* RPG Adventure shell (replaces legacy /hub landing) */}
       <Route path="/adventure" element={<RequirePlayer requireStarter><AdventureHub /></RequirePlayer>} />
       <Route path="/adventure/realms" element={<RequirePlayer requireStarter><RealmMap /></RequirePlayer>} />
       <Route path="/adventure/town/:realmId" element={<RequirePlayer requireStarter><TownHub /></RequirePlayer>} />
       <Route path="/adventure/companions" element={<RequirePlayer requireStarter><CompanionsPanel /></RequirePlayer>} />
       <Route path="/adventure/quests" element={<RequirePlayer requireStarter><QuestsPreview /></RequirePlayer>} />
-
-      {/* Legacy /hub redirects into the new Adventure flow */}
       <Route path="/hub" element={<Navigate to="/adventure" replace />} />
-
       <Route path="/battle" element={<RequirePlayer requireStarter><Battle /></RequirePlayer>} />
+      <Route path="/battle-3d" element={<RequirePlayer requireStarter><Battle3D /></RequirePlayer>} />
       <Route path="/egg" element={<RequirePlayer requireStarter><EggHatch /></RequirePlayer>} />
       <Route path="/collection" element={<RequirePlayer requireStarter><Collection /></RequirePlayer>} />
       <Route path="/academy" element={<RequirePlayer requireStarter><Academy /></RequirePlayer>} />
