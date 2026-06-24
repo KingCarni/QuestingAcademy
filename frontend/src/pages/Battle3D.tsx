@@ -9,6 +9,7 @@ import { useStudio } from "../lib/studioStore";
 
 const EMBERCUB_MODEL_PATH = "/assets/3d/pets/embercub.glb";
 const BUBBLEFIN_MODEL_PATH = "/assets/3d/pets/bubblefin.glb";
+const ROCK_MODEL_PATH = "/assets/3d/props/rock.glb";
 const PLAYER_MODEL_PATH = "/assets/3d/avatar/avatar.glb";
 const BATTLE_DEV_STORAGE_KEY = "eduMatesBattle3DPlacements.v1";
 
@@ -19,7 +20,7 @@ type BattleParticipantCardProps = {
   align?: "left" | "right";
 };
 
-type BattleAssetId = "trainer" | "embercub" | "bubblefin";
+type BattleAssetId = string;
 
 type BattleAssetPlacement = {
   id: BattleAssetId;
@@ -34,6 +35,7 @@ const DEFAULT_BATTLE_3D_ASSET_PLACEMENTS: BattleAssetPlacement[] = [
   { id: "trainer", label: "Trainer", modelPath: "/assets/3d/avatar/avatar.glb", position: [-4.7, 1.3, 1.05], rotation: [0, 1.45, 0], scale: 1.35 },
   { id: "embercub", label: "Embercub", modelPath: "/assets/3d/pets/embercub.glb", position: [-2.1, 0.78, 0], rotation: [0, 1.2, 0], scale: 1.1 },
   { id: "bubblefin", label: "Bubblefin", modelPath: "/assets/3d/pets/bubblefin.glb", position: [2.25, 0.88, 0.35], rotation: [0, -1.05, 0], scale: 0.9 },
+  { id: "rock-1", label: "Rock 1", modelPath: "/assets/3d/props/rock.glb", position: [3.45, 0.05, -1.15], rotation: [0, 0.35, 0], scale: 0.75 },
 ];
 
 function LoadingCard() {
@@ -77,19 +79,33 @@ function loadBattlePlacements(): BattleAssetPlacement[] {
     const parsed = JSON.parse(raw) as Partial<BattleAssetPlacement>[];
     if (!Array.isArray(parsed)) return DEFAULT_BATTLE_3D_ASSET_PLACEMENTS.map(clonePlacement);
 
-    return DEFAULT_BATTLE_3D_ASSET_PLACEMENTS.map((base) => {
+    const mergedDefaults = DEFAULT_BATTLE_3D_ASSET_PLACEMENTS.map((base) => {
       const saved = parsed.find((item) => item?.id === base.id);
       return {
         ...base,
         ...saved,
         id: base.id,
-        label: base.label,
-        modelPath: base.modelPath,
+        label: saved?.label || base.label,
+        modelPath: saved?.modelPath || base.modelPath,
         position: Array.isArray(saved?.position) ? (saved?.position as [number, number, number]) : [...base.position] as [number, number, number],
         rotation: Array.isArray(saved?.rotation) ? (saved?.rotation as [number, number, number]) : [...base.rotation] as [number, number, number],
         scale: typeof saved?.scale === "number" ? saved.scale : base.scale,
       };
     });
+
+    const extraPlacements = parsed
+      .filter((item): item is BattleAssetPlacement =>
+        !!item?.id &&
+        !DEFAULT_BATTLE_3D_ASSET_PLACEMENTS.some((base) => base.id === item.id) &&
+        typeof item.label === "string" &&
+        typeof item.modelPath === "string" &&
+        Array.isArray(item.position) &&
+        Array.isArray(item.rotation) &&
+        typeof item.scale === "number",
+      )
+      .map(clonePlacement);
+
+    return [...mergedDefaults, ...extraPlacements];
   } catch {
     return DEFAULT_BATTLE_3D_ASSET_PLACEMENTS.map(clonePlacement);
   }
@@ -282,6 +298,34 @@ const Battle3D: React.FC = () => {
     });
   };
 
+  const duplicateSelectedPlacement = () => {
+    if (!selectedPlacement) return;
+
+    const baseId = selectedPlacement.id.replace(/-copy-\d+$/, "");
+    let copyIndex = 1;
+    let nextId = `${baseId}-copy-${copyIndex}`;
+
+    while (placements.some((placement) => placement.id === nextId)) {
+      copyIndex += 1;
+      nextId = `${baseId}-copy-${copyIndex}`;
+    }
+
+    const duplicate: BattleAssetPlacement = {
+      ...clonePlacement(selectedPlacement),
+      id: nextId,
+      label: `${selectedPlacement.label} Copy ${copyIndex}`,
+      position: [
+        formatNumber(selectedPlacement.position[0] + 0.45),
+        selectedPlacement.position[1],
+        formatNumber(selectedPlacement.position[2] + 0.35),
+      ],
+    };
+
+    setPlacements((current) => [...current, duplicate]);
+    setSelectedAssetId(nextId);
+    setCopyStatus(`Duplicated ${selectedPlacement.label}`);
+  };
+
   const savePlacementsToBrowser = () => {
     window.localStorage.setItem(BATTLE_DEV_STORAGE_KEY, JSON.stringify(placements));
     setCopyStatus("Saved browser placement");
@@ -395,6 +439,7 @@ const Battle3D: React.FC = () => {
           <div style={devActionRowStyle}>
             <button type="button" style={devPrimaryButtonStyle} onClick={savePlacementsToBrowser}><Save size={15} /> Save</button>
             <button type="button" style={devPrimaryButtonStyle} onClick={copyPlacementsCode}><Copy size={15} /> Copy code</button>
+            <button type="button" style={devPrimaryButtonStyle} onClick={duplicateSelectedPlacement}><Copy size={15} /> Duplicate</button>
             <button type="button" style={devResetButtonStyle} onClick={resetPlacements}><RotateCcw size={15} /> Reset</button>
           </div>
           {copyStatus && <div style={devStatusStyle}>{copyStatus}</div>}
@@ -533,13 +578,14 @@ const devSelectStyle: React.CSSProperties = { border: "2px solid #d8d2fa", borde
 const devInfoBoxStyle: React.CSSProperties = { display: "grid", gap: "0.2rem", margin: "0.75rem 0", padding: "0.75rem", borderRadius: "0.9rem", background: "#f2efff", color: "#2b2352", fontSize: "0.75rem", fontWeight: 800 };
 const devButtonGridStyle: React.CSSProperties = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.45rem" };
 const devButtonStyle: React.CSSProperties = { border: "2px solid #d8d2fa", borderRadius: "0.8rem", background: "#fff", color: "#2b2352", padding: "0.58rem", fontWeight: 950, cursor: "pointer" };
-const devActionRowStyle: React.CSSProperties = { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0.4rem", marginTop: "0.65rem" };
+const devActionRowStyle: React.CSSProperties = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.4rem", marginTop: "0.65rem" };
 const devPrimaryButtonStyle: React.CSSProperties = { display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "0.25rem", border: 0, borderRadius: "0.8rem", background: "#7c5cff", color: "#fff", padding: "0.58rem", fontSize: "0.72rem", fontWeight: 950, cursor: "pointer" };
 const devResetButtonStyle: React.CSSProperties = { ...devPrimaryButtonStyle, background: "#fff3e1", color: "#8a4b00", border: "1px solid #ffc978" };
 const devStatusStyle: React.CSSProperties = { marginTop: "0.65rem", color: "#7c5cff", fontSize: "0.78rem", fontWeight: 950, textAlign: "center" };
 
 useGLTF.preload(EMBERCUB_MODEL_PATH);
 useGLTF.preload(BUBBLEFIN_MODEL_PATH);
+useGLTF.preload(ROCK_MODEL_PATH);
 useGLTF.preload(PLAYER_MODEL_PATH);
 
 export default Battle3D;
