@@ -52,15 +52,15 @@ const CAMERA_PRESETS: Record<CameraPresetName, CameraPreset> = {
 };
 
 const DEFAULT_BATTLE_3D_ASSET_PLACEMENTS: BattleAssetPlacement[] = [
-  { id: "arena-base", label: "Meadowfall Arena", modelPath: ARENA_MODEL_PATH, position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 },
-  { id: "trainer", label: "Trainer", modelPath: PLAYER_MODEL_PATH, position: [-4.7, 1.3, 1.05], rotation: [0, 1.45, 0], scale: 1.35 },
-  { id: "embercub", label: "Embercub", modelPath: EMBERCUB_MODEL_PATH, position: [-2.1, 0.78, 0], rotation: [0, 1.2, 0], scale: 1.1 },
-  { id: "bubblefin", label: "Bubblefin", modelPath: BUBBLEFIN_MODEL_PATH, position: [2.25, 0.88, 0.35], rotation: [0, -1.05, 0], scale: 0.9 },
-  { id: "rock-1", label: "Rock 1", modelPath: ROCK_MODEL_PATH, position: [3.95, 0.55, 4.05], rotation: [0, 0.35, 0], scale: 0.75 },
-  { id: "rock-2", label: "Rock 2", modelPath: ROCK_MODEL_PATH, position: [-2.1, 0.55, 3.8], rotation: [0, 3.95, 0], scale: 0.75 },
-  { id: "rock-3", label: "Rock 3", modelPath: ROCK_MODEL_PATH, position: [-2.45, 1.25, -3.45], rotation: [0, 3.95, 0], scale: 1.6 },
-  { id: "tree-1", label: "Tree 1", modelPath: TREE_MODEL_PATH, position: [-5.35, 0.2, -2.45], rotation: [0, 0.45, 0], scale: 1.45 },
-  { id: "tree-2", label: "Tree 2", modelPath: TREE_2_MODEL_PATH, position: [5.35, 0.2, -2.25], rotation: [0, -0.55, 0], scale: 1.35 },
+  { id: "arena-base", label: "Meadowfall Arena", modelPath: "/assets/3d/arenas/arena-meadowfall.glb", position: [0, -0.05, 0.2], rotation: [0, 0, 0], scale: 5.2 },
+  { id: "trainer", label: "Trainer", modelPath: "/assets/3d/avatar/avatar.glb", position: [-3.4, 1.3, 1.85], rotation: [0, 0.95, 0], scale: 1.15 },
+  { id: "embercub", label: "Embercub", modelPath: "/assets/3d/pets/embercub.glb", position: [-2.3, 0.83, 0.4], rotation: [0, 1.6, 0], scale: 1.15 },
+  { id: "bubblefin", label: "Bubblefin", modelPath: "/assets/3d/pets/bubblefin.glb", position: [2.35, 1.98, 1.35], rotation: [0, -1.25, 0], scale: 0.95 },
+  { id: "rock-1", label: "Rock 1", modelPath: "/assets/3d/props/rock.glb", position: [3.65, 0.65, 2.75], rotation: [0, 0.45, 0], scale: 0.9 },
+  { id: "rock-2", label: "Rock 2", modelPath: "/assets/3d/props/rock.glb", position: [-2.1, 0.55, 3.8], rotation: [0, 3.95, 0], scale: 0.75 },
+  { id: "rock-3", label: "Rock 3", modelPath: "/assets/3d/props/rock.glb", position: [-1.95, 1.25, -3.35], rotation: [0, 3.95, 0], scale: 1.6 },
+  { id: "tree-1", label: "Tree 1", modelPath: "/assets/3d/props/tree.glb", position: [-3.95, 2.45, -1.35], rotation: [0, 0.45, 0], scale: 2.3 },
+  { id: "tree-2", label: "Tree 2", modelPath: "/assets/3d/props/tree2.glb", position: [1.15, 2.35, -3.35], rotation: [0, -0.45, 0], scale: 2.55 },
 ];
 
 function LoadingCard() {
