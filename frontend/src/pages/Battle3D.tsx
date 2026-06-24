@@ -8,6 +8,7 @@ import { useGame } from "../lib/gameStore";
 import { useStudio } from "../lib/studioStore";
 
 const ARENA_MODEL_PATH = "/assets/3d/arenas/arena-meadowfall.glb";
+const SKY_DOME_MODEL_PATH = "/assets/3d/backgrounds/sky-dome.glb";
 const EMBERCUB_MODEL_PATH = "/assets/3d/pets/embercub.glb";
 const BUBBLEFIN_MODEL_PATH = "/assets/3d/pets/bubblefin.glb";
 const ROCK_MODEL_PATH = "/assets/3d/props/rock.glb";
@@ -81,6 +82,23 @@ function cloneGlbScene(scene: THREE.Object3D) {
   return cloned;
 }
 
+function cloneSkyDomeScene(scene: THREE.Object3D) {
+  const cloned = scene.clone(true);
+  cloned.traverse((child: any) => {
+    if (child?.isMesh) {
+      child.castShadow = false;
+      child.receiveShadow = false;
+      const materials = Array.isArray(child.material) ? child.material : [child.material];
+      materials.forEach((material: THREE.Material | undefined) => {
+        if (!material) return;
+        material.side = THREE.DoubleSide;
+        material.depthWrite = false;
+      });
+    }
+  });
+  return cloned;
+}
+
 function clonePlacement(placement: BattleAssetPlacement): BattleAssetPlacement {
   return {
     ...placement,
@@ -109,8 +127,8 @@ function loadBattlePlacements(): BattleAssetPlacement[] {
         id: base.id,
         label: saved?.label || base.label,
         modelPath: saved?.modelPath || base.modelPath,
-        position: Array.isArray(saved?.position) ? (saved.position as [number, number, number]) : ([...base.position] as [number, number, number]),
-        rotation: Array.isArray(saved?.rotation) ? (saved.rotation as [number, number, number]) : ([...base.rotation] as [number, number, number]),
+        position: Array.isArray(saved?.position) ? (saved?.position as [number, number, number]) : ([...base.position] as [number, number, number]),
+        rotation: Array.isArray(saved?.rotation) ? (saved?.rotation as [number, number, number]) : ([...base.rotation] as [number, number, number]),
         scale: typeof saved?.scale === "number" ? saved.scale : base.scale,
       };
     });
@@ -171,6 +189,13 @@ function CameraPresetController({ presetName }: { presetName: CameraPresetName }
   }, [camera, presetName, preset.position, preset.target]);
 
   return null;
+}
+
+function SkyDome() {
+  const gltf = useGLTF(SKY_DOME_MODEL_PATH) as any;
+  const scene = useMemo(() => cloneSkyDomeScene(gltf.scene), [gltf.scene]);
+
+  return <primitive object={scene} renderOrder={-10} />;
 }
 
 function BattleGlbAsset({
@@ -244,6 +269,7 @@ function ArenaScene({
       <directionalLight castShadow intensity={1.35} position={[4, 7, 5]} shadow-mapSize-width={1024} shadow-mapSize-height={1024} />
       <CameraPresetController presetName={cameraPreset} />
       <Suspense fallback={<LoadingCard />}>
+        <SkyDome />
         <group position={[0, -0.5, 0]}>
           {placements.map((placement) => (
             <BattleGlbAsset
@@ -683,6 +709,7 @@ const devResetButtonStyle: React.CSSProperties = { ...devPrimaryButtonStyle, bac
 const devStatusStyle: React.CSSProperties = { marginTop: "0.65rem", color: "#7c5cff", fontSize: "0.78rem", fontWeight: 950, textAlign: "center" };
 
 useGLTF.preload(ARENA_MODEL_PATH);
+useGLTF.preload(SKY_DOME_MODEL_PATH);
 useGLTF.preload(EMBERCUB_MODEL_PATH);
 useGLTF.preload(BUBBLEFIN_MODEL_PATH);
 useGLTF.preload(ROCK_MODEL_PATH);
