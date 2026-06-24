@@ -7,6 +7,7 @@ import * as THREE from "three";
 import { useGame } from "../lib/gameStore";
 import { useStudio } from "../lib/studioStore";
 
+const ARENA_MODEL_PATH = "/assets/3d/arenas/arena-meadowfall.glb";
 const EMBERCUB_MODEL_PATH = "/assets/3d/pets/embercub.glb";
 const BUBBLEFIN_MODEL_PATH = "/assets/3d/pets/bubblefin.glb";
 const ROCK_MODEL_PATH = "/assets/3d/props/rock.glb";
@@ -15,7 +16,7 @@ const TREE_2_MODEL_PATH = "/assets/3d/props/tree2.glb";
 const PLAYER_MODEL_PATH = "/assets/3d/avatar/avatar.glb";
 const BATTLE_DEV_STORAGE_KEY = "eduMatesBattle3DPlacements.v1";
 
-const CORE_BATTLE_ASSET_IDS = new Set(["trainer", "embercub", "bubblefin"]);
+const CORE_BATTLE_ASSET_IDS = new Set(["arena-base", "trainer", "embercub", "bubblefin"]);
 
 type BattleParticipantCardProps = {
   eyebrow: string;
@@ -36,6 +37,7 @@ type BattleAssetPlacement = {
 };
 
 const DEFAULT_BATTLE_3D_ASSET_PLACEMENTS: BattleAssetPlacement[] = [
+  { id: "arena-base", label: "Meadowfall Arena", modelPath: ARENA_MODEL_PATH, position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 },
   { id: "trainer", label: "Trainer", modelPath: PLAYER_MODEL_PATH, position: [-4.7, 1.3, 1.05], rotation: [0, 1.45, 0], scale: 1.35 },
   { id: "embercub", label: "Embercub", modelPath: EMBERCUB_MODEL_PATH, position: [-2.1, 0.78, 0], rotation: [0, 1.2, 0], scale: 1.1 },
   { id: "bubblefin", label: "Bubblefin", modelPath: BUBBLEFIN_MODEL_PATH, position: [2.25, 0.88, 0.35], rotation: [0, -1.05, 0], scale: 0.9 },
@@ -168,6 +170,8 @@ function BattleGlbAsset({
     onSelect(placement.id);
   };
 
+  const labelHeight = placement.id === "trainer" ? 1.75 : placement.id === "arena-base" ? 0.45 : 1.25;
+
   return (
     <group
       position={placement.position}
@@ -177,7 +181,7 @@ function BattleGlbAsset({
     >
       <primitive object={scene} />
       {devMode && (
-        <Html position={[0, placement.id === "trainer" ? 1.75 : 1.25, 0]} center>
+        <Html position={[0, labelHeight, 0]} center>
           <button
             type="button"
             onClick={(event) => {
@@ -218,19 +222,6 @@ function ArenaScene({
       <directionalLight castShadow intensity={1.35} position={[4, 7, 5]} shadow-mapSize-width={1024} shadow-mapSize-height={1024} />
       <Suspense fallback={<LoadingCard />}>
         <group position={[0, -0.5, 0]}>
-          <mesh receiveShadow rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
-            <circleGeometry args={[4.25, 72]} />
-            <meshStandardMaterial color="#bfe7e3" roughness={0.82} />
-          </mesh>
-          <mesh receiveShadow rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.015, 0]}>
-            <ringGeometry args={[4.25, 4.65, 72]} />
-            <meshStandardMaterial color="#9d8df1" roughness={0.8} />
-          </mesh>
-          <mesh receiveShadow rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.04, 0]}>
-            <planeGeometry args={[12, 8]} />
-            <meshStandardMaterial color="#f7f2df" roughness={0.9} />
-          </mesh>
-
           {placements.map((placement) => (
             <BattleGlbAsset
               key={placement.id}
@@ -652,6 +643,7 @@ const devDeleteButtonStyle: React.CSSProperties = { ...devPrimaryButtonStyle, ba
 const devResetButtonStyle: React.CSSProperties = { ...devPrimaryButtonStyle, background: "#fff3e1", color: "#8a4b00", border: "1px solid #ffc978" };
 const devStatusStyle: React.CSSProperties = { marginTop: "0.65rem", color: "#7c5cff", fontSize: "0.78rem", fontWeight: 950, textAlign: "center" };
 
+useGLTF.preload(ARENA_MODEL_PATH);
 useGLTF.preload(EMBERCUB_MODEL_PATH);
 useGLTF.preload(BUBBLEFIN_MODEL_PATH);
 useGLTF.preload(ROCK_MODEL_PATH);
