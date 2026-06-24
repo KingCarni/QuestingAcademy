@@ -1,5 +1,5 @@
-import React, { Suspense, useEffect, useMemo, useState } from "react";
-import { Canvas, ThreeEvent, useThree } from "@react-three/fiber";
+import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Canvas, ThreeEvent, useFrame, useThree } from "@react-three/fiber";
 import { Html, OrbitControls, useGLTF } from "@react-three/drei";
 import { ArrowLeft, Box, Camera, Copy, RotateCcw, Save, Sparkles, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
@@ -52,15 +52,15 @@ const CAMERA_PRESETS: Record<CameraPresetName, CameraPreset> = {
 };
 
 const DEFAULT_BATTLE_3D_ASSET_PLACEMENTS: BattleAssetPlacement[] = [
-  { id: "arena-base", label: "Meadowfall Arena", modelPath: "/assets/3d/arenas/arena-meadowfall.glb", position: [0, -0.05, 0.2], rotation: [0, 0, 0], scale: 5.2 },
-  { id: "trainer", label: "Trainer", modelPath: "/assets/3d/avatar/avatar.glb", position: [-3.4, 1.3, 1.85], rotation: [0, 0.95, 0], scale: 1.15 },
-  { id: "embercub", label: "Embercub", modelPath: "/assets/3d/pets/embercub.glb", position: [-2.3, 0.83, 0.4], rotation: [0, 1.6, 0], scale: 1.15 },
-  { id: "bubblefin", label: "Bubblefin", modelPath: "/assets/3d/pets/bubblefin.glb", position: [2.35, 1.98, 1.35], rotation: [0, -1.25, 0], scale: 0.95 },
-  { id: "rock-1", label: "Rock 1", modelPath: "/assets/3d/props/rock.glb", position: [3.65, 0.65, 2.75], rotation: [0, 0.45, 0], scale: 0.9 },
-  { id: "rock-2", label: "Rock 2", modelPath: "/assets/3d/props/rock.glb", position: [-2.1, 0.55, 3.8], rotation: [0, 3.95, 0], scale: 0.75 },
-  { id: "rock-3", label: "Rock 3", modelPath: "/assets/3d/props/rock.glb", position: [-1.95, 1.25, -3.35], rotation: [0, 3.95, 0], scale: 1.6 },
-  { id: "tree-1", label: "Tree 1", modelPath: "/assets/3d/props/tree.glb", position: [-3.95, 2.45, -1.35], rotation: [0, 0.45, 0], scale: 2.3 },
-  { id: "tree-2", label: "Tree 2", modelPath: "/assets/3d/props/tree2.glb", position: [1.15, 2.35, -3.35], rotation: [0, -0.45, 0], scale: 2.55 },
+  { id: "arena-base", label: "Meadowfall Arena", modelPath: ARENA_MODEL_PATH, position: [0, -0.05, 0.2], rotation: [0, 0, 0], scale: 5.2 },
+  { id: "trainer", label: "Trainer", modelPath: PLAYER_MODEL_PATH, position: [-3.4, 1.3, 1.85], rotation: [0, 0.95, 0], scale: 1.15 },
+  { id: "embercub", label: "Embercub", modelPath: EMBERCUB_MODEL_PATH, position: [-2.3, 0.83, 0.4], rotation: [0, 1.6, 0], scale: 1.15 },
+  { id: "bubblefin", label: "Bubblefin", modelPath: BUBBLEFIN_MODEL_PATH, position: [2.35, 1.98, 1.35], rotation: [0, -1.25, 0], scale: 0.95 },
+  { id: "rock-1", label: "Rock 1", modelPath: ROCK_MODEL_PATH, position: [3.65, 0.65, 2.75], rotation: [0, 0.45, 0], scale: 0.9 },
+  { id: "rock-2", label: "Rock 2", modelPath: ROCK_MODEL_PATH, position: [-2.1, 0.55, 3.8], rotation: [0, 3.95, 0], scale: 0.75 },
+  { id: "rock-3", label: "Rock 3", modelPath: ROCK_MODEL_PATH, position: [-1.95, 1.25, -3.35], rotation: [0, 3.95, 0], scale: 1.6 },
+  { id: "tree-1", label: "Tree 1", modelPath: TREE_MODEL_PATH, position: [-3.95, 2.45, -1.35], rotation: [0, 0.45, 0], scale: 2.3 },
+  { id: "tree-2", label: "Tree 2", modelPath: TREE_2_MODEL_PATH, position: [1.15, 2.35, -3.35], rotation: [0, -0.45, 0], scale: 2.55 },
 ];
 
 function LoadingCard() {
@@ -198,6 +198,22 @@ function SkyDome() {
   return <primitive object={scene} renderOrder={-10} />;
 }
 
+function getIdleProfile(assetId: BattleAssetId) {
+  if (assetId === "trainer") {
+    return { bob: 0.018, speed: 1.15, sway: 0.012, scalePulse: 0.006 };
+  }
+
+  if (assetId === "embercub") {
+    return { bob: 0.035, speed: 1.85, sway: 0.028, scalePulse: 0.018 };
+  }
+
+  if (assetId === "bubblefin") {
+    return { bob: 0.075, speed: 1.55, sway: 0.045, scalePulse: 0.012, hoverYaw: 0.04 };
+  }
+
+  return null;
+}
+
 function BattleGlbAsset({
   placement,
   devMode,
@@ -211,6 +227,38 @@ function BattleGlbAsset({
 }) {
   const gltf = useGLTF(placement.modelPath) as any;
   const scene = useMemo(() => cloneGlbScene(gltf.scene), [gltf.scene]);
+  const idleGroupRef = useRef<THREE.Group>(null);
+  const idleProfile = useMemo(() => getIdleProfile(placement.id), [placement.id]);
+
+  useFrame((state) => {
+    const group = idleGroupRef.current;
+    if (!group) return;
+
+    group.position.set(0, 0, 0);
+    group.rotation.set(0, 0, 0);
+    group.scale.set(1, 1, 1);
+
+    if (devMode || !idleProfile) return;
+
+    const t = state.clock.elapsedTime;
+    const phase = placement.id === "bubblefin" ? 0.65 : placement.id === "trainer" ? 1.3 : 0;
+    const wave = Math.sin(t * idleProfile.speed + phase);
+    const softWave = Math.sin(t * idleProfile.speed * 0.55 + phase);
+    const scalePulse = 1 + wave * idleProfile.scalePulse;
+
+    group.position.y = wave * idleProfile.bob;
+    group.rotation.z = softWave * idleProfile.sway;
+    group.scale.set(scalePulse, 1 + Math.max(0, wave) * idleProfile.scalePulse * 0.65, scalePulse);
+
+    if (placement.id === "bubblefin") {
+      group.rotation.y = Math.sin(t * 1.1) * (idleProfile.hoverYaw || 0);
+      group.rotation.x = Math.sin(t * 1.35) * 0.025;
+    }
+
+    if (placement.id === "embercub") {
+      group.rotation.x = Math.sin(t * 1.25) * 0.012;
+    }
+  });
 
   const handleClick = (event: ThreeEvent<MouseEvent>) => {
     if (!devMode) return;
@@ -222,7 +270,9 @@ function BattleGlbAsset({
 
   return (
     <group position={placement.position} rotation={placement.rotation} scale={placement.scale} onClick={handleClick}>
-      <primitive object={scene} />
+      <group ref={idleGroupRef}>
+        <primitive object={scene} />
+      </group>
       {devMode && (
         <Html position={[0, labelHeight, 0]} center>
           <button
