@@ -10,8 +10,7 @@ import { useStudio } from "../lib/studioStore";
 const EMBERCUB_MODEL_PATH = "/assets/3d/pets/embercub.glb";
 const BUBBLEFIN_MODEL_PATH = "/assets/3d/pets/bubblefin.glb";
 const PLAYER_MODEL_PATH = "/assets/3d/avatar/avatar.glb";
-const ROCK_MODEL_PATH = "/assets/3d/props/rock.glb";
-const BATTLE_DEV_STORAGE_KEY = "eduMatesBattle3DPlacements.v2";
+const BATTLE_DEV_STORAGE_KEY = "eduMatesBattle3DPlacements.v1";
 
 type BattleParticipantCardProps = {
   eyebrow: string;
@@ -20,7 +19,7 @@ type BattleParticipantCardProps = {
   align?: "left" | "right";
 };
 
-type BattleAssetId = string;
+type BattleAssetId = "trainer" | "embercub" | "bubblefin";
 
 type BattleAssetPlacement = {
   id: BattleAssetId;
@@ -32,38 +31,9 @@ type BattleAssetPlacement = {
 };
 
 const DEFAULT_BATTLE_3D_ASSET_PLACEMENTS: BattleAssetPlacement[] = [
-  {
-    id: "trainer",
-    label: "Trainer",
-    modelPath: PLAYER_MODEL_PATH,
-    position: [-3.4, 0.7, 1.05],
-    rotation: [0, 0.75, 0],
-    scale: 0.75,
-  },
-  {
-    id: "embercub",
-    label: "Embercub",
-    modelPath: EMBERCUB_MODEL_PATH,
-    position: [-1.9, 0.58, 0],
-    rotation: [0, 1.1, 0],
-    scale: 1.55,
-  },
-  {
-    id: "bubblefin",
-    label: "Bubblefin",
-    modelPath: BUBBLEFIN_MODEL_PATH,
-    position: [2.25, 0.58, -0.05],
-    rotation: [0, -0.95, 0],
-    scale: 1.45,
-  },
-  {
-    id: "rock-1",
-    label: "Rock 1",
-    modelPath: ROCK_MODEL_PATH,
-    position: [-3.2, -0.18, -1.45],
-    rotation: [0, 0.35, 0],
-    scale: 0.8,
-  },
+  { id: "trainer", label: "Trainer", modelPath: "/assets/3d/avatar/avatar.glb", position: [-4.7, 1.3, 1.05], rotation: [0, 1.45, 0], scale: 1.35 },
+  { id: "embercub", label: "Embercub", modelPath: "/assets/3d/pets/embercub.glb", position: [-2.1, 0.78, 0], rotation: [0, 1.2, 0], scale: 1.1 },
+  { id: "bubblefin", label: "Bubblefin", modelPath: "/assets/3d/pets/bubblefin.glb", position: [2.25, 0.88, 0.35], rotation: [0, -1.05, 0], scale: 0.9 },
 ];
 
 function LoadingCard() {
@@ -95,25 +65,6 @@ function clonePlacement(placement: BattleAssetPlacement): BattleAssetPlacement {
   };
 }
 
-function isValidVector(value: unknown): value is [number, number, number] {
-  return Array.isArray(value)
-    && value.length === 3
-    && value.every((item) => typeof item === "number" && Number.isFinite(item));
-}
-
-function mergeSavedPlacement(base: BattleAssetPlacement, saved?: Partial<BattleAssetPlacement>): BattleAssetPlacement {
-  return {
-    ...base,
-    ...saved,
-    id: base.id,
-    label: typeof saved?.label === "string" ? saved.label : base.label,
-    modelPath: typeof saved?.modelPath === "string" ? saved.modelPath : base.modelPath,
-    position: isValidVector(saved?.position) ? [...saved.position] : [...base.position],
-    rotation: isValidVector(saved?.rotation) ? [...saved.rotation] : [...base.rotation],
-    scale: typeof saved?.scale === "number" ? saved.scale : base.scale,
-  };
-}
-
 function loadBattlePlacements(): BattleAssetPlacement[] {
   if (typeof window === "undefined") {
     return DEFAULT_BATTLE_3D_ASSET_PLACEMENTS.map(clonePlacement);
@@ -126,24 +77,19 @@ function loadBattlePlacements(): BattleAssetPlacement[] {
     const parsed = JSON.parse(raw) as Partial<BattleAssetPlacement>[];
     if (!Array.isArray(parsed)) return DEFAULT_BATTLE_3D_ASSET_PLACEMENTS.map(clonePlacement);
 
-    const mergedDefaults = DEFAULT_BATTLE_3D_ASSET_PLACEMENTS.map((base) => {
+    return DEFAULT_BATTLE_3D_ASSET_PLACEMENTS.map((base) => {
       const saved = parsed.find((item) => item?.id === base.id);
-      return mergeSavedPlacement(base, saved);
+      return {
+        ...base,
+        ...saved,
+        id: base.id,
+        label: base.label,
+        modelPath: base.modelPath,
+        position: Array.isArray(saved?.position) ? (saved?.position as [number, number, number]) : [...base.position] as [number, number, number],
+        rotation: Array.isArray(saved?.rotation) ? (saved?.rotation as [number, number, number]) : [...base.rotation] as [number, number, number],
+        scale: typeof saved?.scale === "number" ? saved.scale : base.scale,
+      };
     });
-
-    const extraSavedPlacements = parsed
-      .filter((item) => item?.id && !DEFAULT_BATTLE_3D_ASSET_PLACEMENTS.some((base) => base.id === item.id))
-      .filter((item): item is BattleAssetPlacement =>
-        typeof item.id === "string"
-        && typeof item.label === "string"
-        && typeof item.modelPath === "string"
-        && isValidVector(item.position)
-        && isValidVector(item.rotation)
-        && typeof item.scale === "number",
-      )
-      .map(clonePlacement);
-
-    return [...mergedDefaults, ...extraSavedPlacements];
   } catch {
     return DEFAULT_BATTLE_3D_ASSET_PLACEMENTS.map(clonePlacement);
   }
@@ -163,12 +109,6 @@ function formatPlacementsCode(placements: BattleAssetPlacement[]) {
     .join("\n");
 
   return `const DEFAULT_BATTLE_3D_ASSET_PLACEMENTS: BattleAssetPlacement[] = [\n${rows}\n];`;
-}
-
-function getLabelYOffset(placement: BattleAssetPlacement) {
-  if (placement.id === "trainer") return 1.75;
-  if (placement.modelPath === ROCK_MODEL_PATH) return 0.75;
-  return 1.25;
 }
 
 function BattleGlbAsset({
@@ -200,7 +140,7 @@ function BattleGlbAsset({
     >
       <primitive object={scene} />
       {devMode && (
-        <Html position={[0, getLabelYOffset(placement), 0]} center>
+        <Html position={[0, placement.id === "trainer" ? 1.75 : 1.25, 0]} center>
           <button
             type="button"
             onClick={(event) => {
@@ -342,28 +282,6 @@ const Battle3D: React.FC = () => {
     });
   };
 
-  const duplicateSelectedPlacement = () => {
-    if (!selectedPlacement) return;
-
-    const baseId = selectedPlacement.id.replace(/-copy-\d+$/, "");
-    const copyCount = placements.filter((placement) => placement.id === baseId || placement.id.startsWith(`${baseId}-copy-`)).length;
-    const duplicateId = `${baseId}-copy-${copyCount}`;
-    const duplicate: BattleAssetPlacement = {
-      ...clonePlacement(selectedPlacement),
-      id: duplicateId,
-      label: `${selectedPlacement.label} Copy ${copyCount}`,
-      position: [
-        formatNumber(selectedPlacement.position[0] + 0.45),
-        selectedPlacement.position[1],
-        formatNumber(selectedPlacement.position[2] + 0.25),
-      ],
-    };
-
-    setPlacements((current) => [...current, duplicate]);
-    setSelectedAssetId(duplicate.id);
-    setCopyStatus(`Duplicated ${selectedPlacement.label}`);
-  };
-
   const savePlacementsToBrowser = () => {
     window.localStorage.setItem(BATTLE_DEV_STORAGE_KEY, JSON.stringify(placements));
     setCopyStatus("Saved browser placement");
@@ -439,7 +357,7 @@ const Battle3D: React.FC = () => {
         <aside style={devPanelStyle}>
           <div style={eyebrowStyle}>Dev Mode</div>
           <h2 style={devPanelTitleStyle}>Battle Asset Placement</h2>
-          <p style={devHelpTextStyle}>Select an arena asset, then nudge position, rotation, and scale. Duplicate props, save browser state, or copy code when it looks right.</p>
+          <p style={devHelpTextStyle}>Select an arena asset, then nudge position, rotation, and scale. Copy the code when it looks right.</p>
 
           <label style={devLabelStyle}>
             Selected asset
@@ -456,7 +374,6 @@ const Battle3D: React.FC = () => {
 
           <div style={devInfoBoxStyle}>
             <strong>{selectedPlacement.label}</strong>
-            <span>Path {selectedPlacement.modelPath}</span>
             <span>Position {selectedPlacement.position.join(", ")}</span>
             <span>Rotation Y {formatNumber(selectedPlacement.rotation[1])}</span>
             <span>Scale {formatNumber(selectedPlacement.scale)}</span>
@@ -474,10 +391,6 @@ const Battle3D: React.FC = () => {
             <button type="button" style={devButtonStyle} onClick={() => nudgeScale(-0.05)}>Scale -</button>
             <button type="button" style={devButtonStyle} onClick={() => nudgeScale(0.05)}>Scale +</button>
           </div>
-
-          <button type="button" style={devDuplicateButtonStyle} onClick={duplicateSelectedPlacement}>
-            <Copy size={15} /> Duplicate selected
-          </button>
 
           <div style={devActionRowStyle}>
             <button type="button" style={devPrimaryButtonStyle} onClick={savePlacementsToBrowser}><Save size={15} /> Save</button>
@@ -585,6 +498,7 @@ const panelTextStyle: React.CSSProperties = { margin: 0, color: "#6f668f", fontW
 const buttonRowStyle: React.CSSProperties = { display: "flex", flexWrap: "wrap", gap: "0.65rem", justifyContent: "flex-end" };
 const primaryButtonStyle: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: "0.45rem", border: 0, borderRadius: 999, background: "#7c5cff", color: "#fff", padding: "0.85rem 1.1rem", fontWeight: 950, cursor: "pointer" };
 const secondaryButtonStyle: React.CSSProperties = { border: "2px solid #d8d2fa", borderRadius: 999, background: "#fff", color: "#2b2352", padding: "0.85rem 1.1rem", fontWeight: 950, cursor: "pointer" };
+const nameTagStyle: React.CSSProperties = { borderRadius: 999, background: "rgba(255,255,255,0.92)", color: "#2b2352", padding: "0.35rem 0.55rem", fontSize: "0.72rem", fontWeight: 950, boxShadow: "0 8px 18px rgba(52,41,92,0.18)", whiteSpace: "nowrap" };
 const loadingStyle: React.CSSProperties = { borderRadius: "1rem", background: "rgba(255,255,255,0.95)", color: "#2b2352", padding: "0.85rem 1rem", fontWeight: 950 };
 
 const devAssetTagStyle: React.CSSProperties = {
@@ -619,7 +533,6 @@ const devSelectStyle: React.CSSProperties = { border: "2px solid #d8d2fa", borde
 const devInfoBoxStyle: React.CSSProperties = { display: "grid", gap: "0.2rem", margin: "0.75rem 0", padding: "0.75rem", borderRadius: "0.9rem", background: "#f2efff", color: "#2b2352", fontSize: "0.75rem", fontWeight: 800 };
 const devButtonGridStyle: React.CSSProperties = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.45rem" };
 const devButtonStyle: React.CSSProperties = { border: "2px solid #d8d2fa", borderRadius: "0.8rem", background: "#fff", color: "#2b2352", padding: "0.58rem", fontWeight: 950, cursor: "pointer" };
-const devDuplicateButtonStyle: React.CSSProperties = { display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "0.35rem", width: "100%", marginTop: "0.65rem", border: "2px solid #d8d2fa", borderRadius: "0.8rem", background: "#fff", color: "#2b2352", padding: "0.58rem", fontWeight: 950, cursor: "pointer" };
 const devActionRowStyle: React.CSSProperties = { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0.4rem", marginTop: "0.65rem" };
 const devPrimaryButtonStyle: React.CSSProperties = { display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "0.25rem", border: 0, borderRadius: "0.8rem", background: "#7c5cff", color: "#fff", padding: "0.58rem", fontSize: "0.72rem", fontWeight: 950, cursor: "pointer" };
 const devResetButtonStyle: React.CSSProperties = { ...devPrimaryButtonStyle, background: "#fff3e1", color: "#8a4b00", border: "1px solid #ffc978" };
@@ -628,6 +541,5 @@ const devStatusStyle: React.CSSProperties = { marginTop: "0.65rem", color: "#7c5
 useGLTF.preload(EMBERCUB_MODEL_PATH);
 useGLTF.preload(BUBBLEFIN_MODEL_PATH);
 useGLTF.preload(PLAYER_MODEL_PATH);
-useGLTF.preload(ROCK_MODEL_PATH);
 
 export default Battle3D;
