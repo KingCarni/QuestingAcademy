@@ -10,6 +10,8 @@ import { useStudio } from "../lib/studioStore";
 const EMBERCUB_MODEL_PATH = "/assets/3d/pets/embercub.glb";
 const BUBBLEFIN_MODEL_PATH = "/assets/3d/pets/bubblefin.glb";
 const ROCK_MODEL_PATH = "/assets/3d/props/rock.glb";
+const TREE_MODEL_PATH = "/assets/3d/props/tree.glb";
+const TREE_2_MODEL_PATH = "/assets/3d/props/tree2.glb";
 const PLAYER_MODEL_PATH = "/assets/3d/avatar/avatar.glb";
 const BATTLE_DEV_STORAGE_KEY = "eduMatesBattle3DPlacements.v1";
 
@@ -32,12 +34,14 @@ type BattleAssetPlacement = {
 };
 
 const DEFAULT_BATTLE_3D_ASSET_PLACEMENTS: BattleAssetPlacement[] = [
-  { id: "trainer", label: "Trainer", modelPath: "/assets/3d/avatar/avatar.glb", position: [-4.7, 1.3, 1.05], rotation: [0, 1.45, 0], scale: 1.35 },
-  { id: "embercub", label: "Embercub", modelPath: "/assets/3d/pets/embercub.glb", position: [-2.1, 0.78, 0], rotation: [0, 1.2, 0], scale: 1.1 },
-  { id: "bubblefin", label: "Bubblefin", modelPath: "/assets/3d/pets/bubblefin.glb", position: [2.25, 0.88, 0.35], rotation: [0, -1.05, 0], scale: 0.9 },
-  { id: "rock-1", label: "Rock 1", modelPath: "/assets/3d/props/rock.glb", position: [3.95, 0.55, 4.05], rotation: [0, 0.35, 0], scale: 0.75 },
-  { id: "rock-1-copy-1", label: "Rock 1 Copy 1", modelPath: "/assets/3d/props/rock.glb", position: [-2.1, 0.55, 3.8], rotation: [0, 3.95, 0], scale: 0.75 },
-  { id: "rock-1-copy-2", label: "Rock 1 Copy 1 Copy 2", modelPath: "/assets/3d/props/rock.glb", position: [-2.45, 1.25, -3.45], rotation: [0, 3.95, 0], scale: 1.6 },
+  { id: "trainer", label: "Trainer", modelPath: PLAYER_MODEL_PATH, position: [-4.7, 1.3, 1.05], rotation: [0, 1.45, 0], scale: 1.35 },
+  { id: "embercub", label: "Embercub", modelPath: EMBERCUB_MODEL_PATH, position: [-2.1, 0.78, 0], rotation: [0, 1.2, 0], scale: 1.1 },
+  { id: "bubblefin", label: "Bubblefin", modelPath: BUBBLEFIN_MODEL_PATH, position: [2.25, 0.88, 0.35], rotation: [0, -1.05, 0], scale: 0.9 },
+  { id: "rock-1", label: "Rock 1", modelPath: ROCK_MODEL_PATH, position: [3.95, 0.55, 4.05], rotation: [0, 0.35, 0], scale: 0.75 },
+  { id: "rock-1-copy-1", label: "Rock 1 Copy 1", modelPath: ROCK_MODEL_PATH, position: [-2.1, 0.55, 3.8], rotation: [0, 3.95, 0], scale: 0.75 },
+  { id: "rock-1-copy-2", label: "Rock 1 Copy 1 Copy 2", modelPath: ROCK_MODEL_PATH, position: [-2.45, 1.25, -3.45], rotation: [0, 3.95, 0], scale: 1.6 },
+  { id: "tree-1", label: "Tree 1", modelPath: TREE_MODEL_PATH, position: [-5.35, 0.2, -2.45], rotation: [0, 0.45, 0], scale: 1.45 },
+  { id: "tree-2", label: "Tree 2", modelPath: TREE_2_MODEL_PATH, position: [5.35, 0.2, -2.25], rotation: [0, -0.55, 0], scale: 1.35 },
 ];
 
 function LoadingCard() {
@@ -588,6 +592,8 @@ const devStatusStyle: React.CSSProperties = { marginTop: "0.65rem", color: "#7c5
 useGLTF.preload(EMBERCUB_MODEL_PATH);
 useGLTF.preload(BUBBLEFIN_MODEL_PATH);
 useGLTF.preload(ROCK_MODEL_PATH);
+useGLTF.preload(TREE_MODEL_PATH);
+useGLTF.preload(TREE_2_MODEL_PATH);
 useGLTF.preload(PLAYER_MODEL_PATH);
 
 export default Battle3D;
