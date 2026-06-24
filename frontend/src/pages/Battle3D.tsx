@@ -528,7 +528,7 @@ const Battle3D: React.FC = () => {
 
 const pageStyle: React.CSSProperties = {
   minHeight: "100vh",
-  padding: "1.25rem",
+  padding: "1rem",
   background: "linear-gradient(135deg, #e8f7ff 0%, #fff8dd 48%, #f7efff 100%)",
   color: "#2b2352",
   fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
@@ -567,7 +567,8 @@ const pillActiveStyle: React.CSSProperties = { background: "#7c5cff", color: "#f
 
 const battleShellStyle: React.CSSProperties = {
   margin: "1rem auto 0",
-  maxWidth: "1180px",
+  width: "min(1500px, calc(100vw - 3rem))",
+  maxWidth: "1500px",
   borderRadius: "2rem",
   overflow: "hidden",
   background: "rgba(255,255,255,0.78)",
@@ -575,7 +576,7 @@ const battleShellStyle: React.CSSProperties = {
   boxShadow: "0 22px 55px rgba(59, 45, 120, 0.18)",
 };
 
-const canvasWrapStyle: React.CSSProperties = { height: "min(62vh, 620px)", minHeight: 420 };
+const canvasWrapStyle: React.CSSProperties = { height: "min(70vh, 760px)", minHeight: 560 };
 const hudStyle: React.CSSProperties = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", padding: "1rem", background: "rgba(255,255,255,0.82)" };
 const participantCardStyle: React.CSSProperties = { borderRadius: "1.35rem", background: "#fff", padding: "1rem", boxShadow: "inset 0 0 0 2px rgba(157,141,241,0.12)" };
 const participantNameStyle: React.CSSProperties = { margin: "0.15rem 0", fontSize: "1.35rem", fontWeight: 950 };
@@ -585,7 +586,8 @@ const healthFillStyle: React.CSSProperties = { width: "100%", height: "100%", ba
 const healthTextStyle: React.CSSProperties = { display: "block", marginTop: "0.3rem", color: "#80769c", fontWeight: 900 };
 
 const actionPanelStyle: React.CSSProperties = {
-  maxWidth: "1180px",
+  width: "min(1500px, calc(100vw - 3rem))",
+  maxWidth: "1500px",
   margin: "1rem auto 0",
   display: "flex",
   alignItems: "center",
