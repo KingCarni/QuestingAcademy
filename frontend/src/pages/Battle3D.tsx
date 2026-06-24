@@ -1,7 +1,7 @@
 import React, { Suspense, useEffect, useMemo, useState } from "react";
-import { Canvas, ThreeEvent } from "@react-three/fiber";
+import { Canvas, ThreeEvent, useThree } from "@react-three/fiber";
 import { Html, OrbitControls, useGLTF } from "@react-three/drei";
-import { ArrowLeft, Box, Copy, RotateCcw, Save, Sparkles, Trash2 } from "lucide-react";
+import { ArrowLeft, Box, Camera, Copy, RotateCcw, Save, Sparkles, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import * as THREE from "three";
 import { useGame } from "../lib/gameStore";
@@ -26,6 +26,7 @@ type BattleParticipantCardProps = {
 };
 
 type BattleAssetId = string;
+type CameraPresetName = "isometric" | "front" | "trainer" | "enemy";
 
 type BattleAssetPlacement = {
   id: BattleAssetId;
@@ -34,6 +35,19 @@ type BattleAssetPlacement = {
   position: [number, number, number];
   rotation: [number, number, number];
   scale: number;
+};
+
+type CameraPreset = {
+  label: string;
+  position: [number, number, number];
+  target: [number, number, number];
+};
+
+const CAMERA_PRESETS: Record<CameraPresetName, CameraPreset> = {
+  isometric: { label: "Isometric", position: [0, 4.7, 7.4], target: [0, 0.65, 0] },
+  front: { label: "Front", position: [0, 2.35, 8.4], target: [0, 0.75, 0] },
+  trainer: { label: "Trainer Side", position: [-6.3, 2.7, 4.5], target: [-0.75, 0.8, 0.2] },
+  enemy: { label: "Enemy Side", position: [6.3, 2.7, 4.5], target: [0.75, 0.8, 0.2] },
 };
 
 const DEFAULT_BATTLE_3D_ASSET_PLACEMENTS: BattleAssetPlacement[] = [
@@ -58,14 +72,12 @@ function LoadingCard() {
 
 function cloneGlbScene(scene: THREE.Object3D) {
   const cloned = scene.clone(true);
-
   cloned.traverse((child: any) => {
     if (child?.isMesh) {
       child.castShadow = true;
       child.receiveShadow = true;
     }
   });
-
   return cloned;
 }
 
@@ -97,8 +109,8 @@ function loadBattlePlacements(): BattleAssetPlacement[] {
         id: base.id,
         label: saved?.label || base.label,
         modelPath: saved?.modelPath || base.modelPath,
-        position: Array.isArray(saved?.position) ? (saved?.position as [number, number, number]) : ([...base.position] as [number, number, number]),
-        rotation: Array.isArray(saved?.rotation) ? (saved?.rotation as [number, number, number]) : ([...base.rotation] as [number, number, number]),
+        position: Array.isArray(saved?.position) ? (saved.position as [number, number, number]) : ([...base.position] as [number, number, number]),
+        rotation: Array.isArray(saved?.rotation) ? (saved.rotation as [number, number, number]) : ([...base.rotation] as [number, number, number]),
         scale: typeof saved?.scale === "number" ? saved.scale : base.scale,
       };
     });
@@ -141,13 +153,24 @@ function getNextDuplicateLabel(baseLabel: string, existingLabels: string[]) {
   const cleanedLabel = baseLabel.replace(/\s+Copy\s+\d+$/i, "").replace(/\s+\d+$/i, "").trim() || "Object";
   let index = 2;
   let candidate = `${cleanedLabel} ${index}`;
-
   while (existingLabels.includes(candidate)) {
     index += 1;
     candidate = `${cleanedLabel} ${index}`;
   }
-
   return candidate;
+}
+
+function CameraPresetController({ presetName }: { presetName: CameraPresetName }) {
+  const { camera } = useThree();
+  const preset = CAMERA_PRESETS[presetName];
+
+  useEffect(() => {
+    camera.position.set(...preset.position);
+    camera.lookAt(new THREE.Vector3(...preset.target));
+    camera.updateProjectionMatrix();
+  }, [camera, presetName, preset.position, preset.target]);
+
+  return null;
 }
 
 function BattleGlbAsset({
@@ -173,12 +196,7 @@ function BattleGlbAsset({
   const labelHeight = placement.id === "trainer" ? 1.75 : placement.id === "arena-base" ? 0.45 : 1.25;
 
   return (
-    <group
-      position={placement.position}
-      rotation={placement.rotation}
-      scale={placement.scale}
-      onClick={handleClick}
-    >
+    <group position={placement.position} rotation={placement.rotation} scale={placement.scale} onClick={handleClick}>
       <primitive object={scene} />
       {devMode && (
         <Html position={[0, labelHeight, 0]} center>
@@ -205,21 +223,26 @@ function ArenaScene({
   placements,
   devMode,
   selectedAssetId,
+  cameraPreset,
   onSelectAsset,
 }: {
   placements: BattleAssetPlacement[];
   devMode: boolean;
   selectedAssetId: BattleAssetId;
+  cameraPreset: CameraPresetName;
   onSelectAsset: (id: BattleAssetId) => void;
 }) {
   const selectedPlacement = placements.find((placement) => placement.id === selectedAssetId) || placements[0];
-  const orbitTarget = selectedPlacement?.position || [0, 0.55, 0];
+  const selectedTarget = selectedPlacement?.position || [0, 0.55, 0];
+  const presetTarget = CAMERA_PRESETS[cameraPreset].target;
+  const orbitTarget = devMode ? selectedTarget : presetTarget;
 
   return (
     <>
       <color attach="background" args={["#e8f7ff"]} />
       <ambientLight intensity={0.65} />
       <directionalLight castShadow intensity={1.35} position={[4, 7, 5]} shadow-mapSize-width={1024} shadow-mapSize-height={1024} />
+      <CameraPresetController presetName={cameraPreset} />
       <Suspense fallback={<LoadingCard />}>
         <group position={[0, -0.5, 0]}>
           {placements.map((placement) => (
@@ -235,10 +258,12 @@ function ArenaScene({
       </Suspense>
       <OrbitControls
         target={[orbitTarget[0], orbitTarget[1] + 0.25, orbitTarget[2]]}
-        enablePan={devMode}
-        minDistance={3.25}
-        maxDistance={9.5}
-        maxPolarAngle={Math.PI / 2.02}
+        enablePan={true}
+        enableRotate={true}
+        enableZoom={true}
+        minDistance={2.4}
+        maxDistance={13.5}
+        maxPolarAngle={Math.PI / 2.01}
       />
     </>
   );
@@ -271,6 +296,7 @@ const Battle3D: React.FC = () => {
   const [devMode, setDevMode] = useState(false);
   const [placements, setPlacements] = useState<BattleAssetPlacement[]>(() => loadBattlePlacements());
   const [selectedAssetId, setSelectedAssetId] = useState<BattleAssetId>("embercub");
+  const [cameraPreset, setCameraPreset] = useState<CameraPresetName>("front");
   const [copyStatus, setCopyStatus] = useState("");
 
   const selectedPlacement = placements.find((placement) => placement.id === selectedAssetId) || placements[0];
@@ -291,10 +317,7 @@ const Battle3D: React.FC = () => {
   };
 
   const renameSelectedPlacement = (label: string) => {
-    updateSelectedPlacement((placement) => ({
-      ...placement,
-      label,
-    }));
+    updateSelectedPlacement((placement) => ({ ...placement, label }));
   };
 
   const nudgePosition = (axis: 0 | 1 | 2, amount: number) => {
@@ -320,11 +343,9 @@ const Battle3D: React.FC = () => {
 
   const duplicateSelectedPlacement = () => {
     if (!selectedPlacement) return;
-
     const baseId = selectedPlacement.id.replace(/-copy-\d+$/i, "");
     let copyIndex = 1;
     let nextId = `${baseId}-copy-${copyIndex}`;
-
     while (placements.some((placement) => placement.id === nextId)) {
       copyIndex += 1;
       nextId = `${baseId}-copy-${copyIndex}`;
@@ -374,6 +395,7 @@ const Battle3D: React.FC = () => {
     window.localStorage.removeItem(BATTLE_DEV_STORAGE_KEY);
     setPlacements(DEFAULT_BATTLE_3D_ASSET_PLACEMENTS.map(clonePlacement));
     setSelectedAssetId("embercub");
+    setCameraPreset("front");
     setCopyStatus("Reset to defaults");
   };
 
@@ -410,12 +432,26 @@ const Battle3D: React.FC = () => {
       </header>
 
       <section style={battleShellStyle}>
+        <div style={cameraPresetBarStyle}>
+          <span style={cameraPresetLabelStyle}><Camera size={15} /> Camera</span>
+          {(Object.keys(CAMERA_PRESETS) as CameraPresetName[]).map((presetName) => (
+            <button
+              key={presetName}
+              type="button"
+              style={{ ...cameraPresetButtonStyle, ...(cameraPreset === presetName ? cameraPresetButtonActiveStyle : {}) }}
+              onClick={() => setCameraPreset(presetName)}
+            >
+              {CAMERA_PRESETS[presetName].label}
+            </button>
+          ))}
+        </div>
         <div style={canvasWrapStyle}>
-          <Canvas camera={{ position: [0, 4.2, 6.2], fov: 42 }} shadows style={{ width: "100%", height: "100%" }}>
+          <Canvas camera={{ position: CAMERA_PRESETS.front.position, fov: 36 }} shadows style={{ width: "100%", height: "100%" }}>
             <ArenaScene
               placements={placements}
               devMode={devMode}
               selectedAssetId={selectedAssetId}
+              cameraPreset={cameraPreset}
               onSelectAsset={setSelectedAssetId}
             />
           </Canvas>
@@ -444,11 +480,7 @@ const Battle3D: React.FC = () => {
 
           <label style={devLabelStyle}>
             Selected asset
-            <select
-              style={devSelectStyle}
-              value={selectedAssetId}
-              onChange={(event) => setSelectedAssetId(event.target.value as BattleAssetId)}
-            >
+            <select style={devSelectStyle} value={selectedAssetId} onChange={(event) => setSelectedAssetId(event.target.value as BattleAssetId)}>
               {placements.map((placement) => (
                 <option key={placement.id} value={placement.id}>{placement.label}</option>
               ))}
@@ -457,12 +489,7 @@ const Battle3D: React.FC = () => {
 
           <label style={{ ...devLabelStyle, marginTop: "0.65rem" }}>
             Edit name
-            <input
-              style={devInputStyle}
-              value={selectedPlacement.label}
-              onChange={(event) => renameSelectedPlacement(event.target.value)}
-              placeholder="Object name"
-            />
+            <input style={devInputStyle} value={selectedPlacement.label} onChange={(event) => renameSelectedPlacement(event.target.value)} placeholder="Object name" />
           </label>
 
           <div style={devInfoBoxStyle}>
@@ -509,15 +536,10 @@ const Battle3D: React.FC = () => {
         <div>
           <div style={eyebrowStyle}>Next build target</div>
           <h2 style={panelTitleStyle}>Replace legacy 2D battle with a GLB arena flow</h2>
-          <p style={panelTextStyle}>
-            This page intentionally does not replace /battle yet. It gives us a safe route to build the new 3D combat loop without breaking the current prototype.
-          </p>
+          <p style={panelTextStyle}>This page intentionally does not replace /battle yet. It gives us a safe route to build the new 3D combat loop without breaking the current prototype.</p>
         </div>
         <div style={buttonRowStyle}>
-          <button type="button" style={primaryButtonStyle}>
-            <Sparkles size={18} />
-            Attack preview
-          </button>
+          <button type="button" style={primaryButtonStyle}><Sparkles size={18} /> Attack preview</button>
           <button type="button" style={secondaryButtonStyle}>Defend</button>
           <button type="button" style={secondaryButtonStyle}>Special</button>
         </div>
@@ -528,7 +550,7 @@ const Battle3D: React.FC = () => {
 
 const pageStyle: React.CSSProperties = {
   minHeight: "100vh",
-  padding: "1rem",
+  padding: "0.75rem",
   background: "linear-gradient(135deg, #e8f7ff 0%, #fff8dd 48%, #f7efff 100%)",
   color: "#2b2352",
   fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
@@ -539,8 +561,8 @@ const topBarStyle: React.CSSProperties = {
   alignItems: "center",
   justifyContent: "space-between",
   gap: "1rem",
-  padding: "1rem 1.25rem",
-  borderRadius: "1.5rem",
+  padding: "0.8rem 1.15rem",
+  borderRadius: "1.35rem",
   background: "rgba(255,255,255,0.88)",
   border: "2px solid rgba(255,255,255,0.9)",
   boxShadow: "0 18px 45px rgba(59, 45, 120, 0.12)",
@@ -566,9 +588,9 @@ const pillStyle: React.CSSProperties = { display: "inline-flex", alignItems: "ce
 const pillActiveStyle: React.CSSProperties = { background: "#7c5cff", color: "#fff" };
 
 const battleShellStyle: React.CSSProperties = {
-  margin: "1rem auto 0",
-  width: "min(1500px, calc(100vw - 3rem))",
-  maxWidth: "1500px",
+  margin: "0.75rem auto 0",
+  width: "min(1720px, calc(100vw - 2.5rem))",
+  maxWidth: "1720px",
   borderRadius: "2rem",
   overflow: "hidden",
   background: "rgba(255,255,255,0.78)",
@@ -576,7 +598,20 @@ const battleShellStyle: React.CSSProperties = {
   boxShadow: "0 22px 55px rgba(59, 45, 120, 0.18)",
 };
 
-const canvasWrapStyle: React.CSSProperties = { height: "min(70vh, 760px)", minHeight: 560 };
+const cameraPresetBarStyle: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "flex-end",
+  gap: "0.45rem",
+  padding: "0.65rem 0.9rem",
+  background: "rgba(255,255,255,0.74)",
+  borderBottom: "1px solid rgba(157,141,241,0.18)",
+};
+const cameraPresetLabelStyle: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: "0.35rem", color: "#6f668f", fontSize: "0.74rem", fontWeight: 950, textTransform: "uppercase", letterSpacing: "0.06em" };
+const cameraPresetButtonStyle: React.CSSProperties = { border: "2px solid #d8d2fa", borderRadius: 999, background: "#fff", color: "#2b2352", padding: "0.45rem 0.7rem", fontSize: "0.78rem", fontWeight: 950, cursor: "pointer" };
+const cameraPresetButtonActiveStyle: React.CSSProperties = { background: "#7c5cff", color: "#fff", borderColor: "#7c5cff" };
+
+const canvasWrapStyle: React.CSSProperties = { height: "min(76vh, 860px)", minHeight: 650 };
 const hudStyle: React.CSSProperties = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", padding: "1rem", background: "rgba(255,255,255,0.82)" };
 const participantCardStyle: React.CSSProperties = { borderRadius: "1.35rem", background: "#fff", padding: "1rem", boxShadow: "inset 0 0 0 2px rgba(157,141,241,0.12)" };
 const participantNameStyle: React.CSSProperties = { margin: "0.15rem 0", fontSize: "1.35rem", fontWeight: 950 };
@@ -586,9 +621,9 @@ const healthFillStyle: React.CSSProperties = { width: "100%", height: "100%", ba
 const healthTextStyle: React.CSSProperties = { display: "block", marginTop: "0.3rem", color: "#80769c", fontWeight: 900 };
 
 const actionPanelStyle: React.CSSProperties = {
-  width: "min(1500px, calc(100vw - 3rem))",
-  maxWidth: "1500px",
-  margin: "1rem auto 0",
+  width: "min(1720px, calc(100vw - 2.5rem))",
+  maxWidth: "1720px",
+  margin: "0.75rem auto 0",
   display: "flex",
   alignItems: "center",
   justifyContent: "space-between",
@@ -600,7 +635,7 @@ const actionPanelStyle: React.CSSProperties = {
   boxShadow: "0 18px 45px rgba(59, 45, 120, 0.12)",
 };
 const panelTitleStyle: React.CSSProperties = { margin: "0.2rem 0", fontSize: "1.2rem", fontWeight: 950 };
-const panelTextStyle: React.CSSProperties = { margin: 0, color: "#6f668f", fontWeight: 700, maxWidth: 680 };
+const panelTextStyle: React.CSSProperties = { margin: 0, color: "#6f668f", fontWeight: 700, maxWidth: 760 };
 const buttonRowStyle: React.CSSProperties = { display: "flex", flexWrap: "wrap", gap: "0.65rem", justifyContent: "flex-end" };
 const primaryButtonStyle: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: "0.45rem", border: 0, borderRadius: 999, background: "#7c5cff", color: "#fff", padding: "0.85rem 1.1rem", fontWeight: 950, cursor: "pointer" };
 const secondaryButtonStyle: React.CSSProperties = { border: "2px solid #d8d2fa", borderRadius: 999, background: "#fff", color: "#2b2352", padding: "0.85rem 1.1rem", fontWeight: 950, cursor: "pointer" };
@@ -625,6 +660,8 @@ const devPanelStyle: React.CSSProperties = {
   top: "6.25rem",
   zIndex: 40,
   width: "17rem",
+  maxHeight: "calc(100vh - 7.5rem)",
+  overflowY: "auto",
   borderRadius: "1.4rem",
   background: "rgba(255,255,255,0.94)",
   border: "2px solid rgba(255,255,255,0.95)",
