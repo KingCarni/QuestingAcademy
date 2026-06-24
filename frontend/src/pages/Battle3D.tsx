@@ -1,7 +1,7 @@
 import React, { Suspense, useEffect, useMemo, useState } from "react";
 import { Canvas, ThreeEvent } from "@react-three/fiber";
 import { Html, OrbitControls, useGLTF } from "@react-three/drei";
-import { ArrowLeft, Box, Copy, RotateCcw, Save, Sparkles } from "lucide-react";
+import { ArrowLeft, Box, Copy, RotateCcw, Save, Sparkles, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import * as THREE from "three";
 import { useGame } from "../lib/gameStore";
@@ -14,6 +14,8 @@ const TREE_MODEL_PATH = "/assets/3d/props/tree.glb";
 const TREE_2_MODEL_PATH = "/assets/3d/props/tree2.glb";
 const PLAYER_MODEL_PATH = "/assets/3d/avatar/avatar.glb";
 const BATTLE_DEV_STORAGE_KEY = "eduMatesBattle3DPlacements.v1";
+
+const CORE_BATTLE_ASSET_IDS = new Set(["trainer", "embercub", "bubblefin"]);
 
 type BattleParticipantCardProps = {
   eyebrow: string;
@@ -38,8 +40,8 @@ const DEFAULT_BATTLE_3D_ASSET_PLACEMENTS: BattleAssetPlacement[] = [
   { id: "embercub", label: "Embercub", modelPath: EMBERCUB_MODEL_PATH, position: [-2.1, 0.78, 0], rotation: [0, 1.2, 0], scale: 1.1 },
   { id: "bubblefin", label: "Bubblefin", modelPath: BUBBLEFIN_MODEL_PATH, position: [2.25, 0.88, 0.35], rotation: [0, -1.05, 0], scale: 0.9 },
   { id: "rock-1", label: "Rock 1", modelPath: ROCK_MODEL_PATH, position: [3.95, 0.55, 4.05], rotation: [0, 0.35, 0], scale: 0.75 },
-  { id: "rock-1-copy-1", label: "Rock 1 Copy 1", modelPath: ROCK_MODEL_PATH, position: [-2.1, 0.55, 3.8], rotation: [0, 3.95, 0], scale: 0.75 },
-  { id: "rock-1-copy-2", label: "Rock 1 Copy 1 Copy 2", modelPath: ROCK_MODEL_PATH, position: [-2.45, 1.25, -3.45], rotation: [0, 3.95, 0], scale: 1.6 },
+  { id: "rock-2", label: "Rock 2", modelPath: ROCK_MODEL_PATH, position: [-2.1, 0.55, 3.8], rotation: [0, 3.95, 0], scale: 0.75 },
+  { id: "rock-3", label: "Rock 3", modelPath: ROCK_MODEL_PATH, position: [-2.45, 1.25, -3.45], rotation: [0, 3.95, 0], scale: 1.6 },
   { id: "tree-1", label: "Tree 1", modelPath: TREE_MODEL_PATH, position: [-5.35, 0.2, -2.45], rotation: [0, 0.45, 0], scale: 1.45 },
   { id: "tree-2", label: "Tree 2", modelPath: TREE_2_MODEL_PATH, position: [5.35, 0.2, -2.25], rotation: [0, -0.55, 0], scale: 1.35 },
 ];
@@ -93,8 +95,8 @@ function loadBattlePlacements(): BattleAssetPlacement[] {
         id: base.id,
         label: saved?.label || base.label,
         modelPath: saved?.modelPath || base.modelPath,
-        position: Array.isArray(saved?.position) ? (saved?.position as [number, number, number]) : [...base.position] as [number, number, number],
-        rotation: Array.isArray(saved?.rotation) ? (saved?.rotation as [number, number, number]) : [...base.rotation] as [number, number, number],
+        position: Array.isArray(saved?.position) ? (saved?.position as [number, number, number]) : ([...base.position] as [number, number, number]),
+        rotation: Array.isArray(saved?.rotation) ? (saved?.rotation as [number, number, number]) : ([...base.rotation] as [number, number, number]),
         scale: typeof saved?.scale === "number" ? saved.scale : base.scale,
       };
     });
@@ -131,6 +133,19 @@ function formatPlacementsCode(placements: BattleAssetPlacement[]) {
     .join("\n");
 
   return `const DEFAULT_BATTLE_3D_ASSET_PLACEMENTS: BattleAssetPlacement[] = [\n${rows}\n];`;
+}
+
+function getNextDuplicateLabel(baseLabel: string, existingLabels: string[]) {
+  const cleanedLabel = baseLabel.replace(/\s+Copy\s+\d+$/i, "").replace(/\s+\d+$/i, "").trim() || "Object";
+  let index = 2;
+  let candidate = `${cleanedLabel} ${index}`;
+
+  while (existingLabels.includes(candidate)) {
+    index += 1;
+    candidate = `${cleanedLabel} ${index}`;
+  }
+
+  return candidate;
 }
 
 function BattleGlbAsset({
@@ -268,6 +283,7 @@ const Battle3D: React.FC = () => {
   const [copyStatus, setCopyStatus] = useState("");
 
   const selectedPlacement = placements.find((placement) => placement.id === selectedAssetId) || placements[0];
+  const canDeleteSelected = !!selectedPlacement && placements.length > 1 && !CORE_BATTLE_ASSET_IDS.has(selectedPlacement.id);
 
   useEffect(() => {
     if (!copyStatus) return;
@@ -281,6 +297,13 @@ const Battle3D: React.FC = () => {
         placement.id === selectedAssetId ? updater(clonePlacement(placement)) : placement,
       ),
     );
+  };
+
+  const renameSelectedPlacement = (label: string) => {
+    updateSelectedPlacement((placement) => ({
+      ...placement,
+      label,
+    }));
   };
 
   const nudgePosition = (axis: 0 | 1 | 2, amount: number) => {
@@ -307,7 +330,7 @@ const Battle3D: React.FC = () => {
   const duplicateSelectedPlacement = () => {
     if (!selectedPlacement) return;
 
-    const baseId = selectedPlacement.id.replace(/-copy-\d+$/, "");
+    const baseId = selectedPlacement.id.replace(/-copy-\d+$/i, "");
     let copyIndex = 1;
     let nextId = `${baseId}-copy-${copyIndex}`;
 
@@ -319,7 +342,7 @@ const Battle3D: React.FC = () => {
     const duplicate: BattleAssetPlacement = {
       ...clonePlacement(selectedPlacement),
       id: nextId,
-      label: `${selectedPlacement.label} Copy ${copyIndex}`,
+      label: getNextDuplicateLabel(selectedPlacement.label, placements.map((placement) => placement.label)),
       position: [
         formatNumber(selectedPlacement.position[0] + 0.45),
         selectedPlacement.position[1],
@@ -330,6 +353,25 @@ const Battle3D: React.FC = () => {
     setPlacements((current) => [...current, duplicate]);
     setSelectedAssetId(nextId);
     setCopyStatus(`Duplicated ${selectedPlacement.label}`);
+  };
+
+  const deleteSelectedPlacement = () => {
+    if (!selectedPlacement) return;
+
+    if (CORE_BATTLE_ASSET_IDS.has(selectedPlacement.id)) {
+      setCopyStatus("Core battle actors cannot be deleted");
+      return;
+    }
+
+    if (placements.length <= 1) {
+      setCopyStatus("At least one object must remain");
+      return;
+    }
+
+    const nextPlacements = placements.filter((placement) => placement.id !== selectedPlacement.id);
+    setPlacements(nextPlacements);
+    setSelectedAssetId(nextPlacements[0]?.id || "embercub");
+    setCopyStatus(`Deleted ${selectedPlacement.label}`);
   };
 
   const savePlacementsToBrowser = () => {
@@ -407,7 +449,7 @@ const Battle3D: React.FC = () => {
         <aside style={devPanelStyle}>
           <div style={eyebrowStyle}>Dev Mode</div>
           <h2 style={devPanelTitleStyle}>Battle Asset Placement</h2>
-          <p style={devHelpTextStyle}>Select an arena asset, then nudge position, rotation, and scale. Copy the code when it looks right.</p>
+          <p style={devHelpTextStyle}>Select an arena asset, rename it, then nudge position, rotation, and scale. Copy the code when it looks right.</p>
 
           <label style={devLabelStyle}>
             Selected asset
@@ -422,8 +464,19 @@ const Battle3D: React.FC = () => {
             </select>
           </label>
 
+          <label style={{ ...devLabelStyle, marginTop: "0.65rem" }}>
+            Edit name
+            <input
+              style={devInputStyle}
+              value={selectedPlacement.label}
+              onChange={(event) => renameSelectedPlacement(event.target.value)}
+              placeholder="Object name"
+            />
+          </label>
+
           <div style={devInfoBoxStyle}>
-            <strong>{selectedPlacement.label}</strong>
+            <strong>{selectedPlacement.label || selectedPlacement.id}</strong>
+            <span>ID {selectedPlacement.id}</span>
             <span>Position {selectedPlacement.position.join(", ")}</span>
             <span>Rotation Y {formatNumber(selectedPlacement.rotation[1])}</span>
             <span>Scale {formatNumber(selectedPlacement.scale)}</span>
@@ -446,6 +499,15 @@ const Battle3D: React.FC = () => {
             <button type="button" style={devPrimaryButtonStyle} onClick={savePlacementsToBrowser}><Save size={15} /> Save</button>
             <button type="button" style={devPrimaryButtonStyle} onClick={copyPlacementsCode}><Copy size={15} /> Copy code</button>
             <button type="button" style={devPrimaryButtonStyle} onClick={duplicateSelectedPlacement}><Copy size={15} /> Duplicate</button>
+            <button
+              type="button"
+              style={{ ...devDeleteButtonStyle, opacity: canDeleteSelected ? 1 : 0.55 }}
+              onClick={deleteSelectedPlacement}
+              disabled={!canDeleteSelected}
+              title={canDeleteSelected ? "Delete selected object" : "Core battle actors cannot be deleted"}
+            >
+              <Trash2 size={15} /> Delete
+            </button>
             <button type="button" style={devResetButtonStyle} onClick={resetPlacements}><RotateCcw size={15} /> Reset</button>
           </div>
           {copyStatus && <div style={devStatusStyle}>{copyStatus}</div>}
@@ -549,7 +611,6 @@ const panelTextStyle: React.CSSProperties = { margin: 0, color: "#6f668f", fontW
 const buttonRowStyle: React.CSSProperties = { display: "flex", flexWrap: "wrap", gap: "0.65rem", justifyContent: "flex-end" };
 const primaryButtonStyle: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: "0.45rem", border: 0, borderRadius: 999, background: "#7c5cff", color: "#fff", padding: "0.85rem 1.1rem", fontWeight: 950, cursor: "pointer" };
 const secondaryButtonStyle: React.CSSProperties = { border: "2px solid #d8d2fa", borderRadius: 999, background: "#fff", color: "#2b2352", padding: "0.85rem 1.1rem", fontWeight: 950, cursor: "pointer" };
-const nameTagStyle: React.CSSProperties = { borderRadius: 999, background: "rgba(255,255,255,0.92)", color: "#2b2352", padding: "0.35rem 0.55rem", fontSize: "0.72rem", fontWeight: 950, boxShadow: "0 8px 18px rgba(52,41,92,0.18)", whiteSpace: "nowrap" };
 const loadingStyle: React.CSSProperties = { borderRadius: "1rem", background: "rgba(255,255,255,0.95)", color: "#2b2352", padding: "0.85rem 1rem", fontWeight: 950 };
 
 const devAssetTagStyle: React.CSSProperties = {
@@ -581,11 +642,13 @@ const devPanelTitleStyle: React.CSSProperties = { margin: "0.2rem 0", fontSize: 
 const devHelpTextStyle: React.CSSProperties = { margin: "0 0 0.85rem", color: "#6f668f", fontSize: "0.78rem", fontWeight: 700, lineHeight: 1.35 };
 const devLabelStyle: React.CSSProperties = { display: "grid", gap: "0.35rem", color: "#6f668f", fontSize: "0.68rem", fontWeight: 950, textTransform: "uppercase", letterSpacing: "0.05em" };
 const devSelectStyle: React.CSSProperties = { border: "2px solid #d8d2fa", borderRadius: "0.8rem", padding: "0.65rem", color: "#2b2352", fontWeight: 900, background: "#fff" };
+const devInputStyle: React.CSSProperties = { border: "2px solid #d8d2fa", borderRadius: "0.8rem", padding: "0.65rem", color: "#2b2352", fontWeight: 900, background: "#fff" };
 const devInfoBoxStyle: React.CSSProperties = { display: "grid", gap: "0.2rem", margin: "0.75rem 0", padding: "0.75rem", borderRadius: "0.9rem", background: "#f2efff", color: "#2b2352", fontSize: "0.75rem", fontWeight: 800 };
 const devButtonGridStyle: React.CSSProperties = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.45rem" };
 const devButtonStyle: React.CSSProperties = { border: "2px solid #d8d2fa", borderRadius: "0.8rem", background: "#fff", color: "#2b2352", padding: "0.58rem", fontWeight: 950, cursor: "pointer" };
 const devActionRowStyle: React.CSSProperties = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.4rem", marginTop: "0.65rem" };
 const devPrimaryButtonStyle: React.CSSProperties = { display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "0.25rem", border: 0, borderRadius: "0.8rem", background: "#7c5cff", color: "#fff", padding: "0.58rem", fontSize: "0.72rem", fontWeight: 950, cursor: "pointer" };
+const devDeleteButtonStyle: React.CSSProperties = { ...devPrimaryButtonStyle, background: "#ff5f6d", color: "#fff" };
 const devResetButtonStyle: React.CSSProperties = { ...devPrimaryButtonStyle, background: "#fff3e1", color: "#8a4b00", border: "1px solid #ffc978" };
 const devStatusStyle: React.CSSProperties = { marginTop: "0.65rem", color: "#7c5cff", fontSize: "0.78rem", fontWeight: 950, textAlign: "center" };
 
