@@ -11,6 +11,7 @@ import Academy from "./pages/Academy";
 import Parent from "./pages/Parent";
 import AdminDashboard from "./pages/AdminDashboard";
 import ContentStudio from "./pages/ContentStudio";
+import Battle3dDesign from "./pages/design/Battle3dDesign";
 import AdventureHub from "./pages/adventure/AdventureHub";
 import RealmMap from "./pages/adventure/RealmMap";
 import TownHub from "./pages/adventure/TownHub";
@@ -44,6 +45,7 @@ const App: React.FC = () => {
       <Route path="/admin" element={<AdminDashboard />} />
       <Route path="/admin/studio" element={<ContentStudio />} />
       <Route path="/admin/approvals" element={<ContentStudio />} />
+      <Route path="/design/battle3d" element={<Battle3dDesign />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

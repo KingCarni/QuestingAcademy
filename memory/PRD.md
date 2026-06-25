@@ -1,4 +1,4 @@
-# Questing Academy — Frontend MVP PRD (v0.8)
+# Questing Academy — Frontend MVP PRD (v0.9)
 
 ## Concept
 Cute chibi-style educational RPG for Grades K-7. Avatar creation, companion collection, math + reading battles, egg hatching, Learning Academy training, parent progress dashboard, a full internal **TeachMe Content Studio**, and a Prodigy-style **RPG Adventure shell** that wraps the game in a magical map / town / quest world.
@@ -16,9 +16,20 @@ Cute chibi-style educational RPG for Grades K-7. Avatar creation, companion coll
 - Staff: `/admin`, `/admin/studio`, `/admin/approvals`
 
 ## Versions
-- v0.1 MVP · v0.2 Senses Pack + K-7 · v0.3 Pack C + Admin · v0.4 Content Studio · v0.5 TEA-74 Studio Refinement · v0.6 RPG Foundation · v0.7 World Comes Alive · **v0.8 TEA-99 Scene Composer**
+- v0.1 MVP · v0.2 Senses · v0.3 Admin · v0.4 Studio · v0.5 TEA-74 · v0.6 RPG Foundation · v0.7 World Comes Alive · v0.8 Scene Composer · **v0.9 Battle3D Design Exploration**
 
-### v0.8 — TEA-99 Scene Composer (current, 2026-06-02)
+### v0.9 — Battle3D UI Design Exploration (current, 2026-06-25)
+- 🎨 New `/design/battle3d` route (NOT gated by RequirePlayer — designer view)
+- Mockup page exploring three UI philosophies for the upcoming 3D battle screen: **Pokémon** (game-first), **Hearthstone** (premium card), **Dreamlight Valley** (cozy & whimsical)
+- Each philosophy stacks five feedback states: default action select, question modal open, correct answer, wrong answer, quiz locked
+- Each state renders the user's existing 3D arena screenshot as a cropped CSS backdrop (top/bottom of source image excluded since it contained browser chrome) with overlaid HP cards, battle log, action bar (Attack/Defend/Quiz/Run), and the question modal where applicable
+- Question modal includes: read-aloud button per question + per answer, 2×2 answer grid, correct/wrong feedback strips with friendly explanation, philosophy-specific CTA copy ("Cast Spell" / "Unleash Attack" / "Try it!")
+- Designer's pick callout at top recommends **Dreamlight Valley** for K-7 anxiety mitigation
+- Side-by-side comparison table at bottom rating motion budget, kid-friendliness, screen-real-estate cost, accessibility ceiling, and implementation effort
+- No production code touched — `/battle` and `/adventure/*` flows untouched
+- Action items pending: user has a local Three.js `Battle3d` component that needs to be pushed to this environment before we can promote the chosen philosophy into a working `/battle3d` page
+
+### v0.8 — TEA-99 Scene Composer (2026-06-02)
 - 🖼️ New **Scene Composer** tab inside Content Studio (between Scenes and NPCs)
 - Asset picker reuses existing Asset Library (`useStudio.assets`); layers reference assets by id only (no duplication, no base64)
 - 720×480 canvas, click an asset → adds draggable layer, pointer-event drag clamped to bounds, selection ring
