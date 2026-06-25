@@ -48,7 +48,7 @@ export const TopBar: React.FC<Props> = ({ back, title, rightSlot }) => {
           )}
           <div className="min-w-0">
             <p className="h-display text-xl md:text-2xl truncate">
-              {title ?? (player?.name ? `Hi, ${player.name}!` : "Questing Academy")}
+              {title ?? (player?.name ? `Hi, ${player.name}!` : "Edu-Mates")}
             </p>
             {player && (
               <p className="text-xs md:text-sm font-bold text-ink-muted">

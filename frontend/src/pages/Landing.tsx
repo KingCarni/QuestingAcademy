@@ -28,7 +28,7 @@ const Landing: React.FC = () => {
             <Sparkles strokeWidth={3} />
           </div>
           <div>
-            <p className="h-display text-2xl leading-none">Questing Academy</p>
+            <p className="h-display text-2xl leading-none">Edu-Mates</p>
             <p className="text-xs font-bold text-ink-muted tracking-widest uppercase">Meadowfall Grove · Beta</p>
           </div>
         </div>
