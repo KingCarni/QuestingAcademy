@@ -1,149 +1,149 @@
 {
-  "project_name": "Questing Academy",
-  "theme": {
-    "archetype": "Archetype 6 (Vibrant Play) + Archetype 3 (Pastel & Soft)",
-    "mode": "Light",
-    "vibe": "Whimsical, Scholarly, Cozy, Magical Academy, Child-friendly, RPG",
-    "description": "A cute, colorful chibi-style educational RPG for Grades K-2. The design must be bright, readable, friendly, and soft. No sharp edges, no dark/scary elements."
+  "project_name": "Edu-Mates 3D Battle UI Design Exploration",
+  "theme": "LIGHT",
+  "archetype": "Archetype 6 (Vibrant Play) combined with Fantasy RPG elements",
+  "global_rules": {
+    "target_audience": "Children, grades K-7 (Ages 6-12)",
+    "emotion_mantra": "The learning challenge should feel like casting a spell or empowering an attack rather than taking a test.",
+    "accessibility": "WCAG AA min on every label over the 3D backdrop. Use frosted/translucent panels with sufficient contrast.",
+    "touch_targets": "Minimum 44px+, ideally 56-64px for primary actions."
+  },
+  "media_urls": [
+    {
+      "category": "3d_backdrop",
+      "url": "https://customer-assets.emergentagent.com/job_quest-academy-mvp/artifacts/2sql4wq4_image.png",
+      "description": "Fixed 3D arena backdrop for the battle scene. MUST use as the CSS background-image (background-size: cover; background-position: center) behind EVERY mockup state."
+    }
+  ],
+  "typography": {
+    "rules": "Use highly legible, friendly, rounded sans-serif fonts where possible. Ensure high contrast.",
+    "scale": {
+      "h1": "text-4xl sm:text-5xl font-extrabold tracking-tight",
+      "h2": "text-2xl sm:text-3xl font-bold tracking-tight",
+      "question_text": "text-2xl sm:text-3xl lg:text-4xl font-bold text-slate-800",
+      "body": "text-lg sm:text-xl font-medium",
+      "small_labels": "text-sm font-bold uppercase tracking-wider"
+    }
   },
   "colors": {
-    "background": {
-      "main": "#FDFBF7",
-      "description": "Soft ivory/cream. Never use pure white for the main app background."
+    "core_palette": {
+      "purple": "#9D4CDD",
+      "blue": "#4361EE",
+      "gold": "#FCA311"
     },
-    "surface": {
-      "card": "#FFFFFF",
-      "glass": "rgba(255, 255, 255, 0.8)",
-      "overlay": "rgba(157, 141, 241, 0.15)"
-    },
-    "primary": {
-      "main": "#9D8DF1",
-      "hover": "#8A79E8",
-      "light": "#D8D2FA",
-      "description": "Magical Soft Lavender. Used for primary actions, magic elements, and brand identity."
-    },
-    "secondary": {
-      "main": "#86A789",
-      "hover": "#749677",
-      "light": "#CDE0CF",
-      "description": "Sage Green. Represents nature, Meadowfall Grove, and safe progression."
-    },
-    "accent": {
-      "gold": "#F4C753",
-      "fire": "#FF9F68",
-      "earth": "#D4A373",
-      "description": "Soft Gold for stars/coins/academy accents. Fire/Earth used specifically for elemental companions."
-    },
-    "text": {
-      "main": "#4A4A4A",
-      "muted": "#888888",
-      "inverse": "#FFFFFF",
-      "description": "Soft Charcoal. Do not use pure #000000 as it's too harsh for kids."
-    },
-    "feedback": {
-      "success": "#86A789",
-      "error": "#FF7B7B",
-      "warning": "#F4C753"
+    "feedback_states": {
+      "correct_bg": "bg-emerald-100/90",
+      "correct_text": "text-emerald-800",
+      "correct_border": "border-emerald-400",
+      "wrong_bg": "bg-orange-100/90",
+      "wrong_text": "text-orange-900",
+      "wrong_border": "border-orange-300",
+      "wrong_accent": "text-orange-600"
     }
   },
-  "typography": {
-    "strategy": "Soft Utility + Youth Brand (Highly legible, bouncy, rounded)",
-    "fonts": {
-      "heading": "Fredoka, sans-serif",
-      "body": "Nunito, sans-serif"
+  "philosophies": [
+    {
+      "id": "pokemon",
+      "name": "Option 1 — Pokémon (Game-First)",
+      "signature_accent": "Emerald Green (#10B981)",
+      "description": "Very game-first; the question feels like a battle command panel.",
+      "modal_style": "Sharp but slightly rounded edges (rounded-xl), solid opaque panels with heavy borders. Dimming is moderate (bg-black/40).",
+      "interaction": "Direct click confirms the answer immediately.",
+      "header_text": "Spell Command"
     },
-    "scales": {
-      "h1": "text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight text-main",
-      "h2": "text-3xl md:text-4xl font-bold tracking-tight text-main",
-      "h3": "text-xl md:text-2xl font-bold text-main",
-      "body": "text-lg md:text-xl font-medium leading-relaxed",
-      "small": "text-sm md:text-base font-bold tracking-wide uppercase"
-    }
-  },
-  "layout_spacing": {
-    "strategy": "Generous, Over-sized touch targets. Kids lack motor precision.",
-    "container": "max-w-5xl mx-auto px-4 md:px-8",
-    "card_padding": "p-6 md:p-8",
-    "gap": {
-      "small": "gap-4",
-      "medium": "gap-6",
-      "large": "gap-8",
-      "hero": "gap-12"
+    {
+      "id": "hearthstone",
+      "name": "Option 2 — Hearthstone (Premium Card)",
+      "signature_accent": "Royal Magenta (#BE185D)",
+      "description": "Large magical card; premium feel; lots of motion potential.",
+      "modal_style": "Card-like interface (rounded-2xl) with ornate inner borders, heavy drop shadows, and glowing edges. Strong arena dimming/blur (bg-slate-900/60 backdrop-blur-md).",
+      "interaction": "Select an answer to highlight it, then click a large 'Cast Spell' CTA to confirm.",
+      "header_text": "Challenge Card"
     },
-    "border_radius": {
-      "button": "rounded-full",
-      "card": "rounded-[32px]",
-      "pill": "rounded-full"
+    {
+      "id": "dreamlight",
+      "name": "Option 3 — Disney Dreamlight Valley (Cozy & Whimsical)",
+      "signature_accent": "Peach / Butter Yellow (#FDBA74 / #FDE047)",
+      "description": "Soft, cozy, rounded, whimsical; tuned perfectly for elementary students.",
+      "modal_style": "Ultra-rounded (rounded-3xl or full pill shapes), soft glassmorphism (bg-white/80 backdrop-blur-lg), friendly pastel borders. Light dimming to keep the 3D world visible (bg-purple-900/20 backdrop-blur-sm).",
+      "interaction": "Select an answer, then click a playful 'Try it!' button.",
+      "header_text": "Friendship Question"
     }
-  },
+  ],
+  "states_to_render": [
+    {
+      "id": "state_1_default",
+      "name": "1. Default action selection",
+      "description": "Idle creatures, full action bar visible at the bottom."
+    },
+    {
+      "id": "state_2_modal_open",
+      "name": "2. Question modal open",
+      "description": "'Attack' pressed. Modal layered over the 3D arena. Arena visibly dimmed/blurred but NOT hidden. Question: 'What is 7 × 8?' Options: 42, 54, 56, 64."
+    },
+    {
+      "id": "state_3_correct",
+      "name": "3. Correct answer",
+      "description": "Modal swaps to a celebratory state with green/gold accents, sparkles, and 'Spell charged!' messaging. Includes small explanation."
+    },
+    {
+      "id": "state_4_wrong",
+      "name": "4. Wrong answer",
+      "description": "Modal swaps to a kind, encouraging 'try again' state (warm orange/coral, NOT red/scary). Reveals the correct answer (56) and explanation. CTA: 'Continue'."
+    },
+    {
+      "id": "state_5_locked",
+      "name": "5. Quiz action disabled/locked",
+      "description": "Action bar shows 'Quiz' button greyed out with a small 'Unlocks soon' lock chip."
+    }
+  ],
   "components": {
-    "button": {
-      "primary": "bg-[#9D8DF1] text-white font-heading text-xl py-4 px-8 rounded-full shadow-[0_6px_0_#7A6AC6] hover:brightness-110 active:translate-y-[6px] active:shadow-none transition-all",
-      "secondary": "bg-[#86A789] text-white font-heading text-xl py-4 px-8 rounded-full shadow-[0_6px_0_#6A8A6D] hover:brightness-110 active:translate-y-[6px] active:shadow-none transition-all",
-      "gold": "bg-[#F4C753] text-[#4A4A4A] font-heading text-xl py-4 px-8 rounded-full shadow-[0_6px_0_#DDAE3B] hover:brightness-110 active:translate-y-[6px] active:shadow-none transition-all",
-      "outline": "bg-white text-[#9D8DF1] border-4 border-[#9D8DF1] font-heading text-xl py-3 px-7 rounded-full shadow-[0_6px_0_#9D8DF1] active:translate-y-[6px] active:shadow-none transition-all"
+    "hp_cards": {
+      "layout": "Player card bottom-left, enemy card top-right. Absolutely positioned over the backdrop.",
+      "elements": "Name, level chip (e.g., Lvl 5), HP bar (80/80) with visual fill, small avatar swatch."
     },
-    "card": {
-      "base": "bg-white/90 backdrop-blur-md rounded-[32px] border-4 border-white/60 shadow-xl shadow-indigo-900/5",
-      "interactive": "hover:-translate-y-2 hover:shadow-2xl hover:shadow-indigo-900/10 transition-all duration-300 cursor-pointer"
+    "battle_log": {
+      "layout": "Small, readable, ambient text overlay (e.g., 'Embercub is ready!'). Usually placed above the action bar or top-center."
     },
-    "companion_avatar": {
-      "strategy": "CSS Shapes + Emojis inside stacked div circles. Outer ring: Elemental color. Inner circle: Lighter tint. Center: Emoji + SVG Face.",
-      "spriggle": "bg-green-100 border-4 border-green-400 text-green-600",
-      "embercub": "bg-orange-100 border-4 border-orange-400 text-orange-600",
-      "pebblin": "bg-amber-100 border-4 border-amber-600 text-amber-700"
+    "action_bar": {
+      "layout": "Bottom center/spanning. 4 actions.",
+      "buttons": "Attack (primary CTA, biggest, glowing), Defend, Quiz (locked state), Run Away.",
+      "elements": "Each button needs an icon + label + optional small subtitle."
     },
-    "progress_bar": {
-      "container": "h-6 bg-gray-100 rounded-full overflow-hidden border-2 border-gray-200 inset-shadow-sm",
-      "fill": "h-full rounded-full bg-gradient-to-r from-[#9D8DF1] to-[#F4C753] transition-all duration-500 ease-out"
+    "question_modal": {
+      "elements": [
+        "Stylized header per philosophy",
+        "Large readable question text",
+        "Four multiple-choice answer buttons (Grid 2x2 or 1x4 list depending on philosophy)",
+        "Read aloud button (speaker icon) for the main question",
+        "Small Read aloud speaker icon beside each answer",
+        "Submit button OR direct click (varies by philosophy)",
+        "Explanation area (1-2 lines, appears in correct/wrong states)",
+        "Continue / Cast attack CTA after feedback"
+      ]
     }
   },
-  "motion": {
-    "hover": "Spring-based scale-up (scale-105) for cards and buttons",
-    "feedback": "Wiggle animation on correct answers, subtle shake on incorrect",
-    "page_transition": "Fade in and slide up from 10px below",
-    "eggs": "Pulse and gentle wobble on the Hatchery page"
-  },
-  "media": {
-    "instruction": "Use these generated images as the backgrounds for the respective screens. They provide the highly-detailed but soft, child-friendly 2D vector style required for the RPG.",
-    "images": [
-      {
-        "category": "hero_bg",
-        "url": "https://static.prod-images.emergentagent.com/jobs/2eddbcc9-3d07-49c8-985b-00a190300e36/images/b8d8a10f02b8c9ad5d5472ae0c6b5354061fe57c832a06562939fbdcc2b60b6d.png",
-        "description": "Magical academy hero background, use on Landing Page with a white/transparent gradient overlay to ensure text legibility."
-      },
-      {
-        "category": "map_meadowfall",
-        "url": "https://static.prod-images.emergentagent.com/jobs/2eddbcc9-3d07-49c8-985b-00a190300e36/images/2ddd9941ab063781678a9c083121e56dd7cec531512b14fdf37b8d70c7da25e5.png",
-        "description": "Top-down Meadowfall Grove map background. Place clickable Action Tiles (Battle, Hatch, Academy, Collection) floating over this map in the Main Game Hub."
-      },
-      {
-        "category": "battle_bg",
-        "url": "https://static.prod-images.emergentagent.com/jobs/2eddbcc9-3d07-49c8-985b-00a190300e36/images/3c0bb9d1132f7acc1e24202db1dd9fe4f6d6bf544566fa6b2336a6a5ad7aba12.png",
-        "description": "Sunny forest clearing background for the Battle Screen. Characters and Math Questions will overlay this."
-      },
-      {
-        "category": "egg_hatchery_bg",
-        "url": "https://static.prod-images.emergentagent.com/jobs/2eddbcc9-3d07-49c8-985b-00a190300e36/images/7f39166ca6a00cef0337bdedb962bd6400342f077934204050cdb81a9d54a9b9.png",
-        "description": "Cozy nursery background for the Egg Hatching Progress Screen."
-      }
-    ],
-    "icons": {
-      "library": "lucide-react",
-      "style": "Always use thick stroke widths (strokeWidth={3}) and vibrant colors."
-    }
-  },
-  "pages_and_layout": {
-    "landing": "Hero layout with the generated `hero_bg`. Massive title, floating magical elements, 'Play Now' CTA.",
-    "onboarding": "Card-based sequence. 1. Select Grade (K, 1, 2). 2. Character Creator (using SVG/CSS shapes). 3. Companion Picker (Bento grid of 3 cards for Spriggle, Embercub, Pebblin).",
-    "main_hub": "Full-screen map using `map_meadowfall` background. Floating icons with bounce animations leading to sub-areas. Navbar at top with Player Avatar, Level, and Coins.",
-    "battle_screen": "Split layout over `battle_bg`. Top: Enemy and Player Sprite + HP Bars. Middle: Math Question in a large bold white card. Bottom: 4 large Answer buttons.",
-    "egg_hatching": "Centered large egg on `egg_hatchery_bg`. Progress bar below showing learning activities completed. Egg cracks based on progress.",
-    "collection": "Bento grid of owned companions and silhouetted locked companions.",
-    "math_academy": "List of subjects where companions can be 'assigned' to train. Drag-and-drop feel or simple assignment buttons.",
-    "parent_dashboard": "Gated by PIN modal. Clean, data-dense but friendly dashboard. Stats cards for Accuracy, Time Played, and Subjects."
-  },
-  "testing": {
-    "rules": "All interactive elements (buttons, links, form inputs, character selectors, math answers, map locations) MUST have a `data-testid` attribute using kebab-case role-based naming (e.g., `data-testid=\"answer-btn-1\"`, `data-testid=\"map-battle-tile\"`)."
+  "icons_needed": [
+    "Swords (Attack)",
+    "Shield (Defend)",
+    "Sparkles (Correct/Magic)",
+    "LogOut (Run Away)",
+    "Lock (Locked Quiz)",
+    "Volume2 (Read Aloud)",
+    "CheckCircle2 (Correct)",
+    "XCircle (Wrong)",
+    "Wand2 (Spell)",
+    "BookOpen (Quiz)",
+    "Star (Level/Premium)"
+  ],
+  "instructions_to_main_agent": {
+    "file_creation": "Create /app/frontend/src/pages/design/Battle3dDesign.jsx (Ensure it is a single file design exploration page, ~600 lines max, break into inline components).",
+    "routing": "Add route in /app/frontend/src/App.jsx: <Route path=\"/design/battle3d\" element={<Battle3dDesign />} />",
+    "structure": "The page must have a 'Designer's pick + why' callout at the top. Then 3 main sections (one for each philosophy). Each section must stack the 5 states vertically. Use the provided 3D backdrop URL as the background image for EVERY state container.",
+    "annotations": "Add kid-friendly tooltip-style callouts/annotations inline for each philosophy to explain spacing, hierarchy, and button placement choices.",
+    "comparison_table": "Add a comparison table at the bottom of the page summarizing trade-offs: Motion Budget, Kid-friendliness (6-10 yo), Screen-Real-Estate Cost, Accessibility Score.",
+    "testing": "CRITICAL: Apply unique data-testid attributes to EVERY interactive and state element (e.g., data-testid='philosophy-pokemon-state-default', data-testid='answer-btn-pokemon-56').",
+    "styling_notes": "Use lucide-react for icons. Use framer-motion for simple state transitions and hover effects. Do NOT use emojis. Ensure minimum tap targets of 44px. Do NOT build real 3D scenes, just use the background image.",
+    "designers_pick_rationale": "Recommend Option 3 (Disney Dreamlight Valley) because its soft, cozy glassmorphism and encouraging feedback loops perfectly mitigate test-anxiety for elementary students while keeping the 3D world feeling integrated and alive."
   }
 }
